@@ -22,6 +22,7 @@
 #include <csignal>
 #include <algorithm>
 #include <iomanip>
+#include <filesystem>
 
 #ifdef __APPLE__
 #include <OpenAL/al.h>
@@ -350,7 +351,7 @@ void printUsage(const char* progName) {
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0)\n";
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n\n";
     std::cout << "Interactive Controls:\n";
-    std::cout << "  A                      Toggle ignition on/off\n";
+    std::cout << "  A                      Toggle ignition on/off (starts ON)\n";
     std::cout << "  S                      Toggle starter motor on/off\n";
     std::cout << "  UP/DOWN Arrows or K/J  Increase/decrease throttle\n";
     std::cout << "  W                      Increase target RPM\n";
@@ -509,48 +510,70 @@ int runSimulation(const CommandLineArgs& args) {
     // Load engine configuration
     std::string configPath = args.engineConfig;
     std::string assetBasePath;
+    std::string piranhaLibraryPath;
+
+    // Resolve Piranha library path to absolute path
+    try {
+        std::filesystem::path esPath("../engine-sim/es");
+        if (esPath.is_relative()) {
+            esPath = std::filesystem::absolute(esPath);
+        }
+        esPath = esPath.lexically_normal();
+        piranhaLibraryPath = esPath.string();
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "ERROR: Failed to resolve Piranha library path: " << e.what() << "\n";
+        EngineSimDestroy(handle);
+        return 1;
+    }
 
     if (args.useDefaultEngine) {
-        // Use main.mr from the main engine-sim repo
-        configPath = "/Users/danielsinclair/vscode/engine-sim/assets/main.mr";
-        assetBasePath = "/Users/danielsinclair/vscode/engine-sim/assets";
+        // Use main.mr from the main engine-sim repo - convert to absolute paths
+        std::filesystem::path defaultScriptPath("../engine-sim/assets/main.mr");
+        std::filesystem::path defaultAssetPath("../engine-sim/assets");
+
+        if (defaultScriptPath.is_relative()) {
+            defaultScriptPath = std::filesystem::absolute(defaultScriptPath);
+        }
+        if (defaultAssetPath.is_relative()) {
+            defaultAssetPath = std::filesystem::absolute(defaultAssetPath);
+        }
+
+        defaultScriptPath = defaultScriptPath.lexically_normal();
+        defaultAssetPath = defaultAssetPath.lexically_normal();
+
+        configPath = defaultScriptPath.string();
+        assetBasePath = defaultAssetPath.string();
     } else {
-        // Resolve to absolute path if relative
-        char realPath[4096];  // Safe buffer size for paths
-        if (realpath(configPath.c_str(), realPath) != nullptr) {
-            configPath = realPath;
-            // Extract directory from config path for import resolution
-            size_t lastSlash = configPath.find_last_of('/');
-            if (lastSlash != std::string::npos) {
-                assetBasePath = configPath.substr(0, lastSlash);
+        // Resolve to absolute path using std::filesystem
+        try {
+            std::filesystem::path scriptPath(configPath);
+            if (scriptPath.is_relative()) {
+                // Convert relative path to absolute based on current working directory
+                scriptPath = std::filesystem::absolute(scriptPath);
+            }
+            // Normalize the path (resolve . and ..)
+            scriptPath = scriptPath.lexically_normal();
+            configPath = scriptPath.string();
+
+            // Extract directory from config path for asset resolution
+            if (scriptPath.has_parent_path()) {
+                assetBasePath = scriptPath.parent_path().string();
             } else {
-                // Use current directory if no path separator
+                // Use current directory if no parent path
                 assetBasePath = ".";
             }
-        } else {
-            // If realpath fails, use the path as-is and extract directory
-            size_t lastSlash = configPath.find_last_of('/');
-            if (lastSlash != std::string::npos) {
-                assetBasePath = configPath.substr(0, lastSlash);
-            } else {
-                assetBasePath = ".";
-            }
+        } catch (const std::filesystem::filesystem_error& e) {
+            std::cerr << "ERROR: Failed to resolve path '" << configPath << "': " << e.what() << "\n";
+            EngineSimDestroy(handle);
+            return 1;
         }
     }
 
-    // Note: The Piranha compiler resolves imports relative to the current working directory.
-    // We need to change to the asset base directory so imports like "engine_sim.mr"
-    // can be found from the script location.
-    char originalDir[4096];
-    if (getcwd(originalDir, sizeof(originalDir)) != nullptr) {
-        // Change to the asset base directory so imports resolve correctly
-        chdir(assetBasePath.c_str());
-    }
+    // Note: All paths have been converted to absolute paths, so we don't need to change directories.
+    // The Piranha compiler can now find imports using the absolute paths provided.
+    // Load the engine configuration script with absolute paths
+    result = EngineSimLoadScript(handle, configPath.c_str(), assetBasePath.c_str());
 
-    result = EngineSimLoadScript(handle, configPath.c_str(), nullptr);
-
-    // Restore original directory
-    chdir(originalDir);
     if (result != ESIM_SUCCESS) {
         std::cerr << "ERROR: Failed to load engine config: " << EngineSimGetLastError(handle) << "\n";
         EngineSimDestroy(handle);
@@ -566,12 +589,12 @@ int runSimulation(const CommandLineArgs& args) {
         std::cerr << "WARNING: Failed to start audio thread\n";
     }
 
-    // In non-interactive mode, auto-enable ignition so the engine can run
+    // Auto-enable ignition so the engine can run
+    EngineSimSetIgnition(handle, 1);
     if (!args.interactive) {
-        EngineSimSetIgnition(handle, 1);
         std::cout << "[3/5] Ignition enabled (auto)\n";
     } else {
-        std::cout << "[3/5] Engine ready - Press 'A' for ignition, 'S' for starter motor\n";
+        std::cout << "[3/5] Ignition enabled (ready for start) - Press 'S' for starter motor\n";
     }
 
     std::cout << "[4/5] Audio thread started\n";
@@ -622,7 +645,7 @@ int runSimulation(const CommandLineArgs& args) {
         keyboardInput = new KeyboardInput();
         std::cout << "\nInteractive mode enabled. Press Q to quit.\n\n";
         std::cout << "Interactive Controls:\n";
-        std::cout << "  A - Toggle ignition\n";
+        std::cout << "  A - Toggle ignition (starts ON)\n";
         std::cout << "  S - Toggle starter motor\n";
         std::cout << "  W - Increase target RPM\n";
         std::cout << "  SPACE - Brake\n";
@@ -747,7 +770,7 @@ int runSimulation(const CommandLineArgs& args) {
                         // Toggle ignition module - only on initial press, not repeat
                         // Note: 'A' (65) conflicts with UP arrow on macOS, so we handle it separately
                         {
-                            static bool ignitionState = false;
+                            static bool ignitionState = true;  // Start enabled by default
                             ignitionState = !ignitionState;
                             EngineSimSetIgnition(handle, ignitionState ? 1 : 0);
                             std::cout << "Ignition " << (ignitionState ? "enabled" : "disabled") << "\n";

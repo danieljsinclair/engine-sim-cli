@@ -1,0 +1,86 @@
+import "engine_sim.mr"
+
+units units()
+constants constants()
+
+public node simple_1cyl {
+    alias output __out: engine(
+        name: "Simple 1-Cylinder",
+        starter_torque: 50 * units.lb_ft,
+        starter_speed: 500 * units.rpm,
+        redline: 5000 * units.rpm,
+        simulation_frequency: 10000
+    )
+
+    crankshaft c0(
+        throw: 80 * units.mm / 2,
+        flywheel_mass: 5 * units.lb,
+        mass: 5 * units.lb,
+        friction_torque: 3.0 * units.lb_ft,
+        moment_of_inertia: 0.2,
+        position_x: 0.0,
+        position_y: 0.0,
+        tdc: constants.pi / 2
+    )
+
+    rod_journal rj0(angle: 0.0)
+    c0.add_rod_journal(rj0)
+
+    cylinder_bank_parameters bank_params(
+        angle: 0.0,
+        bore: 80 * units.mm,
+        deck_height: 200 * units.mm
+    )
+
+    c0.add_cylinder_bank(bank_params)
+
+    intake_parameters intake_params(
+        flow_rate: 0.0,
+        radius: 20 * units.mm
+    )
+
+    exhaust_system_parameters exhaust_params(
+        primary_length: 500 * units.mm,
+        primary_radius: 20 * units.mm,
+        collector_radius: 30 * units.mm,
+        collector_length: 200 * units.mm,
+        secondary_radius: 25 * units.mm,
+        secondary_length: 500 * units.mm,
+        tailpipe_radius: 30 * units.mm,
+        tailpipe_length: 1000 * units.mm,
+        atmosphere_volume: 100.0
+    )
+
+    piston_parameters piston(
+        mass: 100 * units.g,
+        compression_height: 1.0 * units.inch,
+        wrist_pin_position: 0.0,
+        displacement: 0.0
+    )
+
+    connecting_rod_parameters rod(
+        mass: 100 * units.g,
+        moment_of_inertia: 0.001,
+        length: 100 * units.mm,
+        center_of_mass: 0.5
+    )
+
+    rod_journal rj(angle: 0.0)
+
+    ignition_wire_parameters wire_params(
+        index: 0
+    )
+
+    bank_params.add_cylinder(
+        intake: intake_params,
+        exhaust_system: exhaust_params,
+        piston: piston,
+        connecting_rod: rod,
+        rod_journal: rj,
+        ignition_wire: wire_params,
+        sound_attenuation: 1.0,
+        primary_length: 0.0
+    )
+}
+
+set_engine(simple_1cyl())
