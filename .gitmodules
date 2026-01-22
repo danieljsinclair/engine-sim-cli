@@ -1,7 +1,0 @@
-# Note: The engine-sim submodule is currently at commit 6ff7ebd which includes
-# EngineSimSetIgnition and EngineSimSetStarterMotor functions needed by the CLI.
-# This commit is ahead of origin/master and needs to be pushed to GitHub before
-# this submodule will work for other developers.
-[submodule "engine-sim"]
-	path = engine-sim
-	url = https://github.com/danieljsinclair/engine-sim.git

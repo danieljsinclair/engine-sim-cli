@@ -9,23 +9,16 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(OpenAL REQUIRED)
 find_package(Threads REQUIRED)
 
-# Use engine-sim submodule (or local path for development)
-set(ENGINE_SIM_LOCAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/engine-sim" CACHE PATH "Path to local engine-sim")
+# Use local engine-sim-bridge path (sibling directory)
+# The bridge will pull in engine-sim as needed
+set(ENGINE_SIM_BRIDGE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../engine-sim-bridge" CACHE PATH "Path to engine-sim-bridge")
 
-if(EXISTS "${ENGINE_SIM_LOCAL_PATH}/CMakeLists.txt")
-    # Disable building GUI app
-    set(BUILD_ENGINE_SIM_APP OFF CACHE BOOL "Disable GUI application" FORCE)
-    add_subdirectory(${ENGINE_SIM_LOCAL_PATH} ${CMAKE_BINARY_DIR}/engine-sim EXCLUDE_FROM_ALL)
-else()
-    # Fetch engine-sim as a dependency (fallback)
-    include(FetchContent)
-    FetchContent_Declare(
-        engine-sim
-        GIT_REPOSITORY https://github.com/danieljsinclair/engine-sim.git
-        GIT_TAG master
-    )
-    FetchContent_MakeAvailable(engine-sim)
+if(NOT EXISTS "${ENGINE_SIM_BRIDGE_PATH}/CMakeLists.txt")
+    message(FATAL_ERROR "engine-sim-bridge not found at ${ENGINE_SIM_BRIDGE_PATH}")
 endif()
+
+# Add engine-sim-bridge (it will pull in engine-sim as a subdirectory)
+add_subdirectory(${ENGINE_SIM_BRIDGE_PATH} ${CMAKE_BINARY_DIR}/engine-sim-bridge EXCLUDE_FROM_ALL)
 
 # CLI executable
 add_executable(engine-sim-cli
@@ -42,6 +35,7 @@ target_link_libraries(engine-sim-cli
 target_include_directories(engine-sim-cli
     PRIVATE
     ${OPENAL_INCLUDE_DIRS}
+    ${ENGINE_SIM_BRIDGE_PATH}/include
 )
 
 # Installation
