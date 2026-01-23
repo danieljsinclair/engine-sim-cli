@@ -1,0 +1,6 @@
+[submodule "engine-sim"]
+	path = engine-sim
+	url = https://github.com/danieljsinclair/engine-sim.git
+[submodule "engine-sim-bridge"]
+	path = engine-sim-bridge
+	url = https://github.com/danieljsinclair/engine-sim-bridge.git

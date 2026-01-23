@@ -361,7 +361,7 @@ void printUsage(const char* progName) {
     std::cout << "Examples:\n";
     std::cout << "  " << progName << " --script v8_engine.mr --rpm 850 --duration 5\n";
     std::cout << "  " << progName << " --script v8_engine.mr --interactive --play\n";
-    std::cout << "  " << progName << " --script ../engine-sim/assets/main.mr --interactive\n";
+    std::cout << "  " << progName << " --script engine-sim/assets/main.mr --interactive\n";
     std::cout << "  " << progName << " --default-engine --rpm 2000 --play\n";
 }
 
@@ -514,7 +514,7 @@ int runSimulation(const CommandLineArgs& args) {
 
     // Resolve Piranha library path to absolute path
     try {
-        std::filesystem::path esPath("../engine-sim/es");
+        std::filesystem::path esPath("engine-sim/es");
         if (esPath.is_relative()) {
             esPath = std::filesystem::absolute(esPath);
         }
@@ -527,9 +527,9 @@ int runSimulation(const CommandLineArgs& args) {
     }
 
     if (args.useDefaultEngine) {
-        // Use main.mr from the main engine-sim repo - convert to absolute paths
-        std::filesystem::path defaultScriptPath("../engine-sim/assets/main.mr");
-        std::filesystem::path defaultAssetPath("../engine-sim/assets");
+        // Use main.mr from the engine-sim submodule
+        std::filesystem::path defaultScriptPath("engine-sim/assets/main.mr");
+        std::filesystem::path defaultAssetPath("engine-sim/es/sound-library");
 
         if (defaultScriptPath.is_relative()) {
             defaultScriptPath = std::filesystem::absolute(defaultScriptPath);
@@ -556,8 +556,17 @@ int runSimulation(const CommandLineArgs& args) {
             configPath = scriptPath.string();
 
             // Extract directory from config path for asset resolution
+            // For engine-sim scripts, find the es/sound-library directory
             if (scriptPath.has_parent_path()) {
-                assetBasePath = scriptPath.parent_path().string();
+                std::filesystem::path parentPath = scriptPath.parent_path();
+                // Check if we're in the assets directory - if so, use es/sound-library
+                if (parentPath.filename() == "assets") {
+                    // Script is in assets/, go up to engine-sim then to es/sound-library
+                    assetBasePath = (parentPath.parent_path() / "es" / "sound-library").string();
+                } else {
+                    // For other scripts, try to find es/sound-library relative to script
+                    assetBasePath = parentPath.string();
+                }
             } else {
                 // Use current directory if no parent path
                 assetBasePath = ".";
