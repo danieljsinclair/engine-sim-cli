@@ -9,15 +9,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(OpenAL REQUIRED)
 find_package(Threads REQUIRED)
 
-# Add engine-sim submodule (without GUI app, without bridge)
-set(BUILD_ENGINE_SIM_APP OFF CACHE BOOL "Build engine-sim GUI app" FORCE)
-set(BUILD_BRIDGE OFF CACHE BOOL "Build engine-sim-bridge from engine-sim" FORCE)
-set(DISCORD_ENABLED OFF CACHE BOOL "Enable Discord Rich Presence" FORCE)
-add_subdirectory(engine-sim ${CMAKE_BINARY_DIR}/engine-sim EXCLUDE_FROM_ALL)
-
-# Add engine-sim-bridge submodule (depends on engine-sim)
-# Set ENGINE_SIM_PATH for the bridge to find engine-sim
-set(ENGINE_SIM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/engine-sim" CACHE PATH "Path to engine-sim" FORCE)
+# Add engine-sim-bridge submodule
+# The bridge now handles engine-sim as its own nested submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge EXCLUDE_FROM_ALL)
 
 # CLI executable
