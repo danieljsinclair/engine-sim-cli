@@ -12,6 +12,7 @@ find_package(Threads REQUIRED)
 # Add engine-sim submodule (without GUI app, without bridge)
 set(BUILD_ENGINE_SIM_APP OFF CACHE BOOL "Build engine-sim GUI app" FORCE)
 set(BUILD_BRIDGE OFF CACHE BOOL "Build engine-sim-bridge from engine-sim" FORCE)
+set(DISCORD_ENABLED OFF CACHE BOOL "Enable Discord Rich Presence" FORCE)
 add_subdirectory(engine-sim ${CMAKE_BINARY_DIR}/engine-sim EXCLUDE_FROM_ALL)
 
 # Add engine-sim-bridge submodule (depends on engine-sim)
