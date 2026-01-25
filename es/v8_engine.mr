@@ -428,6 +428,8 @@ private node simple_transmission {
         .add_gear(0.8);
 }
 
-set_engine(simple_v8())
-set_vehicle(simple_vehicle())
-set_transmission(simple_transmission())
+public node main {
+    set_engine(simple_v8())
+    set_vehicle(simple_vehicle())
+    set_transmission(simple_transmission())
+}
