@@ -68,7 +68,7 @@ struct WaveHeader {
 
 class AudioPlayer {
 public:
-    AudioPlayer() : device(nullptr), context(nullptr), source(0), buffers{0}, currentBuffer(0) {}
+    AudioPlayer() : device(nullptr), context(nullptr), source(0), buffers{0}, useFloat32(false), initialFillCount(0) {}
 
     bool initialize(int sampleRate) {
         // Open device
@@ -87,6 +87,16 @@ public:
         }
 
         alcMakeContextCurrent(context);
+
+        // Check for AL_EXT_float32 extension for direct float playback
+        // This avoids quality loss from float->int16->float conversions
+        if (alIsExtensionPresent("AL_EXT_float32")) {
+            useFloat32 = true;
+            std::cout << "[Audio] Using AL_EXT_float32 for direct float32 playback\n";
+        } else {
+            useFloat32 = false;
+            std::cout << "[Audio] AL_EXT_float32 not available, using int16 fallback\n";
+        }
 
         // Generate buffers
         alGenBuffers(2, buffers);
@@ -136,32 +146,65 @@ public:
     bool playBuffer(const float* data, int frames, int sampleRate) {
         if (!source) return false;
 
-        // Convert float to int16 for OpenAL compatibility
-        std::vector<int16_t> int16Data(frames * 2);
-        for (int i = 0; i < frames * 2; ++i) {
-            float sample = std::max(-1.0f, std::min(1.0f, data[i]));
-            int16Data[i] = static_cast<int16_t>(sample * 32767.0f);
+        ALenum format;
+        const void* audioData;
+        size_t dataSize;
+
+        if (useFloat32) {
+            // Direct float playback - no conversion needed!
+            // This matches the WAV export path exactly
+            format = alGetEnumValue("AL_FORMAT_STEREO_FLOAT32");
+            audioData = data;
+            dataSize = frames * 2 * sizeof(float);  // Stereo
+        } else {
+            // Fallback: Convert float to int16 for OpenAL compatibility (stereo)
+            // This path has quality loss but works on all systems
+            std::vector<int16_t> int16Data(frames * 2);  // Stereo, so 2 samples per frame
+            for (int i = 0; i < frames * 2; ++i) {
+                float sample = std::max(-1.0f, std::min(1.0f, data[i]));
+                int16Data[i] = static_cast<int16_t>(sample * 32768.0f);
+            }
+            format = AL_FORMAT_STEREO16;
+            audioData = int16Data.data();
+            dataSize = frames * 2 * sizeof(int16_t);
         }
 
         // Check how many buffers have been processed
         ALint processed;
         alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
 
-        // Unqueue processed buffers
-        while (processed > 0) {
-            ALuint buf;
-            alSourceUnqueueBuffers(source, 1, &buf);
+        // Collect free buffers from unqueueing
+        ALuint freeBuffers[2];
+        int freeCount = 0;
+
+        while (processed > 0 && freeCount < 2) {
+            alSourceUnqueueBuffers(source, 1, &freeBuffers[freeCount]);
             processed--;
+            freeCount++;
         }
 
         // Check how many buffers are currently queued
         ALint queued;
         alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
 
-        // Only queue new buffer if we have space (max 2 buffers)
+        // Queue a buffer if we have space (max 2 buffers)
         if (queued < 2) {
-            ALuint buffer = buffers[currentBuffer];
-            alBufferData(buffer, AL_FORMAT_STEREO16, int16Data.data(), frames * 2 * sizeof(int16_t), sampleRate);
+            ALuint bufferToQueue;
+
+            if (freeCount > 0) {
+                // Use a buffer we just unqueued (it's guaranteed to be free)
+                bufferToQueue = freeBuffers[0];
+            } else if (initialFillCount < 2) {
+                // Initial fill: use buffers from our pool that haven't been queued yet
+                bufferToQueue = buffers[initialFillCount];
+                initialFillCount++;
+            } else {
+                // No free buffers available and initial fill complete
+                // Skip this update, we'll catch up on the next frame
+                return true;
+            }
+
+            alBufferData(bufferToQueue, format, audioData, dataSize, sampleRate);
 
             ALenum error = alGetError();
             if (error != AL_NO_ERROR) {
@@ -169,15 +212,13 @@ public:
                 return false;
             }
 
-            alSourceQueueBuffers(source, 1, &buffer);
+            alSourceQueueBuffers(source, 1, &bufferToQueue);
 
             error = alGetError();
             if (error != AL_NO_ERROR) {
                 std::cerr << "OpenAL Error queuing buffers: " << error << "\n";
                 return false;
             }
-
-            currentBuffer = (currentBuffer + 1) % 2;
         }
 
         // Start playback if not already playing
@@ -202,12 +243,26 @@ public:
         }
     }
 
+    // Wait for all buffers to finish playing
+    void waitForCompletion() {
+        if (!source) return;
+
+        ALint state;
+        ALint processed;
+        do {
+            alGetSourcei(source, AL_SOURCE_STATE, &state);
+            // Check if all buffers are processed (audio finished playing)
+            alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
+        } while (state == AL_PLAYING || processed < 2);  // Wait until done
+    }
+
 private:
     ALCdevice* device;
     ALCcontext* context;
     ALuint source;
     ALuint buffers[2];
-    int currentBuffer;
+    bool useFloat32;  // True if AL_EXT_float32 is available
+    int initialFillCount;  // Number of buffers initially filled (0, 1, or 2)
 };
 
 // ============================================================================
@@ -361,7 +416,7 @@ void printUsage(const char* progName) {
     std::cout << "Examples:\n";
     std::cout << "  " << progName << " --script v8_engine.mr --rpm 850 --duration 5\n";
     std::cout << "  " << progName << " --script v8_engine.mr --interactive --play\n";
-    std::cout << "  " << progName << " --script engine-sim/assets/main.mr --interactive\n";
+    std::cout << "  " << progName << " --script engine-sim-bridge/engine-sim/assets/main.mr --interactive\n";
     std::cout << "  " << progName << " --default-engine --rpm 2000 --play\n";
 }
 
@@ -484,6 +539,7 @@ int runSimulation(const CommandLineArgs& args) {
     const int channels = 2;
     const double updateInterval = 1.0 / 60.0;
     const int framesPerUpdate = sampleRate / 60;
+    const int chunkSize = sampleRate;  // Queue in 1-second chunks (like sine wave test)
 
     // Configure simulator
     EngineSimConfig config = {};
@@ -514,7 +570,7 @@ int runSimulation(const CommandLineArgs& args) {
 
     // Resolve Piranha library path to absolute path
     try {
-        std::filesystem::path esPath("engine-sim/es");
+        std::filesystem::path esPath("engine-sim-bridge/engine-sim/es");
         if (esPath.is_relative()) {
             esPath = std::filesystem::absolute(esPath);
         }
@@ -528,8 +584,10 @@ int runSimulation(const CommandLineArgs& args) {
 
     if (args.useDefaultEngine) {
         // Use main.mr from the engine-sim submodule
-        std::filesystem::path defaultScriptPath("engine-sim/assets/main.mr");
-        std::filesystem::path defaultAssetPath("engine-sim/es/sound-library");
+        std::filesystem::path defaultScriptPath("engine-sim-bridge/engine-sim/assets/main.mr");
+        // Note: The impulse response filenames already include "es/sound-library/" prefix,
+        // so assetBasePath should point to the parent directory (engine-sim-bridge/engine-sim)
+        std::filesystem::path defaultAssetPath("engine-sim-bridge/engine-sim");
 
         if (defaultScriptPath.is_relative()) {
             defaultScriptPath = std::filesystem::absolute(defaultScriptPath);
@@ -592,11 +650,10 @@ int runSimulation(const CommandLineArgs& args) {
     std::cout << "[2/5] Engine configuration loaded: " << configPath << "\n";
     std::cout << "[2.5/5] Impulse responses loaded automatically\n";
 
-    // Start audio thread first
-    result = EngineSimStartAudioThread(handle);
-    if (result != ESIM_SUCCESS) {
-        std::cerr << "WARNING: Failed to start audio thread\n";
-    }
+    // NOTE: Do NOT start the audio thread when using synchronous rendering (EngineSimRender)
+    // The audio thread is for GUI applications that use asynchronous audio callbacks.
+    // CLI applications use synchronous rendering from the main thread.
+    // Starting the audio thread would cause a race condition with EngineSimRender().
 
     // Auto-enable ignition so the engine can run
     EngineSimSetIgnition(handle, 1);
@@ -606,7 +663,7 @@ int runSimulation(const CommandLineArgs& args) {
         std::cout << "[3/5] Ignition enabled (ready for start) - Press 'S' for starter motor\n";
     }
 
-    std::cout << "[4/5] Audio thread started\n";
+    std::cout << "[4/5] Using synchronous audio rendering (no audio thread)\n";
 
     // Initialize audio player if requested
     AudioPlayer* audioPlayer = nullptr;
@@ -624,13 +681,15 @@ int runSimulation(const CommandLineArgs& args) {
     }
 
     // Setup recording buffer
-    // In interactive mode without output, we only need a small buffer for real-time playback
-    // In non-interactive mode or with output file, we need the full duration buffer
-    const int totalFrames = (args.interactive && !args.outputWav) ?
-        (sampleRate / 60) :  // Single update buffer for interactive-only mode
-        (static_cast<int>(args.duration * sampleRate));
-    const int totalSamples = totalFrames * channels;
+    // For smooth audio: allocate full duration buffer, write sequentially (like sine wave test)
+    const int bufferFrames = static_cast<int>(args.duration * sampleRate);
+    const int totalSamples = bufferFrames * channels;
     std::vector<float> audioBuffer(totalSamples);
+
+    // Audio accumulation for smooth playback - track total frames rendered
+    int framesRendered = 0;  // Total frames rendered (for both WAV and playback)
+    int accumulationOffset = 0;  // Frames accumulated since last chunk queue
+    // chunkSize is already declared at function scope (1 second)
 
     // Initialize controller
     RPMController rpmController;
@@ -665,7 +724,7 @@ int runSimulation(const CommandLineArgs& args) {
 
     // Main simulation loop
     double currentTime = 0.0;
-    int framesRendered = 0;
+    int framesProcessed = 0;  // For progress tracking
     int lastProgress = 0;
     double throttle = 0.0;
 
@@ -716,7 +775,11 @@ int runSimulation(const CommandLineArgs& args) {
 
     currentTime = 0.0;
 
-    while ((!args.interactive && currentTime < args.duration && framesRendered < totalFrames) || (args.interactive && g_running.load())) {
+    // CRITICAL: Enable starter motor to start the engine!
+    // Without this, the engine never cranks and never generates audio
+    EngineSimSetStarterMotor(handle, 1);
+
+    while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
         // Get current stats
         EngineSimStats stats = {};
         EngineSimGetStats(handle, &stats);
@@ -851,30 +914,49 @@ int runSimulation(const CommandLineArgs& args) {
 
         // In non-interactive mode, check buffer limits
         if (!args.interactive) {
-            framesToRender = std::min(framesPerUpdate, totalFrames - framesRendered);
+            int totalExpectedFrames = static_cast<int>(args.duration * sampleRate);
+            framesToRender = std::min(framesPerUpdate, totalExpectedFrames - framesProcessed);
         }
 
         if (framesToRender > 0) {
             int samplesWritten = 0;
-            float* writePtr = audioBuffer.data();
 
-            // For interactive mode without output, always write to start of buffer
-            // For non-interactive mode or with output, append to buffer
-            if (!args.interactive || args.outputWav) {
-                writePtr = audioBuffer.data() + framesRendered * channels;
-            }
+            // CRITICAL: Always write sequentially to the buffer (like sine wave test)
+            // This prevents overwriting previously rendered audio
+            float* writePtr = audioBuffer.data() + framesRendered * channels;
 
             result = EngineSimRender(handle, writePtr, framesToRender, &samplesWritten);
 
             if (result == ESIM_SUCCESS && samplesWritten > 0) {
-                // Only track frames if we're saving to file or in non-interactive mode
-                if (!args.interactive || args.outputWav) {
-                    framesRendered += samplesWritten;
-                }
+                // Update counters
+                framesRendered += samplesWritten;
+                framesProcessed += samplesWritten;
 
-                // Play audio in real-time
-                if (audioPlayer) {
-                    audioPlayer->playBuffer(writePtr, samplesWritten, sampleRate);
+                // Queue audio in chunks for real-time playback (like sine wave test)
+                if (audioPlayer && !args.outputWav) {
+                    // Check if we've accumulated enough frames for a chunk
+                    if (framesRendered >= chunkSize) {
+                        // Calculate how many complete chunks we can queue
+                        int chunksToQueue = framesRendered / chunkSize;
+
+                        for (int i = 0; i < chunksToQueue; i++) {
+                            int chunkOffset = i * chunkSize;
+                            if (!audioPlayer->playBuffer(audioBuffer.data() + chunkOffset * channels,
+                                                        chunkSize, sampleRate)) {
+                                std::cerr << "WARNING: Failed to queue audio chunk\n";
+                            }
+                        }
+
+                        // Keep any remaining frames that don't form a complete chunk
+                        int remainingFrames = framesRendered % chunkSize;
+                        if (remainingFrames > 0) {
+                            // Move remaining frames to start of buffer
+                            std::memmove(audioBuffer.data(),
+                                       audioBuffer.data() + (framesRendered - remainingFrames) * channels,
+                                       remainingFrames * channels * sizeof(float));
+                        }
+                        framesRendered = remainingFrames;
+                    }
                 }
             }
         }
@@ -885,15 +967,21 @@ int runSimulation(const CommandLineArgs& args) {
         if (args.interactive) {
             displayHUD(stats.currentRPM, throttle, interactiveTargetRPM, stats);
         } else {
-            int progress = static_cast<int>(framesRendered * 100 / totalFrames);
+            int totalExpectedFrames = static_cast<int>(args.duration * sampleRate);
+            int progress = static_cast<int>(framesProcessed * 100 / totalExpectedFrames);
             if (progress != lastProgress && progress % 10 == 0) {
-                std::cout << "  Progress: " << progress << "% (" << framesRendered << " frames)\r" << std::flush;
+                std::cout << "  Progress: " << progress << "% (" << framesProcessed << " frames)\r" << std::flush;
                 lastProgress = progress;
             }
         }
     }
 
     std::cout << "\n\nSimulation complete!\n";
+
+    // Queue any remaining audio chunk
+    if (audioPlayer && framesRendered > 0 && !args.outputWav) {
+        audioPlayer->playBuffer(audioBuffer.data(), framesRendered, sampleRate);
+    }
 
     // Cleanup
     if (keyboardInput) {
@@ -934,7 +1022,8 @@ int runSimulation(const CommandLineArgs& args) {
         wavFile.write(reinterpret_cast<const char*>(audioBuffer.data()), framesRendered * channels * sizeof(float));
         wavFile.close();
 
-        std::cout << "Done! Wrote " << framesRendered * channels << " samples\n";
+        std::cout << "Done! Wrote " << framesRendered * channels << " samples ("
+                  << framesRendered << " frames, " << args.duration << " seconds)\n";
     }
 
     return 0;
