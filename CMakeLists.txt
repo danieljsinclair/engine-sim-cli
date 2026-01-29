@@ -13,6 +13,17 @@ find_package(Threads REQUIRED)
 # The bridge now handles engine-sim as its own nested submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge EXCLUDE_FROM_ALL)
 
+# Sine wave generator library (header-only for simplicity)
+add_library(sine-wave-generator
+    src/sine_wave_generator.cpp
+    src/sine_wave_generator.h
+)
+
+target_include_directories(sine-wave-generator
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/src
+)
+
 # CLI executable
 add_executable(engine-sim-cli
     src/engine_sim_cli.cpp
@@ -21,6 +32,7 @@ add_executable(engine-sim-cli
 target_link_libraries(engine-sim-cli
     PRIVATE
     engine-sim-bridge
+    sine-wave-generator
     ${OPENAL_LIBRARY}
     Threads::Threads
 )

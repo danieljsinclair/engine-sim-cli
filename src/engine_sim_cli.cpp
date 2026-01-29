@@ -9,6 +9,7 @@
 // - WAV file export
 
 #include "engine_sim_bridge.h"
+#include "sine_wave_generator.h"
 
 #include <iostream>
 #include <fstream>
@@ -187,7 +188,7 @@ public:
         ALint queued;
         alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
 
-        // Queue a buffer if we have space (max 2 buffers)
+        // Queue a buffer if we have space
         if (queued < 2) {
             ALuint bufferToQueue;
 
@@ -200,7 +201,7 @@ public:
                 initialFillCount++;
             } else {
                 // No free buffers available and initial fill complete
-                // Skip this update, we'll catch up on the next frame
+                // No free buffers available and initial fill complete
                 return true;
             }
 
@@ -253,7 +254,7 @@ public:
             alGetSourcei(source, AL_SOURCE_STATE, &state);
             // Check if all buffers are processed (audio finished playing)
             alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
-        } while (state == AL_PLAYING || processed < 2);  // Wait until done
+        } while (state == AL_PLAYING || processed < 2);
     }
 
 private:
@@ -261,8 +262,8 @@ private:
     ALCcontext* context;
     ALuint source;
     ALuint buffers[2];
-    bool useFloat32;  // True if AL_EXT_float32 is available
-    int initialFillCount;  // Number of buffers initially filled (0, 1, or 2)
+    bool useFloat32;
+    int initialFillCount;
 };
 
 // ============================================================================
@@ -322,7 +323,7 @@ private:
 
 class RPMController {
 public:
-    RPMController() : targetRPM(0), kp(2.0), integral(0), ki(0.2), lastError(0), firstUpdate(true) {}
+    RPMController() : targetRPM(0), kp(0.8), integral(0), ki(0.05), lastError(0), firstUpdate(true) {}
 
     void setTargetRPM(double rpm) {
         targetRPM = rpm;
@@ -343,8 +344,8 @@ public:
             firstUpdate = false;
         }
 
-        // Allow larger integral term for better control
-        integral = std::max(-500.0, std::min(500.0, integral + error * dt));
+        // Reduce integral term to prevent windup
+        integral = std::max(-100.0, std::min(100.0, integral + error * dt));
         double iTerm = integral * ki;
 
         // D-term - reduce to prevent overshoot
@@ -391,6 +392,7 @@ struct CommandLineArgs {
     bool interactive = false;
     bool playAudio = false;
     bool useDefaultEngine = false;
+    bool sineMode = false;  // Generate sine wave test tone instead of engine audio
 };
 
 void printUsage(const char* progName) {
@@ -400,24 +402,30 @@ void printUsage(const char* progName) {
     std::cout << "Options:\n";
     std::cout << "  --script <path>      Path to engine .mr configuration file\n";
     std::cout << "  --rpm <value>        Target RPM to maintain (default: auto)\n";
-    std::cout << "  --load <0-100>       Throttle load percentage (default: auto)\n";
-    std::cout << "  --interactive        Enable interactive keyboard control\n";
+    std::cout << "  --load <0-100>       FIXED throttle load percentage (ignored in interactive mode)\n";
+    std::cout << "  --interactive        Enable interactive keyboard control (overrides --load)\n";
     std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
-    std::cout << "  --duration <seconds> Duration in seconds (default: 3.0)\n";
-    std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n\n";
+    std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
+    std::cout << "  --output <path>      Output WAV file path\n";
+    std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
+    std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n\n";
+    std::cout << "NOTES:\n";
+    std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
+    std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
+    std::cout << "  Use --rpm for RPM control mode (throttle auto-adjusts)\n\n";
     std::cout << "Interactive Controls:\n";
     std::cout << "  A                      Toggle ignition on/off (starts ON)\n";
     std::cout << "  S                      Toggle starter motor on/off\n";
     std::cout << "  UP/DOWN Arrows or K/J  Increase/decrease throttle\n";
-    std::cout << "  W                      Increase target RPM\n";
+    std::cout << "  W                      Increase throttle\n";
     std::cout << "  SPACE                  Apply brake\n";
     std::cout << "  R                      Reset to idle\n";
     std::cout << "  Q/ESC                  Quit\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << progName << " --script v8_engine.mr --rpm 850 --duration 5\n";
+    std::cout << "  " << progName << " --script v8_engine.mr --rpm 850 --duration 5 --output output.wav\n";
     std::cout << "  " << progName << " --script v8_engine.mr --interactive --play\n";
-    std::cout << "  " << progName << " --script engine-sim-bridge/engine-sim/assets/main.mr --interactive\n";
-    std::cout << "  " << progName << " --default-engine --rpm 2000 --play\n";
+    std::cout << "  " << progName << " --script engine-sim-bridge/engine-sim/assets/main.mr --interactive --output recording.wav\n";
+    std::cout << "  " << progName << " --default-engine --rpm 2000 --play --output engine.wav\n";
 }
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
@@ -466,6 +474,16 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         else if (arg == "--default-engine") {
             args.useDefaultEngine = true;
         }
+        else if (arg == "--output") {
+            if (++i >= argc) {
+                std::cerr << "ERROR: --output requires a path\n";
+                return false;
+            }
+            args.outputWav = argv[i];
+        }
+        else if (arg == "--sine") {
+            args.sineMode = true;
+        }
         else if (args.useDefaultEngine && args.outputWav == nullptr) {
             // When using default engine, first positional arg is output file
             args.outputWav = argv[i];
@@ -488,10 +506,10 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         args.engineConfig = "(default engine)";
     }
 
-    // Engine config is required, but output WAV is optional (e.g., for interactive mode)
-    if (args.engineConfig == nullptr) {
+    // Engine config is required unless in sine mode
+    if (args.engineConfig == nullptr && !args.sineMode) {
         std::cerr << "ERROR: Engine configuration file is required\n";
-        std::cerr << "       Use --script <path> or provide positional argument\n\n";
+        std::cerr << "       Use --script <path>, --sine, or provide positional argument\n\n";
         printUsage(argv[0]);
         return false;
     }
@@ -539,7 +557,108 @@ int runSimulation(const CommandLineArgs& args) {
     const int channels = 2;
     const double updateInterval = 1.0 / 60.0;
     const int framesPerUpdate = sampleRate / 60;
-    const int chunkSize = sampleRate;  // Queue in 1-second chunks (like sine wave test)
+    const int chunkSize = sampleRate;  // Queue in 1-second chunks (like sine wave test) for smooth playback
+
+    // ============================================================================
+    // SINE MODE: Generate pure sine wave test tone (no engine simulation)
+    // ============================================================================
+    if (args.sineMode) {
+        std::cout << "\n=== SINE WAVE TEST MODE ===\n";
+        std::cout << "Generating 440Hz sine wave test tone\n";
+        std::cout << "This bypasses all engine simulation to test the audio path\n\n";
+
+        // Configure sine wave generator
+        SineWaveConfig config;
+        config.frequency = 440.0;       // A4 note
+        config.duration = args.duration;
+        config.amplitude = 0.5;         // 50% volume
+        config.sampleRate = sampleRate;
+        config.channels = channels;
+
+        // Generate the sine wave
+        std::cout << "[Generating sine wave audio...]\n";
+        std::vector<float> audioBuffer;
+        generateSineWave(audioBuffer, config);
+        std::cout << "[Generated " << audioBuffer.size() / channels << " frames ("
+                  << config.duration << " seconds)]\n\n";
+
+        // Initialize audio player for real-time playback
+        AudioPlayer* audioPlayer = nullptr;
+        if (args.playAudio) {
+            audioPlayer = new AudioPlayer();
+            if (!audioPlayer->initialize(sampleRate)) {
+                std::cerr << "ERROR: Failed to initialize audio player\n";
+                delete audioPlayer;
+                return 1;
+            }
+            std::cout << "[Audio initialized for real-time playback]\n";
+        }
+
+        // Play audio in chunks (like the sine wave test does)
+        if (audioPlayer) {
+            const int chunkSize = sampleRate;  // 1 second chunks
+            int totalFrames = audioBuffer.size() / channels;
+            int framesPlayed = 0;
+
+            std::cout << "[Playing " << config.duration << " seconds of " << config.frequency << " Hz tone...]\n";
+
+            while (framesPlayed < totalFrames) {
+                int framesToQueue = std::min(chunkSize, totalFrames - framesPlayed);
+
+                if (!audioPlayer->playBuffer(audioBuffer.data() + framesPlayed * channels,
+                                            framesToQueue, sampleRate)) {
+                    std::cerr << "WARNING: Failed to queue audio chunk\n";
+                }
+
+                framesPlayed += framesToQueue;
+
+                // Display progress
+                int progress = static_cast<int>(framesPlayed * 100 / totalFrames);
+                std::cout << "  Progress: " << progress << "% (" << framesPlayed << " frames)\r" << std::flush;
+            }
+            std::cout << "\n";
+
+            // Wait for playback to complete
+            std::cout << "[Waiting for audio playback to finish...]\n";
+            audioPlayer->waitForCompletion();
+            std::cout << "[Playback complete]\n";
+        }
+
+        // Write to WAV file if requested
+        if (args.outputWav) {
+            std::cout << "[Writing to WAV file: " << args.outputWav << "]\n";
+            std::ofstream wavFile(args.outputWav, std::ios::binary);
+            if (!wavFile) {
+                std::cerr << "ERROR: Failed to create output file\n";
+                delete audioPlayer;
+                return 1;
+            }
+
+            int totalFrames = audioBuffer.size() / channels;
+            WaveHeader header = {};
+            header.numChannels = channels;
+            header.sampleRate = sampleRate;
+            header.byteRate = sampleRate * channels * sizeof(float);
+            header.blockAlign = channels * sizeof(float);
+            header.dataSize = audioBuffer.size() * sizeof(float);
+            header.fileSize = 36 + header.dataSize;
+
+            wavFile.write(reinterpret_cast<const char*>(&header), sizeof(WaveHeader));
+            wavFile.write(reinterpret_cast<const char*>(audioBuffer.data()), audioBuffer.size() * sizeof(float));
+            wavFile.close();
+
+            std::cout << "Done! Wrote " << audioBuffer.size() << " samples ("
+                      << totalFrames << " frames, " << config.duration << " seconds)\n";
+        }
+
+        // Cleanup
+        delete audioPlayer;
+        return 0;
+    }
+
+    // ============================================================================
+    // ENGINE SIMULATION MODE
+    // ============================================================================
 
     // Configure simulator
     EngineSimConfig config = {};
@@ -654,16 +773,15 @@ int runSimulation(const CommandLineArgs& args) {
     // The audio thread is for GUI applications that use asynchronous audio callbacks.
     // CLI applications use synchronous rendering from the main thread.
     // Starting the audio thread would cause a race condition with EngineSimRender().
+    std::cout << "[3/5] Using synchronous audio rendering (no audio thread)\n";
 
     // Auto-enable ignition so the engine can run
     EngineSimSetIgnition(handle, 1);
     if (!args.interactive) {
-        std::cout << "[3/5] Ignition enabled (auto)\n";
+        std::cout << "[4/5] Ignition enabled (auto)\n";
     } else {
-        std::cout << "[3/5] Ignition enabled (ready for start) - Press 'S' for starter motor\n";
+        std::cout << "[4/5] Ignition enabled (ready for start) - Press 'S' for starter motor\n";
     }
-
-    std::cout << "[4/5] Using synchronous audio rendering (no audio thread)\n";
 
     // Initialize audio player if requested
     AudioPlayer* audioPlayer = nullptr;
@@ -674,10 +792,10 @@ int runSimulation(const CommandLineArgs& args) {
             delete audioPlayer;
             audioPlayer = nullptr;
         } else {
-            std::cout << "[4/5] Audio player initialized\n";
+            std::cout << "[5/5] OpenAL audio player initialized\n";
         }
     } else {
-        std::cout << "[4/5] Audio playback disabled\n";
+        std::cout << "[5/5] Audio playback disabled (WAV export mode)\n";
     }
 
     // Setup recording buffer
@@ -708,6 +826,8 @@ int runSimulation(const CommandLineArgs& args) {
     KeyboardInput* keyboardInput = nullptr;
     double interactiveTargetRPM = args.targetRPM;
     double interactiveLoad = (args.targetLoad >= 0) ? args.targetLoad : 0.0;
+    double baselineLoad = interactiveLoad;  // Remember baseline for W key decay
+    bool wKeyPressed = false;  // Track if W is currently pressed
 
     if (args.interactive) {
         keyboardInput = new KeyboardInput();
@@ -715,7 +835,7 @@ int runSimulation(const CommandLineArgs& args) {
         std::cout << "Interactive Controls:\n";
         std::cout << "  A - Toggle ignition (starts ON)\n";
         std::cout << "  S - Toggle starter motor\n";
-        std::cout << "  W - Increase target RPM\n";
+        std::cout << "  W - Increase throttle\n";
         std::cout << "  SPACE - Brake\n";
         std::cout << "  R - Reset to idle\n";
         std::cout << "  J/K or Down/Up - Decrease/Increase load\n";
@@ -727,6 +847,7 @@ int runSimulation(const CommandLineArgs& args) {
     int framesProcessed = 0;  // For progress tracking
     int lastProgress = 0;
     double throttle = 0.0;
+    auto loopStartTime = std::chrono::steady_clock::now();
 
     // Initial warmup - use RPM controller if target is set
     const double warmupDuration = 2.0;  // Longer warmup for combustion
@@ -814,6 +935,7 @@ int runSimulation(const CommandLineArgs& args) {
             // Reset key state when no key is pressed (key is released)
             if (key < 0) {
                 lastKey = -1;
+                wKeyPressed = false;  // W key released, enable decay
             } else if (key != lastKey) {
                 // Only process if this is a new key press (not a repeat)
                 switch (key) {
@@ -824,19 +946,23 @@ int runSimulation(const CommandLineArgs& args) {
                         break;
                     case 'w':
                     case 'W':
-                        interactiveTargetRPM += 100;
-                        rpmController.setTargetRPM(interactiveTargetRPM);
+                        // Increase throttle (load) while pressed, will decay when released
+                        wKeyPressed = true;
+                        interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
+                        baselineLoad = interactiveLoad;  // Update baseline to current value
                         break;
                     case ' ':
                         // Brake
                         interactiveLoad = 0.0;
+                        baselineLoad = 0.0;  // Update baseline
                         break;
                     case 'r':
                     case 'R':
-                        // Reset to idle
-                        interactiveTargetRPM = 850;
+                        // Reset to idle - DISABLE RPM control to avoid pulsation
+                        interactiveTargetRPM = 0.0;  // Disable RPM control mode
                         interactiveLoad = 0.2;
-                        rpmController.setTargetRPM(interactiveTargetRPM);
+                        baselineLoad = 0.2;
+                        // Don't set RPM controller target - stay in load control mode
                         break;
                     case 'a':
                         // Toggle ignition module - only on initial press, not repeat
@@ -860,20 +986,30 @@ int runSimulation(const CommandLineArgs& args) {
                         break;
                     case 65:  // UP arrow (macOS) - also 'A' which we want to avoid
                         interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
+                        baselineLoad = interactiveLoad;  // Update baseline
                         break;
                     case 66:  // DOWN arrow (macOS)
                         interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
+                        baselineLoad = interactiveLoad;  // Update baseline
                         break;
                     case 'k':  // Alternative UP key
                     case 'K':
                         interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
+                        baselineLoad = interactiveLoad;  // Update baseline
                         break;
                     case 'j':  // Alternative DOWN key
                     case 'J':
                         interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
+                        baselineLoad = interactiveLoad;  // Update baseline
                         break;
                 }
                 lastKey = key;
+            }
+
+            // Apply W key decay when not pressed
+            if (!wKeyPressed && interactiveLoad > baselineLoad) {
+                // Gradually decay back to baseline (0.05 per frame at 60fps = 3% per second)
+                interactiveLoad = std::max(baselineLoad, interactiveLoad - 0.001);
             }
 
             // In interactive mode, use RPM control if target is set
@@ -906,8 +1042,10 @@ int runSimulation(const CommandLineArgs& args) {
         }
 
         // Update physics
+        auto simStart = std::chrono::steady_clock::now();
         EngineSimSetThrottle(handle, throttle);
         EngineSimUpdate(handle, updateInterval);
+        auto simEnd = std::chrono::steady_clock::now();
 
         // Render audio
         int framesToRender = framesPerUpdate;
@@ -925,9 +1063,14 @@ int runSimulation(const CommandLineArgs& args) {
             // This prevents overwriting previously rendered audio
             float* writePtr = audioBuffer.data() + framesRendered * channels;
 
+            auto renderStart = std::chrono::steady_clock::now();
+            // CRITICAL: Always use EngineSimRender for CLI (synchronous rendering)
+            // The audio thread is NOT used in CLI mode to avoid race conditions
             result = EngineSimRender(handle, writePtr, framesToRender, &samplesWritten);
+            auto renderEnd = std::chrono::steady_clock::now();
 
             if (result == ESIM_SUCCESS && samplesWritten > 0) {
+                // Removed timing diagnostics for cleaner output
                 // Update counters
                 framesRendered += samplesWritten;
                 framesProcessed += samplesWritten;
@@ -943,8 +1086,7 @@ int runSimulation(const CommandLineArgs& args) {
                             int chunkOffset = i * chunkSize;
                             if (!audioPlayer->playBuffer(audioBuffer.data() + chunkOffset * channels,
                                                         chunkSize, sampleRate)) {
-                                std::cerr << "WARNING: Failed to queue audio chunk\n";
-                            }
+                                }
                         }
 
                         // Keep any remaining frames that don't form a complete chunk
@@ -1048,7 +1190,12 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Configuration:\n";
-    std::cout << "  Engine: " << args.engineConfig << "\n";
+    if (args.sineMode) {
+        std::cout << "  Mode: Sine Wave Test (440Hz)\n";
+        std::cout << "  Engine: (bypassed - sine wave mode)\n";
+    } else {
+        std::cout << "  Engine: " << args.engineConfig << "\n";
+    }
     std::cout << "  Output: " << (args.outputWav ? args.outputWav : "(none - audio not saved)") << "\n";
     if (args.interactive) {
         std::cout << "  Duration: (interactive - runs until quit)\n";
