@@ -25,13 +25,9 @@
 #include <iomanip>
 #include <filesystem>
 
-#ifdef __APPLE__
-#include <OpenAL/al.h>
-#include <OpenAL/alc.h>
-#else
-#include <AL/al.h>
-#include <AL/alc.h>
-#endif
+#include <AudioUnit/AudioUnit.h>
+#include <AudioToolbox/AudioToolbox.h>
+#include <CoreAudio/CoreAudio.h>
 
 // Terminal handling for interactive mode
 #ifdef _WIN32
@@ -55,8 +51,8 @@ struct WaveHeader {
     uint32_t fmtLength = 16;
     uint16_t audioFormat = 3; // IEEE float
     uint16_t numChannels = 2;
-    uint32_t sampleRate = 48000;
-    uint32_t byteRate = 48000 * 2 * 4;
+    uint32_t sampleRate = 44100;  // Default to 44.1kHz (will be overridden)
+    uint32_t byteRate = 44100 * 2 * 4;  // Will be overridden
     uint16_t blockAlign = 2 * 4;
     uint16_t bitsPerSample = 32;
     char dataChunkMarker[4] = {'d', 'a', 't', 'a'};
@@ -64,206 +60,282 @@ struct WaveHeader {
 };
 
 // ============================================================================
-// OpenAL Audio Player
+// CoreAudio AudioUnit Player (macOS/iOS)
+// Real-time streaming audio with no queuing latency
 // ============================================================================
+
+// AudioUnit callback context - stores engine simulator handle for rendering
+struct AudioUnitContext {
+    EngineSimHandle engineHandle;         // Engine simulator handle
+    std::atomic<bool> isPlaying;          // Playback state
+    AudioUnitContext() : engineHandle(nullptr), isPlaying(false) {}
+};
 
 class AudioPlayer {
 public:
-    AudioPlayer() : device(nullptr), context(nullptr), source(0), buffers{0}, useFloat32(false), initialFillCount(0) {}
+    AudioPlayer() : audioUnit(nullptr), deviceID(0),
+                    isPlaying(false), sampleRate(0),
+                    context(nullptr) {
+    }
 
-    bool initialize(int sampleRate) {
-        // Open device
-        device = alcOpenDevice(nullptr);
-        if (!device) {
-            std::cerr << "ERROR: Failed to open OpenAL device\n";
+    ~AudioPlayer() {
+        cleanup();
+    }
+
+    bool initialize(int sr) {
+        sampleRate = sr;
+
+        // Create callback context
+        context = new AudioUnitContext();
+
+        // Set up audio format - PCM float32 stereo
+        AudioStreamBasicDescription format = {};
+        format.mSampleRate = sampleRate;
+        format.mFormatID = kAudioFormatLinearPCM;
+        format.mFormatFlags = kLinearPCMFormatFlagIsFloat | kLinearPCMFormatFlagIsPacked;
+        format.mBytesPerPacket = 2 * sizeof(float);  // Stereo
+        format.mFramesPerPacket = 1;
+        format.mBytesPerFrame = 2 * sizeof(float);   // Stereo float
+        format.mChannelsPerFrame = 2;                // Stereo
+        format.mBitsPerChannel = 8 * sizeof(float);
+
+        // Create AudioUnit (AUHAL - Audio Unit Hardware Abstraction Layer)
+        AudioComponentDescription desc = {};
+        desc.componentType = kAudioUnitType_Output;
+        desc.componentSubType = kAudioUnitSubType_DefaultOutput;
+        desc.componentManufacturer = kAudioUnitManufacturer_Apple;
+        desc.componentFlags = 0;
+        desc.componentFlagsMask = 0;
+
+        AudioComponent component = AudioComponentFindNext(nullptr, &desc);
+        if (!component) {
+            std::cerr << "ERROR: Failed to find AudioComponent\n";
+            delete context;
+            context = nullptr;
             return false;
         }
 
-        // Create context
-        context = alcCreateContext(device, nullptr);
-        if (!context) {
-            std::cerr << "ERROR: Failed to create OpenAL context\n";
-            alcCloseDevice(device);
+        OSStatus status = AudioComponentInstanceNew(component, &audioUnit);
+        if (status != noErr) {
+            std::cerr << "ERROR: Failed to create AudioUnit: " << status << "\n";
+            delete context;
+            context = nullptr;
             return false;
         }
 
-        alcMakeContextCurrent(context);
+        // Set format for output
+        status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioUnitProperty_StreamFormat,
+            kAudioUnitScope_Input,
+            0,
+            &format,
+            sizeof(format)
+        );
 
-        // Check for AL_EXT_float32 extension for direct float playback
-        // This avoids quality loss from float->int16->float conversions
-        if (alIsExtensionPresent("AL_EXT_float32")) {
-            useFloat32 = true;
-            std::cout << "[Audio] Using AL_EXT_float32 for direct float32 playback\n";
-        } else {
-            useFloat32 = false;
-            std::cout << "[Audio] AL_EXT_float32 not available, using int16 fallback\n";
-        }
-
-        // Generate buffers
-        alGenBuffers(2, buffers);
-        if (alGetError() != AL_NO_ERROR) {
-            std::cerr << "ERROR: Failed to generate OpenAL buffers\n";
+        if (status != noErr) {
+            std::cerr << "ERROR: Failed to set AudioUnit format: " << status << "\n";
             cleanup();
             return false;
         }
 
-        // Generate source
-        alGenSources(1, &source);
-        if (alGetError() != AL_NO_ERROR) {
-            std::cerr << "ERROR: Failed to generate OpenAL source\n";
+        // Set up render callback
+        AURenderCallbackStruct callbackStruct = {};
+        callbackStruct.inputProc = audioUnitCallback;
+        callbackStruct.inputProcRefCon = context;
+
+        status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioUnitProperty_SetRenderCallback,
+            kAudioUnitScope_Input,
+            0,
+            &callbackStruct,
+            sizeof(callbackStruct)
+        );
+
+        if (status != noErr) {
+            std::cerr << "ERROR: Failed to set AudioUnit callback: " << status << "\n";
             cleanup();
             return false;
         }
 
+        // Initialize AudioUnit
+        status = AudioUnitInitialize(audioUnit);
+        if (status != noErr) {
+            std::cerr << "ERROR: Failed to initialize AudioUnit: " << status << "\n";
+            cleanup();
+            return false;
+        }
+
+        // Get default output device for diagnostics
+        AudioObjectPropertyAddress propertyAddress = {
+            kAudioHardwarePropertyDefaultOutputDevice,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain
+        };
+
+        UInt32 deviceIDSize = sizeof(deviceID);
+        status = AudioObjectGetPropertyData(
+            kAudioObjectSystemObject,
+            &propertyAddress,
+            0,
+            nullptr,
+            &deviceIDSize,
+            &deviceID
+        );
+
+        if (status != noErr) {
+            std::cerr << "WARNING: Could not get audio device ID\n";
+        }
+
+        std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
+        std::cout << "[Audio] Real-time streaming mode (no queuing latency)\n";
         return true;
     }
 
     void cleanup() {
-        if (alIsSource(source)) {
-            alSourceStop(source);
-            alDeleteSources(1, &source);
-            source = 0;
-        }
-
-        for (int i = 0; i < 2; ++i) {
-            if (alIsBuffer(buffers[i])) {
-                alDeleteBuffers(1, &buffers[i]);
-                buffers[i] = 0;
-            }
+        if (audioUnit) {
+            AudioOutputUnitStop(audioUnit);
+            AudioUnitUninitialize(audioUnit);
+            AudioComponentInstanceDispose(audioUnit);
+            audioUnit = nullptr;
         }
 
         if (context) {
-            alcMakeContextCurrent(nullptr);
-            alcDestroyContext(context);
+            delete context;
             context = nullptr;
         }
 
-        if (device) {
-            alcCloseDevice(device);
-            device = nullptr;
+        isPlaying = false;
+    }
+
+    // Set the engine simulator handle for audio rendering
+    void setEngineHandle(EngineSimHandle handle) {
+        if (context) {
+            context->engineHandle = handle;
         }
     }
 
-    bool playBuffer(const float* data, int frames, int sampleRate) {
-        if (!source) return false;
+    // Start playback - begins real-time streaming
+    bool start() {
+        if (!audioUnit) return false;
 
-        ALenum format;
-        const void* audioData;
-        size_t dataSize;
-
-        if (useFloat32) {
-            // Direct float playback - no conversion needed!
-            // This matches the WAV export path exactly
-            format = alGetEnumValue("AL_FORMAT_STEREO_FLOAT32");
-            audioData = data;
-            dataSize = frames * 2 * sizeof(float);  // Stereo
-        } else {
-            // Fallback: Convert float to int16 for OpenAL compatibility (stereo)
-            // This path has quality loss but works on all systems
-            std::vector<int16_t> int16Data(frames * 2);  // Stereo, so 2 samples per frame
-            for (int i = 0; i < frames * 2; ++i) {
-                float sample = std::max(-1.0f, std::min(1.0f, data[i]));
-                int16Data[i] = static_cast<int16_t>(sample * 32768.0f);
-            }
-            format = AL_FORMAT_STEREO16;
-            audioData = int16Data.data();
-            dataSize = frames * 2 * sizeof(int16_t);
+        OSStatus status = AudioOutputUnitStart(audioUnit);
+        if (status != noErr) {
+            std::cerr << "ERROR: Failed to start AudioUnit: " << status << "\n";
+            return false;
         }
 
-        // Check how many buffers have been processed
-        ALint processed;
-        alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
-
-        // Collect free buffers from unqueueing
-        ALuint freeBuffers[2];
-        int freeCount = 0;
-
-        while (processed > 0 && freeCount < 2) {
-            alSourceUnqueueBuffers(source, 1, &freeBuffers[freeCount]);
-            processed--;
-            freeCount++;
+        isPlaying = true;
+        if (context) {
+            context->isPlaying.store(true);
         }
-
-        // Check how many buffers are currently queued
-        ALint queued;
-        alGetSourcei(source, AL_BUFFERS_QUEUED, &queued);
-
-        // Queue a buffer if we have space
-        if (queued < 2) {
-            ALuint bufferToQueue;
-
-            if (freeCount > 0) {
-                // Use a buffer we just unqueued (it's guaranteed to be free)
-                bufferToQueue = freeBuffers[0];
-            } else if (initialFillCount < 2) {
-                // Initial fill: use buffers from our pool that haven't been queued yet
-                bufferToQueue = buffers[initialFillCount];
-                initialFillCount++;
-            } else {
-                // No free buffers available and initial fill complete
-                // No free buffers available and initial fill complete
-                return true;
-            }
-
-            alBufferData(bufferToQueue, format, audioData, dataSize, sampleRate);
-
-            ALenum error = alGetError();
-            if (error != AL_NO_ERROR) {
-                std::cerr << "OpenAL Error buffering data: " << error << "\n";
-                return false;
-            }
-
-            alSourceQueueBuffers(source, 1, &bufferToQueue);
-
-            error = alGetError();
-            if (error != AL_NO_ERROR) {
-                std::cerr << "OpenAL Error queuing buffers: " << error << "\n";
-                return false;
-            }
-        }
-
-        // Start playback if not already playing
-        ALint state;
-        alGetSourcei(source, AL_SOURCE_STATE, &state);
-        if (state != AL_PLAYING) {
-            alSourcePlay(source);
-
-            ALenum error = alGetError();
-            if (error != AL_NO_ERROR) {
-                std::cerr << "OpenAL Error starting playback: " << error << "\n";
-                return false;
-            }
-        }
-
         return true;
     }
 
+    // Stop playback
     void stop() {
-        if (alIsSource(source)) {
-            alSourceStop(source);
+        if (audioUnit && isPlaying) {
+            AudioOutputUnitStop(audioUnit);
+            isPlaying = false;
+            if (context) {
+                context->isPlaying.store(false);
+            }
         }
     }
 
-    // Wait for all buffers to finish playing
-    void waitForCompletion() {
-        if (!source) return;
+    // In real-time streaming mode, we don't need playBuffer
+    // The callback is invoked automatically by hardware when it needs samples
+    bool playBuffer(const float* data, int frames, int sampleRate) {
+        // This method is kept for compatibility but does nothing in streaming mode
+        // The AudioUnit callback handles all audio rendering
+        if (!isPlaying) {
+            start();
+        }
+        return true;
+    }
 
-        ALint state;
-        ALint processed;
-        do {
-            alGetSourcei(source, AL_SOURCE_STATE, &state);
-            // Check if all buffers are processed (audio finished playing)
-            alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
-        } while (state == AL_PLAYING || processed < 2);
+    void waitForCompletion() {
+        // In streaming mode, we just wait a bit for final samples to play
+        if (isPlaying) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
     }
 
 private:
-    ALCdevice* device;
-    ALCcontext* context;
-    ALuint source;
-    ALuint buffers[2];
-    bool useFloat32;
-    int initialFillCount;
+    AudioUnit audioUnit;
+    AudioDeviceID deviceID;
+    bool isPlaying;
+    int sampleRate;
+    AudioUnitContext* context;
+
+    // Static callback for real-time audio rendering
+    // This is called by the audio hardware when it needs samples
+    // CRITICAL: Must be real-time safe (no allocations, no blocking, no locks)
+    static OSStatus audioUnitCallback(
+        void* refCon,
+        AudioUnitRenderActionFlags* actionFlags,
+        const AudioTimeStamp* timeStamp,
+        UInt32 busNumber,
+        UInt32 numberFrames,
+        AudioBufferList* ioData
+    ) {
+        AudioUnitContext* ctx = static_cast<AudioUnitContext*>(refCon);
+
+        // Check if we should be playing
+        if (!ctx || !ctx->isPlaying.load()) {
+            // Output silence
+            for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                AudioBuffer& buffer = ioData->mBuffers[i];
+                float* data = static_cast<float*>(buffer.mData);
+                std::memset(data, 0, buffer.mDataByteSize);
+            }
+            return noErr;
+        }
+
+        // Check if we have an engine handle
+        if (!ctx->engineHandle) {
+            // Output silence
+            for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                AudioBuffer& buffer = ioData->mBuffers[i];
+                float* data = static_cast<float*>(buffer.mData);
+                std::memset(data, 0, buffer.mDataByteSize);
+            }
+            return noErr;
+        }
+
+        // Render audio directly to hardware buffer (real-time streaming)
+        // This is the key difference from AudioQueue - no queuing, direct write
+        for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+            AudioBuffer& buffer = ioData->mBuffers[i];
+            float* data = static_cast<float*>(buffer.mData);
+
+            // Calculate how many frames we can write
+            UInt32 framesToWrite = numberFrames;
+            if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
+                framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
+            }
+
+            // Read from engine simulator audio buffer
+            // This is NON-BLOCKING - if there's not enough data, we get what's available
+            int32_t samplesRead = 0;
+            EngineSimResult result = EngineSimReadAudioBuffer(
+                ctx->engineHandle,
+                data,
+                framesToWrite,
+                &samplesRead
+            );
+
+            // If we didn't get enough samples, fill the rest with silence
+            if (samplesRead < static_cast<int32_t>(framesToWrite)) {
+                int silenceFrames = framesToWrite - samplesRead;
+                float* silenceStart = data + samplesRead * 2;  // Stereo
+                std::memset(silenceStart, 0, silenceFrames * 2 * sizeof(float));
+            }
+        }
+
+        return noErr;
+    }
 };
 
 // ============================================================================
@@ -553,11 +625,12 @@ void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimSt
 // ============================================================================
 
 int runSimulation(const CommandLineArgs& args) {
-    const int sampleRate = 48000;
+    // CRITICAL: Use 44100 Hz to match GUI (engine_sim_application.cpp line 169-177)
+    // GUI uses 44.1kHz for all audio synthesis parameters
+    const int sampleRate = 44100;
     const int channels = 2;
     const double updateInterval = 1.0 / 60.0;
     const int framesPerUpdate = sampleRate / 60;
-    const int chunkSize = sampleRate;  // Queue in 1-second chunks (like sine wave test) for smooth playback
 
     // ============================================================================
     // SINE MODE: Generate pure sine wave test tone (no engine simulation)
@@ -594,16 +667,18 @@ int runSimulation(const CommandLineArgs& args) {
             std::cout << "[Audio initialized for real-time playback]\n";
         }
 
-        // Play audio in chunks (like the sine wave test does)
+        // Play audio in streaming mode using AudioUnit callback
+        // For sine wave, we need to implement a different approach since we don't have an engine handle
+        // We'll use the traditional buffer approach for sine wave
         if (audioPlayer) {
-            const int chunkSize = sampleRate;  // 1 second chunks
+            const int playbackChunkSize = 512;  // ~11.6ms @ 44.1kHz
             int totalFrames = audioBuffer.size() / channels;
             int framesPlayed = 0;
 
             std::cout << "[Playing " << config.duration << " seconds of " << config.frequency << " Hz tone...]\n";
 
             while (framesPlayed < totalFrames) {
-                int framesToQueue = std::min(chunkSize, totalFrames - framesPlayed);
+                int framesToQueue = std::min(playbackChunkSize, totalFrames - framesPlayed);
 
                 if (!audioPlayer->playBuffer(audioBuffer.data() + framesPlayed * channels,
                                             framesToQueue, sampleRate)) {
@@ -769,11 +844,15 @@ int runSimulation(const CommandLineArgs& args) {
     std::cout << "[2/5] Engine configuration loaded: " << configPath << "\n";
     std::cout << "[2.5/5] Impulse responses loaded automatically\n";
 
-    // NOTE: Do NOT start the audio thread when using synchronous rendering (EngineSimRender)
-    // The audio thread is for GUI applications that use asynchronous audio callbacks.
-    // CLI applications use synchronous rendering from the main thread.
-    // Starting the audio thread would cause a race condition with EngineSimRender().
-    std::cout << "[3/5] Using synchronous audio rendering (no audio thread)\n";
+    // CRITICAL: Start the audio thread like GUI does (engine_sim_application.cpp line 509)
+    // This enables asynchronous audio rendering which eliminates delay
+    result = EngineSimStartAudioThread(handle);
+    if (result != ESIM_SUCCESS) {
+        std::cerr << "ERROR: Failed to start audio thread: " << EngineSimGetLastError(handle) << "\n";
+        EngineSimDestroy(handle);
+        return 1;
+    }
+    std::cout << "[3/5] Audio thread started (asynchronous rendering)\n";
 
     // Auto-enable ignition so the engine can run
     EngineSimSetIgnition(handle, 1);
@@ -792,7 +871,13 @@ int runSimulation(const CommandLineArgs& args) {
             delete audioPlayer;
             audioPlayer = nullptr;
         } else {
-            std::cout << "[5/5] OpenAL audio player initialized\n";
+            // Set engine handle for AudioUnit callback
+            audioPlayer->setEngineHandle(handle);
+            // Start real-time streaming immediately
+            if (!audioPlayer->start()) {
+                std::cerr << "WARNING: Failed to start audio playback\n";
+            }
+            std::cout << "[5/5] AudioUnit audio player initialized (real-time streaming)\n";
         }
     } else {
         std::cout << "[5/5] Audio playback disabled (WAV export mode)\n";
@@ -806,8 +891,7 @@ int runSimulation(const CommandLineArgs& args) {
 
     // Audio accumulation for smooth playback - track total frames rendered
     int framesRendered = 0;  // Total frames rendered (for both WAV and playback)
-    int accumulationOffset = 0;  // Frames accumulated since last chunk queue
-    // chunkSize is already declared at function scope (1 second)
+    // Note: AudioUnit streaming mode doesn't need chunking - callback handles it in real-time
 
     // Initialize controller
     RPMController rpmController;
@@ -847,6 +931,7 @@ int runSimulation(const CommandLineArgs& args) {
     int framesProcessed = 0;  // For progress tracking
     int lastProgress = 0;
     double throttle = 0.0;
+    double smoothedThrottle = 0.0;  // For throttle smoothing (matches GUI line 798)
     auto loopStartTime = std::chrono::steady_clock::now();
 
     // Initial warmup - use RPM controller if target is set
@@ -869,7 +954,9 @@ int runSimulation(const CommandLineArgs& args) {
                 warmupThrottle = 0.8;  // High throttle ready for starter disable
             }
 
-            EngineSimSetThrottle(handle, warmupThrottle);
+            // Apply smoothing even during warmup
+            smoothedThrottle = warmupThrottle * 0.5 + smoothedThrottle * 0.5;
+            EngineSimSetThrottle(handle, smoothedThrottle);
             EngineSimUpdate(handle, updateInterval);
             currentTime += updateInterval;
 
@@ -885,11 +972,16 @@ int runSimulation(const CommandLineArgs& args) {
             // Use higher throttle during warmup to ensure strong combustion development
             // At 0.5-0.7 throttle, we get 52-72% airflow which should provide enough
             // fuel/air mixture for the engine to develop combustion torque
+            double warmupThrottle;
             if (currentTime < 1.0) {
-                EngineSimSetThrottle(handle, 0.5);  // Medium throttle for initial start
+                warmupThrottle = 0.5;  // Medium throttle for initial start
             } else {
-                EngineSimSetThrottle(handle, 0.7);  // Higher throttle for combustion development
+                warmupThrottle = 0.7;  // Higher throttle for combustion development
             }
+
+            // Apply smoothing
+            smoothedThrottle = warmupThrottle * 0.5 + smoothedThrottle * 0.5;
+            EngineSimSetThrottle(handle, smoothedThrottle);
             currentTime += updateInterval;
         }
     }
@@ -1024,7 +1116,7 @@ int runSimulation(const CommandLineArgs& args) {
             throttle = rpmController.update(stats.currentRPM, updateInterval);
             if (framesRendered % 600 == 0) {  // Print every 10 seconds at 60fps for more frequent updates
                 std::cout << "RPM Control: " << stats.currentRPM << "/" << args.targetRPM
-                          << ", Throttle: " << std::fixed << std::setprecision(3) << throttle
+                          << ", Throttle: " << std::fixed << std::setprecision(3) << smoothedThrottle
                           << ", Load: " << static_cast<int>(stats.currentLoad * 100) << "%\n";
             }
         }
@@ -1043,7 +1135,13 @@ int runSimulation(const CommandLineArgs& args) {
 
         // Update physics
         auto simStart = std::chrono::steady_clock::now();
-        EngineSimSetThrottle(handle, throttle);
+
+        // CRITICAL: Apply throttle smoothing like GUI (engine_sim_application.cpp line 798)
+        // This prevents square-toothed aggressive noise changes
+        // Formula: smoothed = target * 0.5 + smoothed * 0.5
+        smoothedThrottle = throttle * 0.5 + smoothedThrottle * 0.5;
+
+        EngineSimSetThrottle(handle, smoothedThrottle);
         EngineSimUpdate(handle, updateInterval);
         auto simEnd = std::chrono::steady_clock::now();
 
@@ -1059,47 +1157,31 @@ int runSimulation(const CommandLineArgs& args) {
         if (framesToRender > 0) {
             int samplesWritten = 0;
 
-            // CRITICAL: Always write sequentially to the buffer (like sine wave test)
-            // This prevents overwriting previously rendered audio
-            float* writePtr = audioBuffer.data() + framesRendered * channels;
+            // CRITICAL FIX: Only read audio in main loop if NOT using AudioUnit streaming
+            // When args.playAudio is true, the AudioUnit callback (line 322-327) handles
+            // all audio reading. Reading here causes double-consumption and buffer underruns.
+            if (!args.playAudio) {
+                // CRITICAL: Always write sequentially to the buffer (like sine wave test)
+                // This prevents overwriting previously rendered audio
+                float* writePtr = audioBuffer.data() + framesRendered * channels;
 
-            auto renderStart = std::chrono::steady_clock::now();
-            // CRITICAL: Always use EngineSimRender for CLI (synchronous rendering)
-            // The audio thread is NOT used in CLI mode to avoid race conditions
-            result = EngineSimRender(handle, writePtr, framesToRender, &samplesWritten);
-            auto renderEnd = std::chrono::steady_clock::now();
+                auto renderStart = std::chrono::steady_clock::now();
+                // CRITICAL: Use EngineSimReadAudioBuffer when audio thread is running
+                // This matches GUI behavior (engine_sim_application.cpp line 274)
+                // The audio thread continuously fills the buffer, we just read from it
+                result = EngineSimReadAudioBuffer(handle, writePtr, framesToRender, &samplesWritten);
+                auto renderEnd = std::chrono::steady_clock::now();
 
-            if (result == ESIM_SUCCESS && samplesWritten > 0) {
-                // Removed timing diagnostics for cleaner output
-                // Update counters
-                framesRendered += samplesWritten;
-                framesProcessed += samplesWritten;
-
-                // Queue audio in chunks for real-time playback (like sine wave test)
-                if (audioPlayer && !args.outputWav) {
-                    // Check if we've accumulated enough frames for a chunk
-                    if (framesRendered >= chunkSize) {
-                        // Calculate how many complete chunks we can queue
-                        int chunksToQueue = framesRendered / chunkSize;
-
-                        for (int i = 0; i < chunksToQueue; i++) {
-                            int chunkOffset = i * chunkSize;
-                            if (!audioPlayer->playBuffer(audioBuffer.data() + chunkOffset * channels,
-                                                        chunkSize, sampleRate)) {
-                                }
-                        }
-
-                        // Keep any remaining frames that don't form a complete chunk
-                        int remainingFrames = framesRendered % chunkSize;
-                        if (remainingFrames > 0) {
-                            // Move remaining frames to start of buffer
-                            std::memmove(audioBuffer.data(),
-                                       audioBuffer.data() + (framesRendered - remainingFrames) * channels,
-                                       remainingFrames * channels * sizeof(float));
-                        }
-                        framesRendered = remainingFrames;
-                    }
+                if (result == ESIM_SUCCESS && samplesWritten > 0) {
+                    // Update counters
+                    framesRendered += samplesWritten;
+                    framesProcessed += samplesWritten;
                 }
+            } else {
+                // AudioUnit streaming mode: callback handles all audio rendering
+                // Just track progress for WAV export if needed
+                framesProcessed += framesToRender;
+                framesRendered += framesToRender;
             }
         }
 
@@ -1107,7 +1189,7 @@ int runSimulation(const CommandLineArgs& args) {
 
         // Display progress
         if (args.interactive) {
-            displayHUD(stats.currentRPM, throttle, interactiveTargetRPM, stats);
+            displayHUD(stats.currentRPM, smoothedThrottle, interactiveTargetRPM, stats);
         } else {
             int totalExpectedFrames = static_cast<int>(args.duration * sampleRate);
             int progress = static_cast<int>(framesProcessed * 100 / totalExpectedFrames);
@@ -1119,11 +1201,6 @@ int runSimulation(const CommandLineArgs& args) {
     }
 
     std::cout << "\n\nSimulation complete!\n";
-
-    // Queue any remaining audio chunk
-    if (audioPlayer && framesRendered > 0 && !args.outputWav) {
-        audioPlayer->playBuffer(audioBuffer.data(), framesRendered, sampleRate);
-    }
 
     // Cleanup
     if (keyboardInput) {

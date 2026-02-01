@@ -6,8 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Find required packages
-find_package(OpenAL REQUIRED)
 find_package(Threads REQUIRED)
+
+# Platform-specific audio libraries
+if(APPLE)
+    # macOS/iOS: Use CoreAudio AudioQueue (built-in framework)
+    set(AUDIO_LIBRARY "-framework AudioToolbox -framework CoreAudio -framework CoreFoundation")
+else()
+    message(FATAL_ERROR "engine-sim-cli only supports macOS with AudioQueue. Linux/Windows support has been removed.")
+endif()
 
 # Add engine-sim-bridge submodule
 # The bridge now handles engine-sim as its own nested submodule
@@ -33,13 +40,12 @@ target_link_libraries(engine-sim-cli
     PRIVATE
     engine-sim-bridge
     sine-wave-generator
-    ${OPENAL_LIBRARY}
+    ${AUDIO_LIBRARY}
     Threads::Threads
 )
 
 target_include_directories(engine-sim-cli
     PRIVATE
-    ${OPENAL_INCLUDE_DIRS}
     engine-sim-bridge/include
 )
 
