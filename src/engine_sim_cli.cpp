@@ -67,8 +67,16 @@ struct WaveHeader {
 // AudioUnit callback context - stores engine simulator handle for rendering
 struct AudioUnitContext {
     EngineSimHandle engineHandle;         // Engine simulator handle
+    const float* sineWaveBuffer;          // Pre-generated sine wave buffer (for sine mode)
+    size_t sineWaveTotalFrames;           // Total frames in sine wave buffer
+    std::atomic<size_t> sineWavePosition; // Current playback position in sine wave
     std::atomic<bool> isPlaying;          // Playback state
-    AudioUnitContext() : engineHandle(nullptr), isPlaying(false) {}
+    std::atomic<size_t> writePosition;    // Current write position in buffer
+    std::atomic<size_t> readPosition;     // Current read position in buffer
+    size_t bufferCapacity;                // Total buffer capacity (44100)
+    AudioUnitContext() : engineHandle(nullptr), sineWaveBuffer(nullptr),
+                        sineWaveTotalFrames(0), sineWavePosition(0), isPlaying(false),
+                        writePosition(0), readPosition(0), bufferCapacity(44100) {}
 };
 
 class AudioPlayer {
@@ -167,6 +175,11 @@ public:
             return false;
         }
 
+        // Initialize position tracking for buffer lead management
+        context->writePosition = 0;
+        context->readPosition = 0;
+        context->bufferCapacity = 44100;  // Match new buffer size
+
         // Get default output device for diagnostics
         AudioObjectPropertyAddress propertyAddress = {
             kAudioHardwarePropertyDefaultOutputDevice,
@@ -213,6 +226,15 @@ public:
     void setEngineHandle(EngineSimHandle handle) {
         if (context) {
             context->engineHandle = handle;
+        }
+    }
+
+    // Set sine wave buffer for playback (sine wave test mode)
+    void setSineWaveBuffer(const float* buffer, size_t totalFrames) {
+        if (context) {
+            context->sineWaveBuffer = buffer;
+            context->sineWaveTotalFrames = totalFrames;
+            context->sineWavePosition.store(0);
         }
     }
 
@@ -293,7 +315,58 @@ private:
             return noErr;
         }
 
-        // Check if we have an engine handle
+        // SINE WAVE MODE: Play pre-generated sine wave buffer
+        if (ctx->sineWaveBuffer && ctx->sineWaveTotalFrames > 0) {
+            // Diagnostic: Log first few callbacks to verify AudioUnit is calling us
+            static int sineCallbackCount = 0;
+            if (sineCallbackCount < 5) {
+                std::cout << "[SINE CALLBACK #" << ++sineCallbackCount << "] numberFrames=" << numberFrames << " mNumberBuffers=" << ioData->mNumberBuffers << std::endl;
+            }
+
+            for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                AudioBuffer& buffer = ioData->mBuffers[i];
+                float* data = static_cast<float*>(buffer.mData);
+
+                // Calculate how many frames we can write
+                UInt32 framesToWrite = numberFrames;
+                if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
+                    framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
+                }
+
+                // Get current position
+                size_t currentPos = ctx->sineWavePosition.load();
+                size_t framesAvailable = ctx->sineWaveTotalFrames - currentPos;
+                size_t framesToCopy = std::min(static_cast<size_t>(framesToWrite), framesAvailable);
+
+                // Copy samples from sine wave buffer
+                if (framesToCopy > 0) {
+                    std::memcpy(data, ctx->sineWaveBuffer + currentPos * 2,
+                               framesToCopy * 2 * sizeof(float));
+
+                    // Verify first few samples are non-zero
+                    if (sineCallbackCount <= 3 && framesToCopy > 0) {
+                        float firstSample = data[0];
+                        std::cout << "[SINE] Copied " << framesToCopy << " frames, first sample=" << firstSample << std::endl;
+                    }
+                }
+
+                // Fill rest with silence if we've reached end of buffer
+                if (framesToCopy < framesToWrite) {
+                    float* silenceStart = data + framesToCopy * 2;
+                    size_t silenceFrames = framesToWrite - framesToCopy;
+                    std::memset(silenceStart, 0, silenceFrames * 2 * sizeof(float));
+                    if (sineCallbackCount <= 3) {
+                        std::cout << "[SINE] End of buffer, filled " << silenceFrames << " frames with silence" << std::endl;
+                    }
+                }
+
+                // Update position with wraparound
+                ctx->sineWavePosition.store((currentPos + framesToCopy) % ctx->sineWaveTotalFrames);
+            }
+            return noErr;
+        }
+
+        // ENGINE SIMULATION MODE: Read from engine simulator
         if (!ctx->engineHandle) {
             // Output silence
             for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
@@ -304,8 +377,19 @@ private:
             return noErr;
         }
 
+        // Diagnostic counters - track timing to identify 3-4s crackling pattern
+        static int callbackCount = 0;
+        static int underrunCount = 0;
+        static auto firstCallbackTime = std::chrono::steady_clock::now();
+        static auto lastUnderrunTime = firstCallbackTime;
+
+        // Get current time relative to start
+        auto now = std::chrono::steady_clock::now();
+        auto elapsedSinceStart = std::chrono::duration_cast<std::chrono::milliseconds>(now - firstCallbackTime).count();
+
         // Render audio directly to hardware buffer (real-time streaming)
-        // This is the key difference from AudioQueue - no queuing, direct write
+        // AudioUnit uses a PULL model - hardware calls us when it needs samples
+        // We don't need buffer lead management like DirectSound (push model)
         for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
             AudioBuffer& buffer = ioData->mBuffers[i];
             float* data = static_cast<float*>(buffer.mData);
@@ -325,6 +409,39 @@ private:
                 framesToWrite,
                 &samplesRead
             );
+
+            // DIAGNOSTIC: Log ALL underruns with precise timing
+            if (samplesRead < static_cast<int32_t>(framesToWrite)) {
+                underrunCount++;
+                auto timeSinceLastUnderrun = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUnderrunTime).count();
+
+                size_t wp = ctx->writePosition.load();
+                size_t rp = ctx->readPosition.load();
+
+                // Use fprintf for thread-safe logging in real-time callback
+                // Log ALL underruns to identify the 3-4s pattern
+                fprintf(stderr, "[UNDERRUN #%d at %lldms] Req: %u, Got: %d, Deficit: %d, WPos: %zu, RPos: %zu, Gap: %zu, SinceLast: %lldms\n",
+                        underrunCount, elapsedSinceStart, framesToWrite, samplesRead,
+                        (int)(framesToWrite - samplesRead), wp, rp,
+                        (rp > wp) ? (rp - wp) : (wp - rp), timeSinceLastUnderrun);
+                fflush(stderr);
+
+                lastUnderrunTime = now;
+            }
+
+            // Update position tracking (for diagnostics only)
+            ctx->writePosition.store((ctx->writePosition.load() + samplesRead) % ctx->bufferCapacity);
+            ctx->readPosition.store((ctx->readPosition.load() + framesToWrite) % ctx->bufferCapacity);
+
+            // DIAGNOSTIC: Log buffer position more frequently to detect patterns
+            // Every 500 callbacks = ~5.5 seconds, should catch 3-4s pattern
+            if (++callbackCount % 500 == 0) {
+                size_t wp = ctx->writePosition.load();
+                size_t rp = ctx->readPosition.load();
+                fprintf(stderr, "[BUFFER POS] Time: %lldms, Callback #%d, Write: %zu, Read: %zu, Underruns: %d\n",
+                        elapsedSinceStart, callbackCount, wp, rp, underrunCount);
+                fflush(stderr);
+            }
 
             // If we didn't get enough samples, fill the rest with silence
             if (samplesRead < static_cast<int32_t>(framesToWrite)) {
@@ -644,7 +761,7 @@ int runSimulation(const CommandLineArgs& args) {
         SineWaveConfig config;
         config.frequency = 440.0;       // A4 note
         config.duration = args.duration;
-        config.amplitude = 0.5;         // 50% volume
+        config.amplitude = 0.9;         // 90% volume (increased for testing)
         config.sampleRate = sampleRate;
         config.channels = channels;
 
@@ -664,37 +781,41 @@ int runSimulation(const CommandLineArgs& args) {
                 delete audioPlayer;
                 return 1;
             }
-            std::cout << "[Audio initialized for real-time playback]\n";
-        }
 
-        // Play audio in streaming mode using AudioUnit callback
-        // For sine wave, we need to implement a different approach since we don't have an engine handle
-        // We'll use the traditional buffer approach for sine wave
-        if (audioPlayer) {
-            const int playbackChunkSize = 512;  // ~11.6ms @ 44.1kHz
+            // Set sine wave buffer for AudioUnit callback
             int totalFrames = audioBuffer.size() / channels;
-            int framesPlayed = 0;
+            audioPlayer->setSineWaveBuffer(audioBuffer.data(), totalFrames);
 
+            std::cout << "[Audio initialized for real-time playback]\n";
             std::cout << "[Playing " << config.duration << " seconds of " << config.frequency << " Hz tone...]\n";
+            std::cout << "[Press Ctrl+C to stop playback]\n";
 
-            while (framesPlayed < totalFrames) {
-                int framesToQueue = std::min(playbackChunkSize, totalFrames - framesPlayed);
-
-                if (!audioPlayer->playBuffer(audioBuffer.data() + framesPlayed * channels,
-                                            framesToQueue, sampleRate)) {
-                    std::cerr << "WARNING: Failed to queue audio chunk\n";
-                }
-
-                framesPlayed += framesToQueue;
-
-                // Display progress
-                int progress = static_cast<int>(framesPlayed * 100 / totalFrames);
-                std::cout << "  Progress: " << progress << "% (" << framesPlayed << " frames)\r" << std::flush;
-            }
-            std::cout << "\n";
+            // Start playback (callback will handle streaming from sine wave buffer)
+            audioPlayer->start();
 
             // Wait for playback to complete
-            std::cout << "[Waiting for audio playback to finish...]\n";
+            auto startTime = std::chrono::steady_clock::now();
+            bool playbackComplete = false;
+
+            while (!playbackComplete) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - startTime).count();
+
+                // Display progress
+                int progress = static_cast<int>(elapsed * 100 / config.duration);
+                if (progress > 100) progress = 100;
+                std::cout << "  Progress: " << progress << "% (" << elapsed << "s / " << config.duration << "s)\r" << std::flush;
+
+                // Check if playback is complete (with small buffer for safety)
+                if (elapsed >= config.duration + 1) {
+                    playbackComplete = true;
+                }
+            }
+
+            std::cout << "\n[Waiting for audio playback to finish...]\n";
+            audioPlayer->stop();
             audioPlayer->waitForCompletion();
             std::cout << "[Playback complete]\n";
         }
@@ -739,7 +860,7 @@ int runSimulation(const CommandLineArgs& args) {
     EngineSimConfig config = {};
     config.sampleRate = sampleRate;
     config.inputBufferSize = 1024;
-    config.audioBufferSize = 96000;
+    config.audioBufferSize = 44100;  // Match GUI - 1 second at 44.1kHz (was 96000)
     config.simulationFrequency = 10000;
     config.fluidSimulationSteps = 8;
     config.targetSynthesizerLatency = 0.05;

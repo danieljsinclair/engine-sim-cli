@@ -28,7 +28,8 @@ void generateSineWave(std::vector<float>& buffer, const SineWaveConfig& config) 
     }
 
     // Apply fade-in/fade-out to avoid clicks (10ms fade)
-    int fadeFrames = config.sampleRate / 100;
+    // NOTE: Reduced fade to 1ms to minimize silence at start
+    int fadeFrames = config.sampleRate / 1000;  // 1ms fade (was 100ms)
     if (fadeFrames > numFrames) {
         fadeFrames = numFrames;
     }
