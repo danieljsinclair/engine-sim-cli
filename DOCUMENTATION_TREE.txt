@@ -1,0 +1,144 @@
+AUDIO CRACKLE INVESTIGATION - DOCUMENTATION STRUCTURE
+====================================================
+
+START HERE
+│
+├── DOCUMENTATION_MASTER_INDEX.md ← Navigation hub (START HERE)
+│   ├── Quick Start Guide
+│   ├── Documentation Structure
+│   ├── Investigation Timeline
+│   └── Success Criteria
+│
+├── DOCUMENTATION_SUMMARY.md ← What was created
+│   ├── New Documentation Files Created
+│   ├── Current Status
+│   └── Next Steps
+│
+├── HANDOVER_TEST2.md ← Implementation guide (READ THIS FOR TEST 2)
+│   ├── Executive Summary
+│   ├── Root Cause (CONFIRMED)
+│   ├── Test 2 Implementation Plan
+│   ├── Code Changes Required
+│   ├── Expected Outcomes
+│   └── Success Criteria
+│
+├── TEST_INVESTIGATION_LOG.md ← Complete chronological test record
+│   ├── Test 1: Audio Thread Wakeup Timing Analysis ✅ COMPLETE
+│   │   ├── Problem Statement
+│   │   ├── Hypothesis 4
+│   │   ├── Code Changes
+│   │   ├── Build Result
+│   │   ├── Test Results
+│   │   ├── Diagnostics Collected
+│   │   ├── Analysis
+│   │   └── Next Step (Test 2)
+│   │
+│   └── Test 2: Fixed-Interval Rendering ⏳ PENDING
+│       ├── Problem Statement
+│       ├── Hypothesis
+│       ├── Code Changes (Planned)
+│       ├── Build Result (Pending)
+│       ├── Test Results (Pending)
+│       └── Analysis (Pending)
+│
+├── AUDIO_THEORIES_TRACKING.md ← All theories and evidence
+│   ├── CURRENT STATUS SUMMARY
+│   ├── Phase 2: Root Cause Identified ✅
+│   │   ├── Hypothesis 4 Statement
+│   │   ├── Test Implementation
+│   │   ├── Evidence Collected
+│   │   ├── Root Cause Analysis
+│   │   └── Next Steps
+│   │
+│   ├── Phase 1: Pull Model Position Hypothesis ❌ DISPROVEN
+│   ├── GUI vs CLI Comparison Table
+│   ├── Session 2025-02-03: User Testing
+│   ├── Theory: CLI Update Rate vs GUI Update Rate ❌ DISPROVEN
+│   ├── Theory: Synthesizer Output Discontinuities ✅ CONFIRMED
+│   ├── Theory: Buffer Lead Management ✅ IDENTIFIED
+│   └── [Historical theories...]
+│
+├── TEST1 Evidence and Analysis
+│   ├── TEST1_AUDIO_THREAD_WAKEUP_ANALYSIS.md
+│   │   ├── Executive Summary (Hypothesis 4: CONFIRMED)
+│   │   ├── Build Results
+│   │   ├── Test Results (Engine and Sine)
+│   │   ├── Critical Evidence Timeline
+│   │   ├── Root Cause Analysis
+│   │   └── Recommendations
+│   │
+│   ├── TEST1_EVIDENCE_SUMMARY.md
+│   │   ├── Test Configuration
+│   │   ├── Critical Evidence Collected
+│   │   ├── Data Files Generated
+│   │   └── Hypothesis Verification
+│   │
+│   ├── engine_test.log ← Raw test data (565 wakeups)
+│   └── sine_test.log ← Comparison test data (4 wakeups)
+│
+├── Historical Documentation (Background)
+│   ├── AUDIO_INVESTIGATION_HANDOVER.md ← Pre-Test 1 handover
+│   ├── AUDIO_DIAGNOSTIC_REPORT.md
+│   ├── AUDIO_FIX_IMPLEMENTATION_GUIDE.md
+│   ├── AUDIO_CRACKLING_FIX_REPORT.md
+│   ├── AUDIO_THEORY_SYNTHESIZER.md
+│   ├── DOCUMENTATION_INDEX.md (Old)
+│   ├── README_DOCUMENTATION.md
+│   └── [Other historical files...]
+│
+└── Code Files
+    ├── engine-sim-bridge/engine-sim/src/synthesizer.cpp
+    │   └── Lines 221-266: renderAudio() function
+    │       ├── Test 1: Added diagnostics ✅
+    │       └── Test 2: Implement fixed-interval rendering ⏳
+    │
+    ├── src/engine_sim_cli.cpp
+    └── engine-sim-bridge/engine-sim/src/engine_sim_application.cpp (GUI reference)
+
+====================================================
+INVESTIGATION STATUS
+====================================================
+
+Phase 1: Initial Investigation ✅ COMPLETE
+    - Ruled out 5+ common theories
+    - All diagnostics implemented
+    - Problem narrowed down
+
+Phase 2: Root Cause Identification ✅ COMPLETE
+    - Hypothesis 4 confirmed
+    - Audio thread timing unpredictability identified
+    - Evidence: 6ms to 1.2 seconds wakeup variation
+    - Burst writes: 1411 samples (3x normal)
+    - 18 discontinuities in 10 seconds
+
+Phase 3: Fix Implementation ⏳ PENDING
+    - Test 2: Fixed-Interval Rendering
+    - Implementation guide ready
+    - Code changes specified
+    - Awaiting implementation
+
+====================================================
+QUICK START FOR NEXT DEVELOPER
+====================================================
+
+1. Read DOCUMENTATION_MASTER_INDEX.md (5 min)
+2. Read HANDOVER_TEST2.md (10 min)
+3. Read TEST_INVESTIGATION_LOG.md - Test 1 entry (10 min)
+4. Implement Test 2 code changes (15 min)
+5. Build and test (5 min)
+6. Analyze results (15 min)
+7. Update documentation (10 min)
+
+Total time: ~1 hour to implement Test 2
+
+====================================================
+DOCUMENTATION PRINCIPLES
+====================================================
+
+✅ Update after EVERY attempt
+✅ Include FAILURES (they're progress)
+✅ SHOW EVIDENCE (code diffs, outputs, measurements)
+✅ NO SPECULATION (only what actually happened)
+✅ MARK RESOLUTION (when solved, document what worked)
+
+====================================================

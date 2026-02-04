@@ -1,0 +1,175 @@
+{
+  "tests": 29,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "EngineViewModelTest",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "InitializesToZero",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestEngineViewModel.cpp",
+          "line": 19
+        },
+        {
+          "name": "UpdateLoadsDataFromProvider",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestEngineViewModel.cpp",
+          "line": 25
+        },
+        {
+          "name": "HasChangedFlagWorks",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestEngineViewModel.cpp",
+          "line": 38
+        },
+        {
+          "name": "GetCylinderDataReturnsCorrectSize",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestEngineViewModel.cpp",
+          "line": 51
+        },
+        {
+          "name": "MetadataLoadedFromProvider",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestEngineViewModel.cpp",
+          "line": 60
+        },
+        {
+          "name": "UpdateCallbackIsCalled",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestEngineViewModel.cpp",
+          "line": 68
+        },
+        {
+          "name": "ManifoldPressureUpdates",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestEngineViewModel.cpp",
+          "line": 81
+        }
+      ]
+    },
+    {
+      "name": "GaugeViewModelTest",
+      "tests": 11,
+      "testsuite": [
+        {
+          "name": "DefaultRange",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 11
+        },
+        {
+          "name": "SetValueReturnsTrueOnFirstSet",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 16
+        },
+        {
+          "name": "SetValueReturnsFalseForSmallChanges",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 22
+        },
+        {
+          "name": "SetValueReturnsTrueForLargeChanges",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 28
+        },
+        {
+          "name": "SetValueClampsToRange",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 34
+        },
+        {
+          "name": "SetRangeChangesRange",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 44
+        },
+        {
+          "name": "SetRangeClampsCurrentValue",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 50
+        },
+        {
+          "name": "GetNormalizedValue",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 56
+        },
+        {
+          "name": "FormatValue",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 69
+        },
+        {
+          "name": "FormatValueWithDecimals",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 79
+        },
+        {
+          "name": "TitleAndUnit",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/viewmodels\/TestGaugeViewModel.cpp",
+          "line": 89
+        }
+      ]
+    },
+    {
+      "name": "CircularGaugeWidgetTest",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "RendersBasicGauge",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/widgets\/TestCircularGaugeWidget.cpp",
+          "line": 13
+        },
+        {
+          "name": "FluentInterface",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/widgets\/TestCircularGaugeWidget.cpp",
+          "line": 27
+        },
+        {
+          "name": "SetValueUpdatesGauge",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/widgets\/TestCircularGaugeWidget.cpp",
+          "line": 41
+        },
+        {
+          "name": "ValueClampingDoesNotCrash",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/widgets\/TestCircularGaugeWidget.cpp",
+          "line": 49
+        },
+        {
+          "name": "MultipleSetValueCalls",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/widgets\/TestCircularGaugeWidget.cpp",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "name": "DashboardIntegrationTest",
+      "tests": 6,
+      "testsuite": [
+        {
+          "name": "DashboardRenders",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/integration\/TestDashboardIntegration.cpp",
+          "line": 19
+        },
+        {
+          "name": "UpdateLoopDoesNotCrash",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/integration\/TestDashboardIntegration.cpp",
+          "line": 25
+        },
+        {
+          "name": "UpdateReturnsChangedFlag",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/integration\/TestDashboardIntegration.cpp",
+          "line": 36
+        },
+        {
+          "name": "MockDataProviderIntegration",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/integration\/TestDashboardIntegration.cpp",
+          "line": 45
+        },
+        {
+          "name": "DataProviderMetadataPropagation",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/integration\/TestDashboardIntegration.cpp",
+          "line": 59
+        },
+        {
+          "name": "SimulateOneSecond",
+          "file": "\/Users\/danielsinclair\/vscode\/engine-sim-cli\/engine-sim-tui\/tests\/integration\/TestDashboardIntegration.cpp",
+          "line": 66
+        }
+      ]
+    }
+  ]
+}

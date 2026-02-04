@@ -1,0 +1,104 @@
+================================================================================
+                    BUG FIX #3 RESULTS COMPARISON
+================================================================================
+
+FIX DESCRIPTION:
+- Reset convolution filter shift register at buffer boundaries
+- Location: endInputBlock() method after removing old samples
+- Theory: Filter state becomes "stale" when input buffer is modified
+
+BUILD RESULT: ✅ SUCCESS
+- Compiled without errors
+- All tests executed
+
+================================================================================
+                         DISCONTINUITY ANALYSIS
+================================================================================
+
+                    ENGINE MODE (Subaru EJ25 @ 1000 RPM)
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        Bug Fix #1    │         Bug Fix #3    │   CHANGE   │
+├──────────────────────────────────────┼───────────────────────┼────────────┤
+│ WRITE Discontinuities        │         ~25          │          377        │  +1408% 🔴│
+│ READ Discontinuities         │         ~60          │          488        │   +713% 🔴│
+│ Total Discontinuities        │         ~85          │          865        │   +917% 🔴│
+│ Buffer Availability (7.5s)   │       Unknown        │        4.9ms       │  CRITICAL 🔴│
+│ Underruns                    │       Unknown        │           3         │   HIGH 🔴 │
+└────────────────────────────────────────────────────────────────────────────┘
+
+                        SINE MODE (Test Signal)
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        Bug Fix #1    │         Bug Fix #3    │   CHANGE   │
+├──────────────────────────────────────┼───────────────────────┼────────────┤
+│ WRITE Discontinuities        │          0           │           0          │   NO CHANGE│
+│ READ Discontinuities         │          0           │           0          │   NO CHANGE│
+│ Total Discontinuities        │          0           │           0          │     PERFECT│
+│ Buffer Availability (7.5s)   │       Unknown        │       202.4ms       │    HEALTHY  │
+│ Underruns                    │       Unknown        │           1          │     LOW    │
+└────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+                         KEY FINDINGS
+================================================================================
+
+🔴 CRITICAL FAILURE: Engine mode discontinuities increased by 14x
+
+✅ Sine mode remains perfect (0 discontinuities)
+
+📊 BUFFER STARVATION EVIDENCE:
+   - Engine mode: 4.9ms available (starving)
+   - Sine mode: 202.4ms available (healthy)
+   - This suggests engine simulation can't keep up with real-time demands
+
+⚠️  UNDERRUNS:
+   - Engine mode: 3 underruns
+   - Sine mode: 1 underrun
+   - Correlation with discontinuities suggests timing is root cause
+
+================================================================================
+                    ROOT CAUSE ANALYSIS
+================================================================================
+
+PROPOSED THEORY (INCORRECT):
+❌ "Convolution filter shift register becomes stale when buffer is modified"
+❌ "Resetting filter state will maintain continuity"
+
+ACTUAL MECHANISM:
+✅ Convolution filter shift register maintains TEMPORAL HISTORY
+✅ Algorithm: y[n] = Σ(h[k] × x[n-k]) requires continuous input history
+✅ Reset destroys this history, creating ARTIFICIAL DISCONTINUITIES
+
+WHY FIX FAILED:
+1. Convolution requires SAMPLE-TO-SAMPLE continuity
+2. Shift register stores previous samples for convolution calculation
+3. Resetting makes every buffer boundary appear as a sudden jump
+4. Each reset creates multiple discontinuities (377 WRITE + 488 READ)
+
+================================================================================
+                    RECOMMENDATIONS
+================================================================================
+
+🚨 IMMEDIATE ACTION: REVERT THIS FIX
+   - Fix degrades audio quality by 14x
+   - Based on incorrect understanding of convolution
+
+📊 NEXT INVESTIGATION: BUFFER TIMING
+   - Engine mode shows severe buffer starvation (4.9ms)
+   - Sine mode shows healthy buffer (202ms)
+   - Root cause likely in engine simulation performance, not filter state
+
+🔬 HYPOTHESIS TO TEST:
+   - Engine simulation can't generate samples fast enough for real-time
+   - Buffer underruns cause actual discontinuities
+   - Convolution filter reset created ADDITIONAL artificial discontinuities
+
+================================================================================
+                    SUCCESS CRITERIA (NOT MET)
+================================================================================
+
+❌ Total discontinuities reduced: INCREASED from ~85 to 865
+❌ Target of 0 discontinuities: NOT ACHIEVED
+❌ Audio quality improvement: DEGRADED significantly
+❌ No regressions: MAJOR REGRESSION introduced
+
+================================================================================

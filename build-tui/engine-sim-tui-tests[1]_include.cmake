@@ -1,0 +1,5 @@
+if(EXISTS "/Users/danielsinclair/vscode/engine-sim-cli/build-tui/engine-sim-tui-tests[1]_tests.cmake")
+  include("/Users/danielsinclair/vscode/engine-sim-cli/build-tui/engine-sim-tui-tests[1]_tests.cmake")
+else()
+  add_test(engine-sim-tui-tests_NOT_BUILT engine-sim-tui-tests_NOT_BUILT)
+endif()
