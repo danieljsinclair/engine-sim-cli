@@ -188,7 +188,7 @@ public:
         context->circularBuffer = new float[context->circularBufferSize * 2];  // Stereo
         std::memset(context->circularBuffer, 0, context->circularBufferSize * 2 * sizeof(float));
 
-        // SIMPLE: Initialize pointers - write at end, read from beginning
+        // Initialize pointers - both start at beginning for proper circular buffer
         context->writePointer.store(0);
         context->readPointer.store(0);
 
@@ -308,23 +308,39 @@ public:
         }
     }
 
-    // SIMPLE: Add samples to circular buffer
+    // Add samples to circular buffer with true continuous writes
     void addToCircularBuffer(const float* samples, int frameCount) {
         if (!context || !context->circularBuffer) return;
 
         int writePtr = context->writePointer.load();
         const int bufferSize = static_cast<int>(context->circularBufferSize);
 
-        // Write samples to circular buffer with simple modulo arithmetic
-        for (int i = 0; i < frameCount; i++) {
-            int writePos = (writePtr + i) % bufferSize;
+        // Handle wrap-around for large writes that might span the buffer boundary
+        if (writePtr + frameCount <= bufferSize) {
+            // Simple case: no wrap-around needed
+            for (int i = 0; i < frameCount; i++) {
+                context->circularBuffer[(writePtr + i) * 2] = samples[i * 2];
+                context->circularBuffer[(writePtr + i) * 2 + 1] = samples[i * 2 + 1];
+            }
+        } else {
+            // Complex case: write spans buffer boundary, split into two segments
+            int firstSegment = bufferSize - writePtr;
 
-            // Write stereo samples
-            context->circularBuffer[writePos * 2] = samples[i * 2];
-            context->circularBuffer[writePos * 2 + 1] = samples[i * 2 + 1];
+            // Write first segment (from current position to end of buffer)
+            for (int i = 0; i < firstSegment; i++) {
+                context->circularBuffer[(writePtr + i) * 2] = samples[i * 2];
+                context->circularBuffer[(writePtr + i) * 2 + 1] = samples[i * 2 + 1];
+            }
+
+            // Write second segment (from beginning of buffer for remaining samples)
+            int secondSegment = frameCount - firstSegment;
+            for (int i = 0; i < secondSegment; i++) {
+                context->circularBuffer[i * 2] = samples[(firstSegment + i) * 2];
+                context->circularBuffer[i * 2 + 1] = samples[(firstSegment + i) * 2 + 1];
+            }
         }
 
-        // Commit the write
+        // Commit the write with proper wrap-around
         int newWritePtr = (writePtr + frameCount) % bufferSize;
         context->writePointer.store(newWritePtr);
     }
@@ -375,35 +391,17 @@ private:
                     framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
                 }
 
-                // TRUE CIRCULAR BUFFER: Always fill entire request, wrapping seamlessly
+                // SIMPLE CIRCULAR BUFFER: Always fill entire request, wrapping seamlessly
                 // No "end of buffer" - just loop continuously
                 size_t currentPos = ctx->sineWavePosition.load();
-
-                // Cross-fade to prevent crackles at buffer boundaries
-                const int fadeSamples = 100; // 100 samples cross-fade (about 2.2ms at 44.1kHz)
 
                 for (UInt32 frame = 0; frame < framesToWrite; frame++) {
                     // Read from current position (with automatic wraparound)
                     size_t readPos = currentPos % ctx->sineWaveTotalFrames;
 
-                    // Check if we're near a buffer boundary for cross-fading
-                    float crossFade = 1.0f;
-                    size_t distanceToEnd = ctx->sineWaveTotalFrames - readPos;
-
-                    if (distanceToEnd <= fadeSamples) {
-                        // Fade out as we approach end of buffer
-                        crossFade = static_cast<float>(distanceToEnd) / fadeSamples;
-                    }
-
-                    // Also fade in from beginning if we're at the start
-                    if (readPos < fadeSamples) {
-                        float fadeIn = static_cast<float>(readPos) / fadeSamples;
-                        crossFade = std::max(crossFade, fadeIn);
-                    }
-
-                    // Apply cross-fade
-                    data[frame * 2] = ctx->sineWaveBuffer[readPos * 2] * crossFade;
-                    data[frame * 2 + 1] = ctx->sineWaveBuffer[readPos * 2 + 1] * crossFade;
+                    // No cross-fading - just copy samples directly
+                    data[frame * 2] = ctx->sineWaveBuffer[readPos * 2];
+                    data[frame * 2 + 1] = ctx->sineWaveBuffer[readPos * 2 + 1];
 
                     // Advance position (wraps automatically via modulo)
                     currentPos++;
@@ -466,9 +464,9 @@ private:
                 std::memset(data + framesToRead * 2, 0, silenceFrames * 2 * sizeof(float));
             }
 
-            // Advance read pointer using simple modulo arithmetic
-            // Let AudioUnit control timing - no complex hardware synchronization
-            int newReadPtr = (readPtr + framesToWrite) % bufferSize;
+            // CRITICAL: Advance read pointer by only the frames we actually read
+            // This prevents the read pointer from leaping over available data and creating gaps
+            int newReadPtr = (readPtr + framesToRead) % bufferSize;
             ctx->readPointer.store(newReadPtr);
         }
 
@@ -942,8 +940,13 @@ int runSimulation(const CommandLineArgs& args) {
         // Enable starter motor
         EngineSimSetStarterMotor(handle, 1);
 
+        // Calculate smooth RPM target that starts from current warmup RPM
+        EngineSimStats endWarmupStats = {};
+        EngineSimGetStats(handle, &endWarmupStats);
+        double startRPM = std::max(endWarmupStats.currentRPM, 100.0);  // At least 100 RPM to avoid zero
+
         // Main simulation loop with RPM ramp
-        std::cout << "\nRPM ramp phase (600 -> 6000 RPM)...\n";
+        std::cout << "\nRPM ramp phase (" << static_cast<int>(startRPM) << " -> 6000 RPM)...\n";
         auto startTime = std::chrono::steady_clock::now();
         int lastProgress = 0;
 
@@ -959,8 +962,8 @@ int runSimulation(const CommandLineArgs& args) {
             }
 
             // Calculate target throttle based on desired RPM ramp
-            // We want to ramp from 600 RPM to 6000 RPM over the duration
-            double targetRPM = 600.0 + (5400.0 * (currentTime / args.duration));  // 600 -> 6000
+            // Start from current warmup RPM and ramp up smoothly
+            double targetRPM = startRPM + ((6000.0 - startRPM) * (currentTime / args.duration));
 
             // Simple RPM controller
             double rpmError = targetRPM - stats.currentRPM;
