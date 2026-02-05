@@ -67,24 +67,21 @@ struct WaveHeader {
 // AudioUnit callback context - stores engine simulator handle for rendering
 struct AudioUnitContext {
     EngineSimHandle engineHandle;         // Engine simulator handle
-    const float* sineWaveBuffer;          // Pre-generated sine wave buffer (for sine mode)
-    size_t sineWaveTotalFrames;           // Total frames in sine wave buffer
-    std::atomic<size_t> sineWavePosition; // Current playback position in sine wave
     std::atomic<bool> isPlaying;          // Playback state
-    std::atomic<double> currentRPM;       // Current RPM (for RPM-linked sine wave)
-    std::atomic<size_t> sampleCounter;    // Sample counter for phase-accurate sine generation
 
     // SIMPLE: Basic circular buffer (96000 samples)
+    // Both sine mode and engine mode use the same circular buffer for consistency
     float* circularBuffer;                // Intermediate buffer
     size_t circularBufferSize;            // Buffer capacity (96000)
     std::atomic<int> writePointer;        // Write position in circular buffer
     std::atomic<int> readPointer;         // Read position in circular buffer
+    std::atomic<int> underrunCount;       // Count of buffer underruns
+    int bufferStatus;                     // Buffer status for diagnostics (0=normal, 1=warning, 2=critical)
 
-    AudioUnitContext() : engineHandle(nullptr), sineWaveBuffer(nullptr),
-                        sineWaveTotalFrames(0), sineWavePosition(0), isPlaying(false),
-                        currentRPM(600.0), sampleCounter(0),
+    AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
                         circularBuffer(nullptr), circularBufferSize(96000),
-                        writePointer(0), readPointer(0) {}
+                        writePointer(0), readPointer(0),
+                        underrunCount(0), bufferStatus(0) {}
 };
 
 class AudioPlayer {
@@ -246,22 +243,8 @@ public:
         }
     }
 
-    // Set sine wave buffer for playback (sine wave test mode)
-    void setSineWaveBuffer(const float* buffer, size_t totalFrames) {
-        if (context) {
-            context->sineWaveBuffer = buffer;
-            context->sineWaveTotalFrames = totalFrames;
-            context->sineWavePosition.store(0);
-        }
-    }
-
-    // Update current RPM for RPM-linked sine wave generation
-    void setCurrentRPM(double rpm) {
-        if (context) {
-            context->currentRPM.store(rpm);
-        }
-    }
-
+  
+    
     // Start playback - begins real-time streaming
     bool start() {
         if (!audioUnit) return false;
@@ -348,6 +331,47 @@ public:
     // Expose context for main loop access
     AudioUnitContext* getContext() { return context; }
 
+    // Get buffer diagnostics for monitoring synchronization issues
+    void getBufferDiagnostics(int& writePtr, int& readPtr, int& available, int& status) {
+        if (context) {
+            writePtr = context->writePointer.load();
+            readPtr = context->readPointer.load();
+
+            // Calculate available frames
+            int bufferSize = static_cast<int>(context->circularBufferSize);
+            if (writePtr >= readPtr) {
+                available = writePtr - readPtr;
+            } else {
+                available = (bufferSize - readPtr) + writePtr;
+            }
+
+            // Set status based on available frames
+            if (available > bufferSize / 4) {
+                status = 0;  // Normal
+            } else if (available > bufferSize / 8) {
+                status = 1;  // Warning
+            } else if (available > 0) {
+                status = 2;  // Critical
+            } else {
+                status = 3;  // Underrun
+                context->underrunCount.fetch_add(1);
+            }
+        } else {
+            writePtr = 0;
+            readPtr = 0;
+            available = 0;
+            status = 3;
+        }
+    }
+
+    // Reset buffer diagnostics
+    void resetBufferDiagnostics() {
+        if (context) {
+            context->underrunCount.store(0);
+            context->bufferStatus = 0;
+        }
+    }
+
 private:
     AudioUnit audioUnit;
     AudioDeviceID deviceID;
@@ -379,42 +403,9 @@ private:
             return noErr;
         }
 
-        // If no sine mode enabled, check for pre-generated buffer (backwards compatibility)
-        if (ctx->sineWaveBuffer && ctx->sineWaveTotalFrames > 0) {
-            for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-                AudioBuffer& buffer = ioData->mBuffers[i];
-                float* data = static_cast<float*>(buffer.mData);
-
-                // Calculate how many frames we can write
-                UInt32 framesToWrite = numberFrames;
-                if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
-                    framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
-                }
-
-                // SIMPLE CIRCULAR BUFFER: Always fill entire request, wrapping seamlessly
-                // No "end of buffer" - just loop continuously
-                size_t currentPos = ctx->sineWavePosition.load();
-
-                for (UInt32 frame = 0; frame < framesToWrite; frame++) {
-                    // Read from current position (with automatic wraparound)
-                    size_t readPos = currentPos % ctx->sineWaveTotalFrames;
-
-                    // No cross-fading - just copy samples directly
-                    data[frame * 2] = ctx->sineWaveBuffer[readPos * 2];
-                    data[frame * 2 + 1] = ctx->sineWaveBuffer[readPos * 2 + 1];
-
-                    // Advance position (wraps automatically via modulo)
-                    currentPos++;
-                }
-
-                // Update position for next callback
-                ctx->sineWavePosition.store(currentPos);
-            }
-            return noErr;
-        }
-
         // CRITICAL: Read from intermediate circular buffer
         // This buffer is filled by main loop calling addToCircularBuffer()
+        // Both sine mode and engine mode use the same circular buffer for consistency
         if (!ctx->circularBuffer) {
             // No buffer - output silence
             for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
@@ -438,6 +429,7 @@ private:
             }
 
             // SIMPLE: Read from circular buffer using simple modulo arithmetic
+            // This handles both sine mode and engine mode identically
             int readPtr = ctx->readPointer.load();
             int writePtr = ctx->writePointer.load();
 
@@ -451,6 +443,17 @@ private:
 
             int framesToRead = std::min(static_cast<int>(framesToWrite), available);
 
+            // Diagnostic: Track buffer status
+            if (framesToRead < static_cast<int>(framesToWrite)) {
+                // Underrun detected - increment counter
+                ctx->underrunCount.fetch_add(1);
+                // Log underrun periodically (every 10th underrun to avoid spam)
+                if (ctx->underrunCount.load() % 10 == 0) {
+                    std::cout << "[Audio Diagnostics] Buffer underrun #" << ctx->underrunCount.load()
+                              << " - requested: " << framesToWrite << ", available: " << available << "\n";
+                }
+            }
+
             // Copy from circular buffer to AudioUnit output
             for (int frame = 0; frame < framesToRead; frame++) {
                 int readPos = (readPtr + frame) % bufferSize;
@@ -462,10 +465,16 @@ private:
             if (framesToRead < static_cast<int>(framesToWrite)) {
                 int silenceFrames = framesToWrite - framesToRead;
                 std::memset(data + framesToRead * 2, 0, silenceFrames * 2 * sizeof(float));
+
+                // Set buffer status for diagnostics
+                ctx->bufferStatus = (available < bufferSize / 8) ? 2 : 1;
+            } else {
+                ctx->bufferStatus = 0;  // Normal
             }
 
             // CRITICAL: Advance read pointer by only the frames we actually read
             // This prevents the read pointer from leaping over available data and creating gaps
+            // Both sine mode and engine mode use the same read pointer management
             int newReadPtr = (readPtr + framesToRead) % bufferSize;
             ctx->readPointer.store(newReadPtr);
         }
@@ -525,18 +534,18 @@ private:
 };
 
 // ============================================================================
-// RPM Controller (Stabilized PID Controller)
+// RPM Controller (Simple, Responsive)
 // ============================================================================
 
 class RPMController {
 private:
-    // SIMPLE P-ONLY CONTROLLER: Eliminate overshoot by removing integral term entirely
-    static constexpr double STABILIZED_KP = 0.05;   // Very low P-gain (16x reduction from original 0.8)
-    static constexpr double STABILIZED_KI = 0.0;    // Disable I-term completely to prevent overshoot
-    static constexpr double STABILIZED_KD = 0.0;    // Disable D-term completely to prevent overshoot
-    static constexpr double MAX_THROTTLE_RATE = 0.01; // Very strict throttle rate limiting (1% per frame at 60fps = 60% per second)
-    static constexpr double DAMPING_FACTOR = 0.95;   // High damping for very smooth error response
-    static constexpr double INTEGRAL_MAX = 10.0;     // Not used with I-term disabled
+    // Simple P-ONLY controller for responsive throttle without over-constraint
+    static constexpr double KP = 0.3;    // Moderate P-gain for responsive but stable control
+    static constexpr double KI = 0.0;    // No integral term to prevent overshoot
+    static constexpr double KD = 0.0;    // No derivative term to prevent overshoot
+    static constexpr double MIN_THROTTLE = 0.05;  // Minimum 5% throttle to prevent stalling
+    static constexpr double MAX_THROTTLE = 1.0;  // Standard maximum throttle
+    static constexpr double MIN_RPM_FOR_CONTROL = 300.0;  // Minimum RPM to enable control
 
     double targetRPM;
     double kp;
@@ -545,63 +554,49 @@ private:
     double integral;
     double lastError;
     bool firstUpdate;
-    double lastThrottle;
-    double smoothedError;
 
 public:
     RPMController() : targetRPM(0),
-                     kp(STABILIZED_KP),
-                     ki(STABILIZED_KI),
-                     kd(STABILIZED_KD),
+                     kp(KP),
+                     ki(KI),
+                     kd(KD),
                      integral(0),
                      lastError(0),
-                     firstUpdate(true),
-                     lastThrottle(0.0),
-                     smoothedError(0.0) {}
+                     firstUpdate(true) {}
 
     void setTargetRPM(double rpm) {
         targetRPM = rpm;
         integral = 0;  // Reset integral when target changes
-        smoothedError = 0;  // Reset smoothed error
+        firstUpdate = true;
     }
 
     double update(double currentRPM, double dt) {
         if (targetRPM <= 0) return 0.0;
 
-        double error = targetRPM - currentRPM;
-
-        // Apply smoothing to error to reduce sensitivity to small RPM fluctuations
-        smoothedError = smoothedError * DAMPING_FACTOR + error * (1.0 - DAMPING_FACTOR);
-
-        // P-term with reduced gain
-        double pTerm = smoothedError * kp;
-
-        // SIMPLE P-ONLY CONTROLLER: No I-term or D-term to prevent overshoot
-        lastError = smoothedError;
-
-        // Calculate throttle using only P-term
-        double throttle = pTerm;
-
-        // Apply strict throttle rate limiting to prevent sudden changes that cause audio artifacts
-        double throttleDiff = throttle - lastThrottle;
-        if (std::abs(throttleDiff) > MAX_THROTTLE_RATE) {
-            throttle = lastThrottle + std::copysign(MAX_THROTTLE_RATE, throttleDiff);
+        // Only enable RPM control above minimum RPM to prevent hunting at idle
+        if (currentRPM < MIN_RPM_FOR_CONTROL) {
+            // Use minimum throttle to keep engine running but don't control RPM
+            return MIN_THROTTLE;
         }
 
-        // Update last throttle
-        lastThrottle = throttle;
+        double error = targetRPM - currentRPM;
 
-        // Clamp throttle with very tight bounds to ensure stability and prevent audio issues
-        // Minimum throttle of 0.05 ensures engine doesn't stall
-        // Maximum throttle of 1.0 prevents over-running
-        return std::max(0.05, std::min(1.0, throttle));
+        // Simple P-term calculation - responsive but stable
+        double pTerm = error * kp;
+
+        // No additional smoothing or rate limiting - let the main loop smoothing handle this
+        double throttle = pTerm;
+
+        // Clamp throttle to standard bounds
+        return std::max(MIN_THROTTLE, std::min(MAX_THROTTLE, throttle));
     }
 
     // Get debug information for diagnostics
     void getDebugInfo(double& pTerm, double& iTerm, double& dTerm) const {
-        pTerm = smoothedError * kp;
+        // Note: pTerm would need to be calculated from current error
+        pTerm = 0.0;
         iTerm = integral * ki;
-        dTerm = 0.0; // Would need previous error to calculate properly
+        dTerm = 0.0;
     }
 };
 
@@ -1445,8 +1440,8 @@ int runSimulation(const CommandLineArgs& args) {
 
             // Apply W key decay when not pressed
             if (!wKeyPressed && interactiveLoad > baselineLoad) {
-                // Gradually decay back to baseline (0.05 per frame at 60fps = 3% per second)
-                interactiveLoad = std::max(baselineLoad, interactiveLoad - 0.001);
+                // Quick decay back to baseline (50% per frame for immediate response)
+                interactiveLoad = std::max(baselineLoad, interactiveLoad * 0.5);
             }
 
             // In interactive mode, use RPM control if target is set
@@ -1495,14 +1490,24 @@ int runSimulation(const CommandLineArgs& args) {
         // Update physics
         auto simStart = std::chrono::steady_clock::now();
 
-        // CRITICAL: Apply throttle smoothing like GUI (engine_sim_application.cpp line 798)
-        // This prevents square-toothed aggressive noise changes
-        // Formula: smoothed = target * 0.2 + smoothed * 0.8
-        smoothedThrottle = throttle * 0.2 + smoothedThrottle * 0.8;
+        // Apply throttle smoothing matching GUI behavior
+        // 50/50 split provides responsive control while preventing audio artifacts
+        // Matches engine_sim_application.cpp line 798-801 smoothing behavior
+        smoothedThrottle = throttle * 0.5 + smoothedThrottle * 0.5;
 
         EngineSimSetThrottle(handle, smoothedThrottle);
         EngineSimUpdate(handle, updateInterval);
         auto simEnd = std::chrono::steady_clock::now();
+
+        // Debug: Log timing issues for synchronization problems
+        auto simDuration = std::chrono::duration_cast<std::chrono::microseconds>(simEnd - simStart).count();
+        if (simDuration > 10000) {  // If physics update takes more than 10ms
+            static int warningCount = 0;
+            if (warningCount++ % 30 == 0) {  // Log periodically to avoid spam
+                std::cout << "[Timing Warning] Physics update took " << (simDuration / 1000.0)
+                          << "ms (target: " << (updateInterval * 1000) << "ms)\n";
+            }
+        }
 
         // Render audio
         int framesToRender = framesPerUpdate;
@@ -1553,15 +1558,36 @@ int runSimulation(const CommandLineArgs& args) {
 
         currentTime += updateInterval;
 
-        // Display progress
+        // Display progress and diagnostics
         if (args.interactive) {
             displayHUD(stats.currentRPM, smoothedThrottle, interactiveTargetRPM, stats);
+
+            // Log buffer diagnostics periodically in interactive mode
+            static int lastDiagnosticFrame = 0;
+            if (framesProcessed - lastDiagnosticFrame >= 180) {  // Every 3 seconds at 60fps
+                int writePtr, readPtr, available, status;
+                audioPlayer->getBufferDiagnostics(writePtr, readPtr, available, status);
+                std::cout << "[Buffer Diagnostics] Write: " << writePtr << ", Read: " << readPtr
+                          << ", Available: " << available << ", Status: " << status
+                          << ", Underruns: " << (audioPlayer->getContext() ? audioPlayer->getContext()->underrunCount.load() : 0) << "\n";
+                lastDiagnosticFrame = framesProcessed;
+            }
         } else {
             int totalExpectedFrames = static_cast<int>(args.duration * sampleRate);
             int progress = static_cast<int>(framesProcessed * 100 / totalExpectedFrames);
             if (progress != lastProgress && progress % 10 == 0) {
                 std::cout << "  Progress: " << progress << "% (" << framesProcessed << " frames)\r" << std::flush;
                 lastProgress = progress;
+
+                // Log buffer issues periodically during non-interactive mode
+                if (audioPlayer) {
+                    int writePtr, readPtr, available, status;
+                    audioPlayer->getBufferDiagnostics(writePtr, readPtr, available, status);
+                    if (status > 0) {
+                        std::cout << " [Buffer: " << (status == 1 ? "warning" : "critical")
+                                  << ", Available: " << available << "]\r";
+                    }
+                }
             }
         }
     }
