@@ -379,13 +379,31 @@ private:
                 // No "end of buffer" - just loop continuously
                 size_t currentPos = ctx->sineWavePosition.load();
 
+                // Cross-fade to prevent crackles at buffer boundaries
+                const int fadeSamples = 100; // 100 samples cross-fade (about 2.2ms at 44.1kHz)
+
                 for (UInt32 frame = 0; frame < framesToWrite; frame++) {
                     // Read from current position (with automatic wraparound)
                     size_t readPos = currentPos % ctx->sineWaveTotalFrames;
 
-                    // Copy stereo samples
-                    data[frame * 2] = ctx->sineWaveBuffer[readPos * 2];
-                    data[frame * 2 + 1] = ctx->sineWaveBuffer[readPos * 2 + 1];
+                    // Check if we're near a buffer boundary for cross-fading
+                    float crossFade = 1.0f;
+                    size_t distanceToEnd = ctx->sineWaveTotalFrames - readPos;
+
+                    if (distanceToEnd <= fadeSamples) {
+                        // Fade out as we approach end of buffer
+                        crossFade = static_cast<float>(distanceToEnd) / fadeSamples;
+                    }
+
+                    // Also fade in from beginning if we're at the start
+                    if (readPos < fadeSamples) {
+                        float fadeIn = static_cast<float>(readPos) / fadeSamples;
+                        crossFade = std::max(crossFade, fadeIn);
+                    }
+
+                    // Apply cross-fade
+                    data[frame * 2] = ctx->sineWaveBuffer[readPos * 2] * crossFade;
+                    data[frame * 2 + 1] = ctx->sineWaveBuffer[readPos * 2 + 1] * crossFade;
 
                     // Advance position (wraps automatically via modulo)
                     currentPos++;
@@ -509,16 +527,44 @@ private:
 };
 
 // ============================================================================
-// RPM Controller (Simple P-Controller)
+// RPM Controller (Stabilized PID Controller)
 // ============================================================================
 
 class RPMController {
+private:
+    // SIMPLE P-ONLY CONTROLLER: Eliminate overshoot by removing integral term entirely
+    static constexpr double STABILIZED_KP = 0.05;   // Very low P-gain (16x reduction from original 0.8)
+    static constexpr double STABILIZED_KI = 0.0;    // Disable I-term completely to prevent overshoot
+    static constexpr double STABILIZED_KD = 0.0;    // Disable D-term completely to prevent overshoot
+    static constexpr double MAX_THROTTLE_RATE = 0.01; // Very strict throttle rate limiting (1% per frame at 60fps = 60% per second)
+    static constexpr double DAMPING_FACTOR = 0.95;   // High damping for very smooth error response
+    static constexpr double INTEGRAL_MAX = 10.0;     // Not used with I-term disabled
+
+    double targetRPM;
+    double kp;
+    double ki;
+    double kd;
+    double integral;
+    double lastError;
+    bool firstUpdate;
+    double lastThrottle;
+    double smoothedError;
+
 public:
-    RPMController() : targetRPM(0), kp(0.8), integral(0), ki(0.05), lastError(0), firstUpdate(true) {}
+    RPMController() : targetRPM(0),
+                     kp(STABILIZED_KP),
+                     ki(STABILIZED_KI),
+                     kd(STABILIZED_KD),
+                     integral(0),
+                     lastError(0),
+                     firstUpdate(true),
+                     lastThrottle(0.0),
+                     smoothedError(0.0) {}
 
     void setTargetRPM(double rpm) {
         targetRPM = rpm;
         integral = 0;  // Reset integral when target changes
+        smoothedError = 0;  // Reset smoothed error
     }
 
     double update(double currentRPM, double dt) {
@@ -526,37 +572,39 @@ public:
 
         double error = targetRPM - currentRPM;
 
-        // P-term
-        double pTerm = error * kp;
+        // Apply smoothing to error to reduce sensitivity to small RPM fluctuations
+        smoothedError = smoothedError * DAMPING_FACTOR + error * (1.0 - DAMPING_FACTOR);
 
-        // I-term with anti-windup
-        if (firstUpdate) {
-            integral = 0;
-            firstUpdate = false;
+        // P-term with reduced gain
+        double pTerm = smoothedError * kp;
+
+        // SIMPLE P-ONLY CONTROLLER: No I-term or D-term to prevent overshoot
+        lastError = smoothedError;
+
+        // Calculate throttle using only P-term
+        double throttle = pTerm;
+
+        // Apply strict throttle rate limiting to prevent sudden changes that cause audio artifacts
+        double throttleDiff = throttle - lastThrottle;
+        if (std::abs(throttleDiff) > MAX_THROTTLE_RATE) {
+            throttle = lastThrottle + std::copysign(MAX_THROTTLE_RATE, throttleDiff);
         }
 
-        // Reduce integral term to prevent windup
-        integral = std::max(-100.0, std::min(100.0, integral + error * dt));
-        double iTerm = integral * ki;
+        // Update last throttle
+        lastThrottle = throttle;
 
-        // D-term - reduce to prevent overshoot
-        double dTerm = (error - lastError) / dt * 0.05;
-        lastError = error;
-
-        // Calculate throttle
-        double throttle = pTerm + iTerm + dTerm;
-
-        // Clamp throttle
-        return std::max(0.0, std::min(1.0, throttle));
+        // Clamp throttle with very tight bounds to ensure stability and prevent audio issues
+        // Minimum throttle of 0.05 ensures engine doesn't stall
+        // Maximum throttle of 1.0 prevents over-running
+        return std::max(0.05, std::min(1.0, throttle));
     }
 
-private:
-    double targetRPM;
-    double kp;
-    double ki;
-    double integral;
-    double lastError;
-    bool firstUpdate;
+    // Get debug information for diagnostics
+    void getDebugInfo(double& pTerm, double& iTerm, double& dTerm) const {
+        pTerm = smoothedError * kp;
+        iTerm = integral * ki;
+        dTerm = 0.0; // Would need previous error to calculate properly
+    }
 };
 
 // ============================================================================
@@ -769,7 +817,7 @@ int runSimulation(const CommandLineArgs& args) {
         config.audioBufferSize = 96000;  // Match GUI - 2+ seconds at 44.1kHz
         config.simulationFrequency = 10000;
         config.fluidSimulationSteps = 8;
-        config.targetSynthesizerLatency = 0.05;
+        config.targetSynthesizerLatency = 0.02;
         config.volume = 1.0f;
         config.convolutionLevel = 0.5f;
         config.airNoise = 1.0f;
@@ -919,7 +967,7 @@ int runSimulation(const CommandLineArgs& args) {
             throttle = std::max(0.0, std::min(1.0, rpmError / 1000.0));  // Simple P-controller
 
             // Apply throttle smoothing
-            smoothedThrottle = throttle * 0.5 + smoothedThrottle * 0.5;
+            smoothedThrottle = throttle * 0.2 + smoothedThrottle * 0.8;
             EngineSimSetThrottle(handle, smoothedThrottle);
             EngineSimUpdate(handle, updateInterval);
 
@@ -1009,7 +1057,7 @@ int runSimulation(const CommandLineArgs& args) {
     config.audioBufferSize = 96000;  // Match GUI - 2+ seconds at 44.1kHz
     config.simulationFrequency = 10000;
     config.fluidSimulationSteps = 8;
-    config.targetSynthesizerLatency = 0.05;
+    config.targetSynthesizerLatency = 0.02;
     config.volume = 1.0f;
     config.convolutionLevel = 0.5f;
     config.airNoise = 1.0f;
@@ -1203,89 +1251,114 @@ int runSimulation(const CommandLineArgs& args) {
     double smoothedThrottle = 0.0;  // For throttle smoothing (matches GUI line 798)
     auto loopStartTime = std::chrono::steady_clock::now();
 
-    // Initial warmup - use RPM controller if target is set
-    const double warmupDuration = 2.0;  // Longer warmup for combustion
+    // Initialize warmup phase
+    EngineSimSetStarterMotor(handle, 1);
+    bool starterDisengaged = false;
+    const double warmupDuration = 4.0;
+    const double maxStarterTime = 3.0;
+    const double minSustainedRPM = 300.0;
+    std::cout << "Starting engine cranking sequence...\n";
+
+    // Set initial warmup RPM target that increases gradually
+    double warmupTargetRPM = 200.0;  // Start with very low target
+
+    while (currentTime < warmupDuration) {
+        EngineSimStats stats = {};
+        EngineSimGetStats(handle, &stats);
+
+        // Gradually increase target RPM during warmup
+        if (currentTime < 1.0) {
+            warmupTargetRPM = 150.0;  // Very low for initial cranking
+        } else if (currentTime < 2.0) {
+            warmupTargetRPM = 400.0;  // Increase for combustion development
+        } else {
+            warmupTargetRPM = 800.0;  // Higher for running transition
+        }
+
+        // Set RPM controller target for warmup
+        rpmController.setTargetRPM(warmupTargetRPM);
+
+        // Use RPM controller to calculate throttle
+        throttle = rpmController.update(stats.currentRPM, updateInterval);
+
+        // Apply smoothing
+        smoothedThrottle = throttle * 0.5 + smoothedThrottle * 0.5;
+        EngineSimSetThrottle(handle, smoothedThrottle);
+        EngineSimUpdate(handle, updateInterval);
+        currentTime += updateInterval;
+
+        // Check if engine has started and disengage starter if needed
+        static int sustainedRPMCount = 0;
+        const int requiredSustainedFrames = 15;
+
+        if (!starterDisengaged) {
+            if (stats.currentRPM > minSustainedRPM) {
+                sustainedRPMCount++;
+                if (sustainedRPMCount >= requiredSustainedFrames) {
+                    EngineSimSetStarterMotor(handle, 0);
+                    starterDisengaged = true;
+                    std::cout << "Engine started! Disabling starter motor at " << stats.currentRPM << " RPM.\n";
+                }
+            } else {
+                sustainedRPMCount = 0;
+            }
+        }
+
+        // Emergency cutoff
+        if (!starterDisengaged && currentTime >= maxStarterTime) {
+            EngineSimSetStarterMotor(handle, 0);
+            starterDisengaged = true;
+            std::cout << "Starter motor timeout after " << maxStarterTime << " seconds.\n";
+        }
+
+        if (static_cast<int>(currentTime * 2) % 2 == 0) {
+            std::cout << "  Cranking: " << std::fixed << std::setprecision(0) << stats.currentRPM
+                      << " RPM, Target: " << std::fixed << std::setprecision(0) << warmupTargetRPM
+                      << ", Throttle: " << std::fixed << std::setprecision(2) << smoothedThrottle;
+            if (!starterDisengaged) {
+                std::cout << " (starter ON)";
+            } else {
+                std::cout << " (starter OFF)";
+            }
+            std::cout << "\n";
+        }
+    }
+
+    std::cout << "Warmup complete. Switching to target RPM control...\n";
+
+    // Set final target RPM
     if (args.targetRPM > 0) {
-        // Gradual throttle ramp during warmup
-        std::cout << "Starting warmup sequence...\n";
-        double warmupThrottle = 0.0;
-        while (currentTime < warmupDuration) {
-            EngineSimStats stats = {};
-            EngineSimGetStats(handle, &stats);
-
-            // Use sufficient throttle during warmup to ensure strong combustion
-            // Higher airflow allows more fuel/air mixture for combustion torque
-            if (currentTime < 1.0) {
-                warmupThrottle = 0.5;  // Medium throttle for initial start
-            } else if (currentTime < 1.5) {
-                warmupThrottle = 0.7;  // Higher throttle for combustion development
-            } else {
-                warmupThrottle = 0.8;  // High throttle ready for starter disable
-            }
-
-            // Apply smoothing even during warmup
-            smoothedThrottle = warmupThrottle * 0.5 + smoothedThrottle * 0.5;
-            EngineSimSetThrottle(handle, smoothedThrottle);
-            EngineSimUpdate(handle, updateInterval);
-            currentTime += updateInterval;
-
-            if (static_cast<int>(currentTime * 2) % 2 == 0) {  // Print every 0.5 seconds
-                std::cout << "  Warmup: " << stats.currentRPM << " RPM, Throttle: " << warmupThrottle << "\n";
-            }
-        }
-        std::cout << "Warmup complete. Starting RPM control...\n";
-    } else {
-        // Fixed warmup for auto mode
-        while (currentTime < warmupDuration) {
-            EngineSimUpdate(handle, updateInterval);
-            // Use higher throttle during warmup to ensure strong combustion development
-            // At 0.5-0.7 throttle, we get 52-72% airflow which should provide enough
-            // fuel/air mixture for the engine to develop combustion torque
-            double warmupThrottle;
-            if (currentTime < 1.0) {
-                warmupThrottle = 0.5;  // Medium throttle for initial start
-            } else {
-                warmupThrottle = 0.7;  // Higher throttle for combustion development
-            }
-
-            // Apply smoothing
-            smoothedThrottle = warmupThrottle * 0.5 + smoothedThrottle * 0.5;
-            EngineSimSetThrottle(handle, smoothedThrottle);
-            currentTime += updateInterval;
-        }
+        rpmController.setTargetRPM(args.targetRPM);
     }
 
     currentTime = 0.0;
 
-    // CRITICAL: Enable starter motor to start the engine!
-    // Without this, the engine never cranks and never generates audio
-    EngineSimSetStarterMotor(handle, 1);
+    // Maintain starter motor state from warmup phase
+    bool starterEnabled = !starterDisengaged;
+    bool engineHasStarted = starterDisengaged;  // Engine has started if starter is disengaged
+    const double runningRPMThreshold = 350.0;  // Lower threshold for sustained running
+    const double restartRPM = 150.0;       // RPM threshold to re-enable starter if engine stalls
 
-    while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
-        // Get current stats
-        EngineSimStats stats = {};
-        EngineSimGetStats(handle, &stats);
+  while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
+    // Get current stats
+    EngineSimStats stats = {};
+    EngineSimGetStats(handle, &stats);
 
-        // Disable starter motor once engine is running fast enough to sustain combustion
-        // This particular engine seems to max out around 550-600 RPM on the starter
-        // Try disabling at 550 RPM to see if it can sustain on its own
-        const double minSustainedRPM = 550.0;
-        if (stats.currentRPM > minSustainedRPM && EngineSimSetStarterMotor(handle, 0) == ESIM_SUCCESS) {
-            static bool starterDisabled = false;
-            if (!starterDisabled) {
-                std::cout << "Engine started! Disabling starter motor at " << stats.currentRPM << " RPM.\n";
-                starterDisabled = true;
-            }
-        }
-        else if (stats.currentRPM < minSustainedRPM / 2) {
-            // Re-enable starter if engine speed drops too low (failed to start)
-            static bool starterReenabled = false;
-            if (!starterReenabled) {
-                EngineSimSetStarterMotor(handle, 1);
-                std::cout << "Engine speed too low. Re-enabling starter motor.\n";
-                starterReenabled = true;
-            }
-        }
+    // Handle starter motor logic with improved logic
+    // Only disable starter if it's currently enabled and engine is running
+    if (starterEnabled && stats.currentRPM > runningRPMThreshold) {
+        EngineSimSetStarterMotor(handle, 0);
+        starterEnabled = false;
+        engineHasStarted = true;
+        std::cout << "Engine started! Disabling starter motor at " << stats.currentRPM << " RPM.\n";
+    }
+    // Only re-enable starter if it's currently disabled, engine has started before,
+    // and engine has stalled
+    else if (!starterEnabled && engineHasStarted && stats.currentRPM < restartRPM) {
+        EngineSimSetStarterMotor(handle, 1);
+        starterEnabled = true;
+        std::cout << "Engine stalled. Re-enabling starter motor.\n";
+    }
 
         // Handle keyboard input in interactive mode
         if (args.interactive && keyboardInput) {
@@ -1375,7 +1448,16 @@ int runSimulation(const CommandLineArgs& args) {
 
             // In interactive mode, use RPM control if target is set
             if (interactiveTargetRPM > 0) {
+                double pTerm, iTerm, dTerm;
                 throttle = rpmController.update(stats.currentRPM, updateInterval);
+                rpmController.getDebugInfo(pTerm, iTerm, dTerm);
+
+                // Display debug info for stability verification
+                if (framesRendered % 60 == 0) {  // Every second at 60fps
+                    std::cout << "RPM Control Debug - P: " << std::fixed << std::setprecision(3) << pTerm
+                              << ", I: " << iTerm << ", Target: " << interactiveTargetRPM
+                              << ", Current: " << stats.currentRPM << "\n";
+                }
             } else {
                 throttle = interactiveLoad;
             }
@@ -1383,10 +1465,15 @@ int runSimulation(const CommandLineArgs& args) {
         else if (args.targetRPM > 0 && args.targetLoad < 0) {
             // RPM control mode
             throttle = rpmController.update(stats.currentRPM, updateInterval);
-            if (framesRendered % 600 == 0) {  // Print every 10 seconds at 60fps for more frequent updates
+
+            // More frequent output to verify stabilization
+            if (framesRendered % 30 == 0) {  // Every 0.5 seconds at 60fps
+                double pTerm, iTerm, dTerm;
+                rpmController.getDebugInfo(pTerm, iTerm, dTerm);
                 std::cout << "RPM Control: " << stats.currentRPM << "/" << args.targetRPM
                           << ", Throttle: " << std::fixed << std::setprecision(3) << smoothedThrottle
-                          << ", Load: " << static_cast<int>(stats.currentLoad * 100) << "%\n";
+                          << ", Load: " << static_cast<int>(stats.currentLoad * 100) << "%"
+                          << ", P: " << pTerm << ", I: " << iTerm << "\n";
             }
         }
         else if (args.targetLoad >= 0) {
@@ -1407,8 +1494,8 @@ int runSimulation(const CommandLineArgs& args) {
 
         // CRITICAL: Apply throttle smoothing like GUI (engine_sim_application.cpp line 798)
         // This prevents square-toothed aggressive noise changes
-        // Formula: smoothed = target * 0.5 + smoothed * 0.5
-        smoothedThrottle = throttle * 0.5 + smoothedThrottle * 0.5;
+        // Formula: smoothed = target * 0.2 + smoothed * 0.8
+        smoothedThrottle = throttle * 0.2 + smoothedThrottle * 0.8;
 
         EngineSimSetThrottle(handle, smoothedThrottle);
         EngineSimUpdate(handle, updateInterval);
