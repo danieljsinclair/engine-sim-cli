@@ -20,6 +20,29 @@ endif()
 # The bridge now handles engine-sim as its own nested submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge EXCLUDE_FROM_ALL)
 
+# Mock engine-sim library (shared library for --sine mode)
+add_library(engine-sim-mock SHARED
+    engine-sim-bridge/src/mock_engine_sim.cpp
+)
+
+target_include_directories(engine-sim-mock
+    PUBLIC
+    engine-sim-bridge/include
+)
+
+set_target_properties(engine-sim-mock PROPERTIES
+    OUTPUT_NAME "enginesim-mock"
+    VERSION 1.0.0
+    SOVERSION 1
+)
+
+if(APPLE)
+    set_target_properties(engine-sim-mock PROPERTIES
+        MACOSX_RPATH TRUE
+        INSTALL_NAME_DIR "@rpath"
+    )
+endif()
+
 # Sine wave generator library (header-only for simplicity)
 add_library(sine-wave-generator
     src/sine_wave_generator.cpp
@@ -38,10 +61,10 @@ add_executable(engine-sim-cli
 
 target_link_libraries(engine-sim-cli
     PRIVATE
-    engine-sim-bridge
     sine-wave-generator
     ${AUDIO_LIBRARY}
     Threads::Threads
+    ${CMAKE_DL_LIBS}
 )
 
 target_include_directories(engine-sim-cli

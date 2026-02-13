@@ -1,3 +1,48 @@
+# ⚠️ CRITICAL ARCHITECTURE RULE - READ THIS FIRST ⚠️
+
+## 🚫 PROHIBITION: Direct Sine Wave Generation in CLI Code
+
+**NEVER add inline sine wave generation in `src/engine_sim_cli.cpp` or anywhere in the CLI application code.**
+
+### Why This is Prohibited:
+
+The `--sine` mode exists to test the **entire infrastructure** (bridge, threading, buffering, synchronization) without engine physics variability. This requires a proper "engine-sine" mock implementation.
+
+**WRONG (inline sine - DO NOT DO THIS):**
+```cpp
+// In CLI main loop:
+float sample = std::sin(phase);  // ❌ PROHIBITED
+audioPlayer->addToCircularBuffer(&sample, 1);
+```
+
+**Rationale why this is wrong:**
+- Does NOT test the bridge API
+- Does NOT test threading model
+- Does NOT test buffer management
+- Does NOT test synchronization
+- Does NOT replicate engine-sim behavior
+- Defeats the entire purpose of having a mock
+
+**CORRECT (mock through bridge interface):**
+```cpp
+// Build with USE_MOCK_ENGINE_SIM=ON
+EngineSimReadAudioBuffer(handle, buffer, frames);  // ✅ Uses mock_engine_sim.cpp
+// Mock behaves like engine-sim (threading, updates, etc) but outputs sine
+```
+
+### The Strategy:
+
+1. **mock_engine_sim.cpp ("engine-sine")**: Replicates ALL engine-sim behaviors (threading, updates, buffer management) but outputs sine waves
+2. **--sine mode**: Uses mock through bridge API
+3. **--engine mode**: Uses real engine-sim through same bridge API
+4. **Result**: If mock works perfectly → real engine-sim should work when integrated
+
+### If You're Tempted to Add Inline Sine:
+
+**STOP.** Fix `mock_engine_sim.cpp` instead. Make it replicate engine-sim's behavior properly.
+
+---
+
 # engine-sim-cli
 
 Command-line interface for [engine-sim](https://github.com/danieljsinclair/engine-sim) audio generation.
