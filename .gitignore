@@ -31,3 +31,4 @@ Thumbs.db
 test_*.mr
 *.log
 
+.cache/

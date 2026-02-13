@@ -1,0 +1,202 @@
+{
+    "test_suite": {
+        "name": "Engine-Sim-CLI Verification Suite",
+        "version": "1.0.0",
+        "description": "Comprehensive verification system for engine-sim-cli components",
+        "test_environment": {
+            "platform": "macOS",
+            "sample_rate": 44100,
+            "duration": 3.0,
+            "timeout": 30.0
+        }
+    },
+
+    "test_cases": {
+        "sine_mode_audio": {
+            "id": "test_001",
+            "name": "Sine Mode Audio Output",
+            "description": "Verify sine mode produces correct frequency output at different RPM levels",
+            "type": "audio_verification",
+            "command": "engine-sim-cli --sine --rpm {rpm} --duration {duration} --output test_output.wav",
+            "parameters": {
+                "rpm": [1000, 3000, 6000],
+                "duration": 2.0
+            },
+            "expected_results": {
+                "min_frequency_db": -20.0,
+                "frequency_tolerance_hz": 5.0,
+                "min_amplitude": 0.1,
+                "max_amplitude": 1.0
+            },
+            "validation_criteria": {
+                "detect_pitch": true,
+                "measure_amplitude": true,
+                "check_distortion": false
+            },
+            "pass_criteria": {
+                "frequency_accuracy": "95%",
+                "audio_level": "valid",
+                "no_crashes": true
+            }
+        },
+
+        "keypress_response": {
+            "id": "test_002",
+            "name": "Keypress Response Time",
+            "description": "Test interactive mode keypress response time and accuracy",
+            "type": "input_verification",
+            "command": "engine-sim-cli --script {engine_path} --interactive --play --duration {duration}",
+            "parameters": {
+                "engine_path": "engine-sim-bridge/engine-sim/assets/main.mr",
+                "duration": 10.0
+            },
+            "expected_results": {
+                "max_response_time_ms": 50.0,
+                "keypress_accuracy": "100%",
+                "throttle_increment": 0.05,
+                "throttle_decrement": 0.05
+            },
+            "validation_criteria": {
+                "measure_latency": true,
+                "verify_key_functionality": true,
+                "test_all_keys": true
+            },
+            "pass_criteria": {
+                "response_time": "<= 50ms",
+                "key_functionality": "all_keys_working",
+                "no_hanging": true
+            }
+        },
+
+        "engine_startup": {
+            "id": "test_003",
+            "name": "Engine Mode Startup",
+            "description": "Verify engine mode starts without hanging and reaches target RPM",
+            "type": "engine_verification",
+            "command": "engine-sim-cli --script {engine_path} --rpm {rpm} --duration {duration} --output engine_test.wav",
+            "parameters": {
+                "engine_path": "engine-sim-bridge/engine-sim/assets/main.mr",
+                "rpm": [2000, 4000, 6000],
+                "duration": 5.0
+            },
+            "expected_results": {
+                "startup_time_max": 5.0,
+                "rpm_stabilization_time": 3.0,
+                "rpm_tolerance": 50.0,
+                "no_crashes": true
+            },
+            "validation_criteria": {
+                "measure_startup_time": true,
+                "verify_rpm_stabilization": true,
+                "check_engine_hang": true
+            },
+            "pass_criteria": {
+                "startup_success": true,
+                "rpm_reached": true,
+                "no_hanging": true
+            }
+        },
+
+        "binary_verification": {
+            "id": "test_004",
+            "name": "Binary and Library Verification",
+            "description": "Verify executable exists, has correct permissions, and links properly",
+            "type": "binary_verification",
+            "command": "verify_binary --engine-sim-cli",
+            "expected_results": {
+                "executable_exists": true,
+                "execute_permission": true,
+                "required_libraries": [
+                    "libengine_sim_bridge.dylib",
+                    "libAudioUnit.framework",
+                    "libCoreAudio.framework"
+                ]
+            }
+        },
+
+        "configuration_validation": {
+            "id": "test_005",
+            "name": "Configuration File Validation",
+            "description": "Verify engine configuration files are valid and accessible",
+            "type": "configuration_verification",
+            "command": "verify_config --path {config_path}",
+            "expected_results": {
+                "config_exists": true,
+                "valid_syntax": true,
+                "required_assets": [
+                    "exhaust_impulse.wav",
+                    "intake_impulse.wav"
+                ]
+            }
+        }
+    },
+
+    "test_scenarios": {
+        "full_regression": {
+            "name": "Full Regression Test",
+            "description": "Run all tests in sequence to verify overall system health",
+            "test_sequence": [
+                "test_004",
+                "test_005",
+                "test_003",
+                "test_001",
+                "test_002"
+            ],
+            "timeout_multiplier": 1.5,
+            "critical_tests": ["test_003", "test_001"]
+        },
+
+        "audio_focus": {
+            "name": "Audio Subsystem Test",
+            "description": "Comprehensive test of audio generation and playback",
+            "test_sequence": [
+                "test_001",
+                "test_003"
+            ],
+            "audio_specific": true
+        },
+
+        "interactive_focus": {
+            "name": "Interactive Mode Test",
+            "description": "Test real-time control and response capabilities",
+            "test_sequence": [
+                "test_002"
+            ],
+            "interactive_specific": true
+        }
+    },
+
+    "diagnostics": {
+        "audio_analysis": {
+            "frequency_detection": {
+                "method": "autocorrelation",
+                "sample_size": 4096,
+                "min_confidence": 0.8
+            },
+            "amplitude_measurement": {
+                "method": "rms",
+                "window_size": 1024,
+                "db_threshold": -40.0
+            },
+            "distortion_detection": {
+                "thd_threshold": 0.05,
+                "clipping_threshold": 0.95
+            }
+        },
+
+        "performance_metrics": {
+            "memory_usage": {
+                "max_increase_mb": 100,
+                "check_interval": 1.0
+            },
+            "cpu_usage": {
+                "max_percent": 80,
+                "check_interval": 0.5
+            },
+            "latency_budget": {
+                "max_ms": 5.0,
+                "warning_ms": 2.0
+            }
+        }
+    }
+}

@@ -1,0 +1,5 @@
+if(EXISTS "/Users/danielsinclair/vscode/engine-sim-cli/engine-sim/dependencies/submodules/piranha/piranha_test[1]_tests.cmake")
+  include("/Users/danielsinclair/vscode/engine-sim-cli/engine-sim/dependencies/submodules/piranha/piranha_test[1]_tests.cmake")
+else()
+  add_test(piranha_test_NOT_BUILT piranha_test_NOT_BUILT)
+endif()

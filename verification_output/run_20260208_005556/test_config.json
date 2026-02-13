@@ -1,0 +1,10 @@
+{
+    "mode": "binary",
+    "engine_sim_cli": "./engine-sim-cli",
+    "test_rpm": 2000,
+    "test_duration": 10,
+    "timeout": 30,
+    "retry_count": 2,
+    "output_dir": "verification_output",
+    "report_file": "verification_report.json"
+}

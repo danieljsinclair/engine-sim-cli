@@ -1,0 +1,139 @@
+name: Engine-Sim-CLI Verification
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  schedule:
+    # Run verification daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  verification:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Build engine-sim-cli
+      run: |
+        mkdir -p build
+        cd build
+        cmake ..
+        make -j$(sysctl -n hw.ncpu)
+        cd ..
+
+    - name: Check prerequisites
+      run: |
+        ./verification_tools/check-prerequisites
+
+    - name: Run quick verification
+      run: |
+        make -C verification_tools test-quick
+
+    - name: Run full verification
+      run: |
+        make -C verification_tools test
+
+    - name: Run CI verification
+      run: |
+        ./ci_verification.sh --quick --verbose
+
+    - name: Run CI verification with parallel tests
+      run: |
+        ./ci_verification.sh --parallel --engine-sim-cli ./build/engine-sim-cli --verbose
+
+    - name: Generate test report
+      if: always()
+      run: |
+        echo "## Verification Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Full Report" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+        cat verification_output/verification_report.json 2>/dev/null || echo "No report generated" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+    - name: Upload verification artifacts
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: verification-results
+        path: |
+          verification_output/
+          ci_reports/
+        retention-days: 30
+
+  audio-focused:
+    runs-on: macos-latest
+    needs: verification
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Build engine-sim-cli
+      run: |
+        mkdir -p build
+        cd build
+        cmake ..
+        make -j$(sysctl -n hw.ncpu)
+        cd ..
+
+    - name: Build verification tools
+      run: |
+        make -C verification_tools all
+
+    - name: Test audio output
+      run: |
+        make -C verification_tools test-audio
+
+    - name: Audio analysis
+      run: |
+        ./verify_audio --input verification_output/audio_test.wav --expected-rpm 2000 --detailed --output-report verification_output/audio_analysis.json
+
+  interactive-focused:
+    runs-on: macos-latest
+    needs: verification
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Build engine-sim-cli
+      run: |
+        mkdir -p build
+        cd build
+        cmake ..
+        make -j$(sysctl -n hw.ncpu)
+        cd ..
+
+    - name: Build verification tools
+      run: |
+        make -C verification_tools all
+
+    - name: Test input response
+      run: |
+        make -C verification_tools test-input
