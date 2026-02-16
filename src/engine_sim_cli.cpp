@@ -70,19 +70,24 @@ struct AudioUnitContext {
     EngineSimHandle engineHandle;         // Engine simulator handle
     std::atomic<bool> isPlaying;          // Playback state
 
-    // SIMPLE: Basic circular buffer (96000 samples)
-    // Both sine mode and engine mode use the same circular buffer for consistency
+    // Cursor-chasing buffer (matches GUI approach)
+    // Uses hardware feedback to maintain 100ms lead, preventing underruns
     float* circularBuffer;                // Intermediate buffer
-    size_t circularBufferSize;            // Buffer capacity (96000)
+    size_t circularBufferSize;            // Buffer capacity (44100 = 1 second)
     std::atomic<int> writePointer;        // Write position in circular buffer
-    std::atomic<int> readPointer;         // Read position in circular buffer
+    std::atomic<int> readPointer;         // Read position (hardware playback cursor)
     std::atomic<int> underrunCount;       // Count of buffer underruns
     int bufferStatus;                     // Buffer status for diagnostics (0=normal, 1=warning, 2=critical)
 
+    // Cursor-chasing state
+    std::atomic<int64_t> totalFramesRead; // Total frames read by callback (for cursor tracking)
+    int sampleRate;                       // Sample rate for calculations
+
     AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
-                        circularBuffer(nullptr), circularBufferSize(96000),
+                        circularBuffer(nullptr), circularBufferSize(44100),
                         writePointer(0), readPointer(0),
-                        underrunCount(0), bufferStatus(0) {}
+                        underrunCount(0), bufferStatus(0),
+                        totalFramesRead(0), sampleRate(44100) {}
 };
 
 class AudioPlayer {
@@ -101,6 +106,7 @@ public:
 
         // Create callback context
         context = new AudioUnitContext();
+        context->sampleRate = sr;
 
         // Set up audio format - PCM float32 stereo
         AudioStreamBasicDescription format = {};
@@ -181,14 +187,16 @@ public:
             return false;
         }
 
-        // SIMPLE: Allocate circular buffer
-        context->circularBufferSize = 96000;  // 2+ seconds at 44.1kHz
+        // Cursor-chasing buffer: 1 second capacity (matches GUI)
+        context->circularBufferSize = sr;  // 44100 samples = 1 second at 44.1kHz
         context->circularBuffer = new float[context->circularBufferSize * 2];  // Stereo
         std::memset(context->circularBuffer, 0, context->circularBufferSize * 2 * sizeof(float));
 
-        // Initialize pointers - both start at beginning for proper circular buffer
-        context->writePointer.store(0);
+        // Initialize pointers - start with 100ms offset (cursor-chasing approach)
+        // GUI starts writePointer at 4410 (100ms) for initial lead
+        context->writePointer.store(static_cast<int>(sr * 0.1));  // 100ms ahead
         context->readPointer.store(0);
+        context->totalFramesRead.store(0);
 
         // Get default output device for diagnostics
         AudioObjectPropertyAddress propertyAddress = {
@@ -212,7 +220,7 @@ public:
         }
 
         std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
-        std::cout << "[Audio] Real-time streaming mode (simplified pull model)\n";
+        std::cout << "[Audio] Cursor-chasing mode: 1s buffer with 100ms target lead\n";
         return true;
     }
 
@@ -338,7 +346,7 @@ public:
             writePtr = context->writePointer.load();
             readPtr = context->readPointer.load();
 
-            // Calculate available frames
+            // Calculate available frames (current lead)
             int bufferSize = static_cast<int>(context->circularBufferSize);
             if (writePtr >= readPtr) {
                 available = writePtr - readPtr;
@@ -346,13 +354,18 @@ public:
                 available = (bufferSize - readPtr) + writePtr;
             }
 
-            // Set status based on available frames
-            if (available > bufferSize / 4) {
-                status = 0;  // Normal
-            } else if (available > bufferSize / 8) {
-                status = 1;  // Warning
+            // Set status based on cursor-chasing target (100ms = 4410 samples)
+            // Normal: within 50-200ms lead (2205-8820 samples)
+            // Warning: 25-50ms or 200-400ms lead
+            // Critical: <25ms lead (but still has data)
+            // Underrun: no data
+            const int targetLead = static_cast<int>(context->sampleRate * 0.1);  // 4410
+            if (available >= targetLead / 2 && available <= targetLead * 2) {
+                status = 0;  // Normal: 50-200ms lead
+            } else if (available >= targetLead / 4 || available <= targetLead * 4) {
+                status = 1;  // Warning: 25-50ms or 200-400ms lead
             } else if (available > 0) {
-                status = 2;  // Critical
+                status = 2;  // Critical: <25ms but not underrun yet
             } else {
                 status = 3;  // Underrun
                 context->underrunCount.fetch_add(1);
@@ -376,12 +389,68 @@ public:
     // Reset circular buffer to eliminate warmup audio latency
     void resetCircularBuffer() {
         if (context && context->circularBuffer) {
-            // Reset read/write pointers to discard all buffered audio
-            context->writePointer.store(0);
+            // Reset with 100ms offset (cursor-chasing initial state)
+            context->writePointer.store(static_cast<int>(context->sampleRate * 0.1));
             context->readPointer.store(0);
+            context->totalFramesRead.store(0);
             // Clear buffer contents
             std::memset(context->circularBuffer, 0, context->circularBufferSize * 2 * sizeof(float));
         }
+    }
+
+    // Calculate how many samples to read based on cursor-chasing logic (matches GUI)
+    // Returns number of samples to maintain 100ms lead, or 0 if buffer is too full
+    int calculateCursorChasingSamples(int defaultFrames) {
+        if (!context) return defaultFrames;
+
+        const int bufferSize = static_cast<int>(context->circularBufferSize);
+        const int writePtr = context->writePointer.load();
+        const int readPtr = context->readPointer.load();
+
+        // Calculate current lead (distance ahead of playback cursor)
+        int currentLead;
+        if (writePtr >= readPtr) {
+            currentLead = writePtr - readPtr;
+        } else {
+            currentLead = (bufferSize - readPtr) + writePtr;
+        }
+
+        // Target: 100ms ahead (matches GUI line 257)
+        const int targetLead = static_cast<int>(context->sampleRate * 0.1);  // 4410 samples at 44.1kHz
+
+        // Safety: if too far ahead (>500ms), snap back to 50ms (matches GUI lines 263-267)
+        const int maxLead = static_cast<int>(context->sampleRate * 0.5);  // 22050 samples
+        if (currentLead > maxLead) {
+            // Reset write pointer to 50ms ahead of read pointer
+            int newWritePtr = (readPtr + static_cast<int>(context->sampleRate * 0.05)) % bufferSize;
+            context->writePointer.store(newWritePtr);
+            currentLead = static_cast<int>(context->sampleRate * 0.05);
+        }
+
+        // Calculate target write position (100ms ahead of current read position)
+        int targetWritePtr = (readPtr + targetLead) % bufferSize;
+
+        // Calculate how many samples to write to reach target
+        int maxWrite;
+        if (targetWritePtr >= writePtr) {
+            maxWrite = targetWritePtr - writePtr;
+        } else {
+            maxWrite = (bufferSize - writePtr) + targetWritePtr;
+        }
+
+        // Prevent underrun: don't write if it would make buffer smaller (matches GUI line 269-271)
+        int newLead;
+        if (targetWritePtr >= readPtr) {
+            newLead = targetWritePtr - readPtr;
+        } else {
+            newLead = (bufferSize - readPtr) + targetWritePtr;
+        }
+
+        if (currentLead > newLead) {
+            return 0;  // Would reduce buffer - skip this write
+        }
+
+        return std::min(maxWrite, defaultFrames);
     }
 
 private:
@@ -484,11 +553,12 @@ private:
                 ctx->bufferStatus = 0;  // Normal
             }
 
-            // CRITICAL: Advance read pointer by only the frames we actually read
-            // This prevents the read pointer from leaping over available data and creating gaps
-            // Both sine mode and engine mode use the same read pointer management
+            // Update read pointer (hardware playback cursor position in circular buffer)
             int newReadPtr = (readPtr + framesToRead) % bufferSize;
             ctx->readPointer.store(newReadPtr);
+
+            // Track total frames read for cursor tracking (used by main loop)
+            ctx->totalFramesRead.fetch_add(framesToRead);
         }
 
         return noErr;
@@ -799,430 +869,387 @@ void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimSt
 }
 
 // ============================================================================
-// Main Simulation Loop
+// Shared Audio Loop Infrastructure
+// ============================================================================
+
+// Shared configuration constants
+struct AudioLoopConfig {
+    static constexpr int SAMPLE_RATE = 44100;
+    static constexpr int CHANNELS = 2;
+    static constexpr double UPDATE_INTERVAL = 1.0 / 60.0;  // 60Hz
+    static constexpr int FRAMES_PER_UPDATE = SAMPLE_RATE / 60;  // 735 frames
+    static constexpr int WARMUP_ITERATIONS = 3;  // Minimal warmup
+    static constexpr int PRE_FILL_ITERATIONS = 6;  // 0.1s initial buffer
+    static constexpr int RE_PRE_FILL_ITERATIONS = 3;  // 0.05s after warmup
+};
+
+// Shared buffer operations - DRY: same for both modes
+namespace BufferOps {
+    void preFillCircularBuffer(AudioPlayer* player) {
+        if (!player) return;
+
+        std::cout << "Pre-filling audio buffer...\n";
+        std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
+
+        for (int i = 0; i < AudioLoopConfig::PRE_FILL_ITERATIONS; i++) {
+            player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
+        }
+
+        std::cout << "Buffer pre-filled: " << (AudioLoopConfig::PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
+                  << " frames (" << (AudioLoopConfig::PRE_FILL_ITERATIONS / 60.0) << "s)\n";
+    }
+
+    void resetAndRePrefillBuffer(AudioPlayer* player) {
+        if (!player) return;
+
+        player->resetCircularBuffer();
+        std::cout << "Circular buffer reset after warmup\n";
+
+        std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
+        for (int i = 0; i < AudioLoopConfig::RE_PRE_FILL_ITERATIONS; i++) {
+            player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
+        }
+
+        std::cout << "Re-pre-filled: " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
+                  << " frames (" << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS / 60.0) << "s)\n";
+    }
+}
+
+// Shared warmup phase logic
+namespace WarmupOps {
+    void runWarmup(EngineSimHandle handle, const EngineSimAPI& api, AudioPlayer* audioPlayer, bool playAudio) {
+        std::cout << "Priming synthesizer pipeline (" << AudioLoopConfig::WARMUP_ITERATIONS << " iterations)...\n";
+
+        double smoothedThrottle = 0.6;
+        double currentTime = 0.0;
+
+        for (int i = 0; i < AudioLoopConfig::WARMUP_ITERATIONS; i++) {
+            EngineSimStats stats = {};
+            api.GetStats(handle, &stats);
+
+            api.SetThrottle(handle, smoothedThrottle);
+            api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+
+            currentTime += AudioLoopConfig::UPDATE_INTERVAL;
+
+            std::cout << "  Priming: " << stats.currentRPM << " RPM\n";
+
+            // Drain audio if in play mode - DISCARD to prevent crackles
+            // Warmup audio contains starter motor noise and transients
+            // The buffer was pre-filled with silence, callback reads from that during warmup
+            if (playAudio && audioPlayer) {
+                std::vector<float> discardBuffer(AudioLoopConfig::FRAMES_PER_UPDATE * 2);
+                int warmupRead = 0;
+
+                for (int retry = 0; retry <= 3 && warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE; retry++) {
+                    int readThisTime = 0;
+                    api.ReadAudioBuffer(handle,
+                        discardBuffer.data() + warmupRead * 2,
+                        AudioLoopConfig::FRAMES_PER_UPDATE - warmupRead,
+                        &readThisTime);
+
+                    if (readThisTime > 0) warmupRead += readThisTime;
+
+                    if (warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE && retry < 3) {
+                        std::this_thread::sleep_for(std::chrono::microseconds(500));
+                    }
+                }
+                // DISCARD warmup audio - do NOT send to circular buffer
+                // Buffer was pre-initialized with 100ms offset, so callback reads silence during warmup
+            }
+        }
+    }
+}
+
+// Shared timing control
+namespace TimingOps {
+    struct LoopTimer {
+        std::chrono::steady_clock::time_point absoluteStartTime;
+        int iterationCount;
+
+        LoopTimer() : absoluteStartTime(std::chrono::steady_clock::now()), iterationCount(0) {}
+
+        void sleepToMaintain60Hz() {
+            iterationCount++;
+            auto now = std::chrono::steady_clock::now();
+            auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                now - absoluteStartTime).count();
+            auto targetUs = static_cast<long long>(iterationCount * AudioLoopConfig::UPDATE_INTERVAL * 1000000);
+            auto sleepUs = targetUs - elapsedUs;
+
+            if (sleepUs > 0) {
+                std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
+            }
+        }
+    };
+}
+
+// Audio source abstraction - the ONLY difference between modes
+class IAudioSource {
+public:
+    virtual ~IAudioSource() = default;
+    virtual bool generateAudio(std::vector<float>& buffer, int frames) = 0;
+    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats) = 0;
+};
+
+// Sine wave audio source
+class SineAudioSource : public IAudioSource {
+private:
+    EngineSimHandle handle;
+    const EngineSimAPI& api;
+    double currentPhase;
+
+public:
+    SineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
+        : handle(h), api(a), currentPhase(0.0) {}
+
+    bool generateAudio(std::vector<float>& buffer, int frames) override {
+        EngineSimStats stats = {};
+        api.GetStats(handle, &stats);
+
+        double frequency = (stats.currentRPM / 600.0) * 100.0;
+
+        for (int i = 0; i < frames; i++) {
+            double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
+            currentPhase += phaseIncrement;
+
+            float sample = static_cast<float>(std::sin(currentPhase) * 0.9);
+            buffer[i * 2] = sample;
+            buffer[i * 2 + 1] = sample;
+        }
+
+        return true;
+    }
+
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats) override {
+        if (interactive) {
+            double frequency = (stats.currentRPM / 600.0) * 100.0;
+            std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
+            std::cout << "[Frequency: " << std::setw(4) << static_cast<int>(frequency) << " Hz] ";
+            std::cout << std::flush;
+        } else {
+            static int lastProgress = 0;
+            int progress = static_cast<int>(currentTime * 100 / duration);
+            if (progress != lastProgress && progress % 10 == 0) {
+                double frequency = (stats.currentRPM / 600.0) * 100.0;
+                std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
+                          << " | Frequency: " << static_cast<int>(frequency) << " Hz\r" << std::flush;
+                lastProgress = progress;
+            }
+        }
+    }
+};
+
+// Engine audio source
+class EngineAudioSource : public IAudioSource {
+private:
+    EngineSimHandle handle;
+    const EngineSimAPI& api;
+
+public:
+    EngineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
+        : handle(h), api(a) {}
+
+    bool generateAudio(std::vector<float>& buffer, int frames) override {
+        // Read from synthesizer with retry
+        int totalRead = 0;
+
+        api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
+
+        if (totalRead < frames) {
+            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            int additionalRead = 0;
+            api.ReadAudioBuffer(handle, buffer.data() + totalRead * 2, frames - totalRead, &additionalRead);
+            if (additionalRead > 0) {
+                totalRead += additionalRead;
+            }
+        }
+
+        return totalRead > 0;
+    }
+
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats) override {
+        if (interactive) {
+            std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
+            std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
+            std::cout << std::flush;
+        } else {
+            static int lastProgress = 0;
+            int progress = static_cast<int>(currentTime * 100 / duration);
+            if (progress != lastProgress && progress % 10 == 0) {
+                std::cout << "  Progress: " << progress << "% (" << static_cast<int>(currentTime * AudioLoopConfig::SAMPLE_RATE) << " frames)\r" << std::flush;
+                lastProgress = progress;
+            }
+        }
+    }
+};
+
+// ============================================================================
+// UNIFIED Main Loop - Works for BOTH sine and engine modes
+// ============================================================================
+
+int runUnifiedAudioLoop(
+    EngineSimHandle handle,
+    const EngineSimAPI& api,
+    IAudioSource& audioSource,
+    const CommandLineArgs& args,
+    AudioPlayer* audioPlayer)
+{
+    double currentTime = 0.0;
+    TimingOps::LoopTimer timer;
+
+    // Setup keyboard input if interactive
+    KeyboardInput* keyboardInput = nullptr;
+    double interactiveLoad = 0.7;
+    double baselineLoad = interactiveLoad;
+    bool wKeyPressed = false;
+
+    if (args.interactive) {
+        keyboardInput = new KeyboardInput();
+        std::cout << "\nInteractive mode enabled. Press Q to quit.\n";
+    }
+
+    // Enable starter motor
+    g_engineAPI.SetStarterMotor(handle, 1);
+
+    // Main loop
+    std::cout << "\nStarting main loop...\n";
+
+    while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
+        // Get current stats
+        EngineSimStats stats = {};
+        api.GetStats(handle, &stats);
+
+        // Disable starter once running
+        const double minSustainedRPM = 550.0;
+        if (stats.currentRPM > minSustainedRPM) {
+            api.SetStarterMotor(handle, 0);
+        }
+
+        // Handle keyboard input
+        if (args.interactive && keyboardInput) {
+            static int lastKey = -1;
+            int key = keyboardInput->getKey();
+
+            if (key < 0) {
+                lastKey = -1;
+                wKeyPressed = false;
+            } else if (key != lastKey) {
+                switch (key) {
+                    case 27: case 'q': case 'Q':
+                        g_running.store(false);
+                        break;
+                    case 'w': case 'W':
+                        wKeyPressed = true;
+                        interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
+                        baselineLoad = interactiveLoad;
+                        break;
+                    case ' ':
+                        interactiveLoad = 0.0;
+                        baselineLoad = 0.0;
+                        break;
+                    case 'r': case 'R':
+                        interactiveLoad = 0.2;
+                        baselineLoad = interactiveLoad;
+                        break;
+                    case 'a':
+                        // Toggle ignition - only on initial press, not repeat
+                        {
+                            static bool ignitionState = true;  // Start enabled by default
+                            ignitionState = !ignitionState;
+                            api.SetIgnition(handle, ignitionState ? 1 : 0);
+                            std::cout << "Ignition " << (ignitionState ? "enabled" : "disabled") << "\n";
+                        }
+                        break;
+                    case 's':
+                        // Toggle starter motor - only on initial press, not repeat
+                        {
+                            static bool starterState = false;
+                            starterState = !starterState;
+                            api.SetStarterMotor(handle, starterState ? 1 : 0);
+                            std::cout << "Starter motor " << (starterState ? "enabled" : "disabled") << "\n";
+                        }
+                        break;
+                    case 65:  // UP arrow (macOS) - conflicts with 'A', but arrow takes precedence
+                        interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
+                        baselineLoad = interactiveLoad;
+                        break;
+                    case 66:  // DOWN arrow (macOS)
+                        interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
+                        baselineLoad = interactiveLoad;
+                        break;
+                    case 'k': case 'K':  // Alternative UP key
+                        interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
+                        baselineLoad = interactiveLoad;
+                        break;
+                    case 'j': case 'J':  // Alternative DOWN key
+                        interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
+                        baselineLoad = interactiveLoad;
+                        break;
+                }
+                lastKey = key;
+            }
+
+            if (!wKeyPressed && interactiveLoad > baselineLoad) {
+                interactiveLoad = std::max(baselineLoad, interactiveLoad * 0.5);
+            }
+        }
+
+        // Calculate throttle
+        double throttle = args.interactive ? interactiveLoad :
+                         (currentTime < 0.5 ? currentTime / 0.5 : 1.0);
+
+        // Update engine
+        api.SetThrottle(handle, throttle);
+        api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+
+        // Generate audio (ONLY DIFFERENCE between modes)
+        if (audioPlayer) {
+            // Use cursor-chasing to determine how many frames to write
+            // This maintains 100ms lead and prevents buffer underruns/overruns
+            int framesToWrite = audioPlayer->calculateCursorChasingSamples(AudioLoopConfig::FRAMES_PER_UPDATE);
+
+            if (framesToWrite > 0) {
+                std::vector<float> audioBuffer(framesToWrite * 2);
+                if (audioSource.generateAudio(audioBuffer, framesToWrite)) {
+                    audioPlayer->addToCircularBuffer(audioBuffer.data(), framesToWrite);
+                }
+            }
+        }
+
+        currentTime += AudioLoopConfig::UPDATE_INTERVAL;
+
+        // Display progress
+        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats);
+
+        // 60Hz timing control
+        timer.sleepToMaintain60Hz();
+    }
+
+    if (keyboardInput) {
+        delete keyboardInput;
+    }
+
+    return 0;
+}
+
+// ============================================================================
+// Main Simulation Entry Point - UNIFIED for both modes
 // ============================================================================
 
 int runSimulation(const CommandLineArgs& args) {
-    // CRITICAL: Use 44100 Hz to match GUI (engine_sim_application.cpp line 169-177)
-    // GUI uses 44.1kHz for all audio synthesis parameters
-    const int sampleRate = 44100;
-    const int channels = 2;
-    // CRITICAL FIX: Update frequency to 60Hz to match GUI framerate
-    // GUI updates at 60Hz, so CLI should match for consistent audio synthesis
-    const double updateInterval = 1.0 / 60.0;  // 60Hz - matches GUI framerate
-    const int framesPerUpdate = sampleRate / 60;  // 735 frames per update
+    const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
+    const int channels = AudioLoopConfig::CHANNELS;
 
     // ============================================================================
-    // SINE MODE: Generate RPM-linked sine wave test tone
-    // ============================================================================
-    if (args.sineMode) {
-        std::cout << "\n=== RPM-LINKED SINE WAVE TEST MODE ===\n";
-        std::cout << "Generating sine wave with frequency linked to engine RPM\n";
-        std::cout << "Mapping: 600 RPM = 100Hz, 6000 RPM = 1000Hz\n";
-        std::cout << "This tests if the audio path can handle dynamic frequency changes\n\n";
-
-        // Create engine simulator for RPM data
-        EngineSimConfig config = {};
-        config.sampleRate = sampleRate;
-        config.inputBufferSize = 1024;
-        config.audioBufferSize = 96000;  // Match GUI - 2+ seconds at 44.1kHz
-        config.simulationFrequency = 10000;
-        config.fluidSimulationSteps = 8;
-        config.targetSynthesizerLatency = 0.02;
-        config.volume = 1.0f;
-        config.convolutionLevel = 0.5f;
-        config.airNoise = 1.0f;
-
-        EngineSimHandle handle = nullptr;
-        EngineSimResult result = g_engineAPI.Create(&config, &handle);
-        if (result != ESIM_SUCCESS || handle == nullptr) {
-            std::cerr << "ERROR: Failed to create engine simulator (result: " << result << ")\n";
-            if (handle) {
-                std::cerr << "Error details: " << g_engineAPI.GetLastError(handle) << "\n";
-            }
-            return 1;
-        }
-
-        // Use default engine configuration
-        std::string configPath = "engine-sim-bridge/engine-sim/assets/main.mr";
-        std::string assetBasePath = "engine-sim-bridge/engine-sim";
-
-        // Resolve to absolute paths
-        try {
-            std::filesystem::path scriptPath(configPath);
-            if (scriptPath.is_relative()) {
-                scriptPath = std::filesystem::absolute(scriptPath);
-            }
-            scriptPath = scriptPath.lexically_normal();
-            configPath = scriptPath.string();
-
-            std::filesystem::path assetPath(assetBasePath);
-            if (assetPath.is_relative()) {
-                assetPath = std::filesystem::absolute(assetPath);
-            }
-            assetPath = assetPath.lexically_normal();
-            assetBasePath = assetPath.string();
-        } catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "ERROR: Failed to resolve paths: " << e.what() << "\n";
-            g_engineAPI.Destroy(handle);
-            return 1;
-        }
-
-        // Load engine configuration
-        result = g_engineAPI.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
-        if (result != ESIM_SUCCESS) {
-            std::cerr << "ERROR: Failed to load engine config: " << g_engineAPI.GetLastError(handle) << "\n";
-            g_engineAPI.Destroy(handle);
-            return 1;
-        }
-        std::cout << "[Engine configuration loaded]\n";
-
-        // Start audio thread
-        result = g_engineAPI.StartAudioThread(handle);
-        if (result != ESIM_SUCCESS) {
-            std::cerr << "ERROR: Failed to start audio thread: " << g_engineAPI.GetLastError(handle) << "\n";
-            g_engineAPI.Destroy(handle);
-            return 1;
-        }
-        std::cout << "[Audio thread started]\n";
-
-        // Enable ignition
-        g_engineAPI.SetIgnition(handle, 1);
-        std::cout << "[Ignition enabled]\n";
-
-        // Initialize audio player for real-time playback
-        AudioPlayer* audioPlayer = nullptr;
-        if (args.playAudio) {
-            audioPlayer = new AudioPlayer();
-            if (!audioPlayer->initialize(sampleRate)) {
-                std::cerr << "ERROR: Failed to initialize audio player\n";
-                delete audioPlayer;
-                g_engineAPI.Destroy(handle);
-                return 1;
-            }
-
-            // Note: We DON'T set engine handle for sine mode - sine wave is generated in main loop
-            // and written to circular buffer, just like engine audio
-
-            std::cout << "[Audio initialized for real-time playback]\n";
-            std::cout << "[Playing " << args.duration << " seconds of RPM-linked sine wave...]\n";
-            std::cout << "[Press Ctrl+C to stop playback]\n";
-
-            // Pre-fill circular buffer BEFORE starting playback
-            // Use moderate buffering (0.5s) to prevent underruns while minimizing latency
-            // This reduces delay from ~1s to ~50-100ms for responsive RPM changes
-            std::cout << "Pre-filling audio buffer...\n";
-            const int framesPerUpdate = sampleRate / 60;  // 735 frames per update at 60Hz
-            std::vector<float> silenceBuffer(framesPerUpdate * 2, 0.0f);
-            const int preFillIterations = 40;  // Reduced from 180 (3s) to 40 (0.67s) for lower latency
-            for (int i = 0; i < preFillIterations; i++) {
-                audioPlayer->addToCircularBuffer(silenceBuffer.data(), framesPerUpdate);
-            }
-            std::cout << "Buffer pre-filled with " << (preFillIterations * framesPerUpdate)
-                      << " frames (" << (preFillIterations / 60.0) << " seconds)\n";
-
-            // Start playback (callback will read from circular buffer)
-            audioPlayer->start();
-        }
-
-        // Simulation parameters
-        const double updateInterval = 1.0 / 60.0;  // 60 Hz physics update
-        double currentTime = 0.0;
-        double throttle = 0.0;
-        double smoothedThrottle = 0.0;
-
-        std::cout << "\nStarting simulation...\n";
-
-        // Warmup phase - reduced to 0.2s to minimize latency
-        const double warmupDuration = 0.2;
-        std::cout << "Warmup phase...\n";
-        while (currentTime < warmupDuration) {
-            EngineSimStats stats = {};
-            g_engineAPI.GetStats(handle, &stats);
-
-            // Gradual throttle increase during warmup
-            double warmupThrottle;
-            if (currentTime < 1.0) {
-                warmupThrottle = 0.5;
-            } else {
-                warmupThrottle = 0.7;
-            }
-
-            smoothedThrottle = warmupThrottle * 0.5 + smoothedThrottle * 0.5;
-            g_engineAPI.SetThrottle(handle, smoothedThrottle);
-            g_engineAPI.Update(handle, updateInterval);
-
-            currentTime += updateInterval;
-
-            if (static_cast<int>(currentTime * 2) % 2 == 0) {
-                std::cout << "  Warmup: " << stats.currentRPM << " RPM, Frequency: "
-                          << (stats.currentRPM / 600.0 * 100.0) << " Hz\n";
-            }
-        }
-
-        // Reset time for main simulation
-        currentTime = 0.0;
-
-        // CRITICAL: Reset circular buffer to eliminate warmup audio latency
-        // This discards warmup audio so RPM changes are immediately audible
-        if (audioPlayer) {
-            audioPlayer->resetCircularBuffer();
-            std::cout << "Circular buffer reset after warmup to minimize latency\n";
-        }
-
-        // Enable starter motor
-        g_engineAPI.SetStarterMotor(handle, 1);
-
-        // Calculate smooth RPM target that starts from current warmup RPM
-        EngineSimStats endWarmupStats = {};
-        g_engineAPI.GetStats(handle, &endWarmupStats);
-        double startRPM = std::max(endWarmupStats.currentRPM, 100.0);  // At least 100 RPM to avoid zero
-
-        // Main simulation loop with RPM ramp
-        std::cout << "\nRPM ramp phase (" << static_cast<int>(startRPM) << " -> 6000 RPM)...\n";
-        auto startTime = std::chrono::steady_clock::now();
-        int lastProgress = 0;
-
-        // Setup keyboard input for interactive mode in sine mode
-        KeyboardInput* keyboardInput = nullptr;
-        double interactiveTargetRPM = 0.0;
-        double interactiveLoad = 0.7;  // Start with moderate throttle for sine mode
-        double baselineLoad = interactiveLoad;
-        bool wKeyPressed = false;
-
-        if (args.interactive) {
-            keyboardInput = new KeyboardInput();
-            std::cout << "\nInteractive mode enabled. Press Q to quit.\n\n";
-            std::cout << "Interactive Controls:\n";
-            std::cout << "  A - Toggle ignition (starts ON)\n";
-            std::cout << "  S - Toggle starter motor\n";
-            std::cout << "  W - Increase throttle\n";
-            std::cout << "  SPACE - Brake\n";
-            std::cout << "  R - Reset to idle\n";
-            std::cout << "  J/K or Down/Up - Decrease/Increase load\n";
-            std::cout << "  Q/ESC - Quit\n\n";
-        }
-
-        // CRITICAL FIX: Initialize timing control for 60Hz loop rate
-        // Use absolute time to prevent timing drift
-        auto loopStartTime = std::chrono::steady_clock::now();
-        auto absoluteStartTime = loopStartTime;
-        int iterationCount = 0;
-
-        while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
-            // Get current stats
-            EngineSimStats stats = {};
-            g_engineAPI.GetStats(handle, &stats);
-
-            // Disable starter motor once engine is running
-            const double minSustainedRPM = 550.0;
-            if (stats.currentRPM > minSustainedRPM) {
-                g_engineAPI.SetStarterMotor(handle, 0);
-            }
-
-            // Handle keyboard input in interactive mode
-            if (args.interactive && keyboardInput) {
-                static int lastKey = -1;
-                int key = keyboardInput->getKey();
-
-                if (key < 0) {
-                    lastKey = -1;
-                    wKeyPressed = false;
-                } else if (key != lastKey) {
-                    switch (key) {
-                        case 27:  // ESC
-                        case 'q':
-                        case 'Q':
-                            g_running.store(false);
-                            break;
-                        case 'w':
-                        case 'W':
-                            wKeyPressed = true;
-                            interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-                            baselineLoad = interactiveLoad;
-                            break;
-                        case ' ':
-                            interactiveLoad = 0.0;
-                            baselineLoad = 0.0;
-                            break;
-                        case 'r':
-                        case 'R':
-                            interactiveLoad = 0.2;
-                            baselineLoad = 0.2;
-                            break;
-                        case 'a':
-                            // Toggle ignition - only lowercase to avoid conflict with UP arrow (65)
-                            {
-                                static bool ignitionState = true;
-                                ignitionState = !ignitionState;
-                                g_engineAPI.SetIgnition(handle, ignitionState ? 1 : 0);
-                                std::cout << "\nIgnition " << (ignitionState ? "enabled" : "disabled") << "\n";
-                            }
-                            break;
-                        case 's':
-                        case 'S':
-                            {
-                                static bool starterState = false;
-                                starterState = !starterState;
-                                g_engineAPI.SetStarterMotor(handle, starterState ? 1 : 0);
-                                std::cout << "\nStarter motor " << (starterState ? "enabled" : "disabled") << "\n";
-                            }
-                            break;
-                        case 65:  // UP arrow (macOS) - also 'A' which we want to avoid
-                            interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-                            baselineLoad = interactiveLoad;
-                            break;
-                        case 66:  // DOWN arrow
-                            interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
-                            baselineLoad = interactiveLoad;
-                            break;
-                        case 'k':
-                        case 'K':
-                            interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-                            baselineLoad = interactiveLoad;
-                            break;
-                        case 'j':
-                        case 'J':
-                            interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
-                            baselineLoad = interactiveLoad;
-                            break;
-                    }
-                    lastKey = key;
-                }
-
-                if (!wKeyPressed && interactiveLoad > baselineLoad) {
-                    interactiveLoad = std::max(baselineLoad, interactiveLoad * 0.5);
-                }
-            }
-
-            // Calculate target throttle based on desired RPM ramp
-            // Start from current warmup RPM and ramp up smoothly
-            // In interactive mode, use interactive load; in auto mode, use RPM ramp
-            if (args.interactive) {
-                throttle = interactiveLoad;
-            } else {
-                double targetRPM = startRPM + ((6000.0 - startRPM) * (currentTime / args.duration));
-                // Simple RPM controller
-                double rpmError = targetRPM - stats.currentRPM;
-                throttle = std::max(0.0, std::min(1.0, rpmError / 1000.0));  // Simple P-controller
-            }
-
-            // Apply throttle smoothing
-            smoothedThrottle = throttle * 0.2 + smoothedThrottle * 0.8;
-            g_engineAPI.SetThrottle(handle, smoothedThrottle);
-            g_engineAPI.Update(handle, updateInterval);
-
-            // SIMPLE: Generate sine wave samples and write to circular buffer
-            // This tests the EXACT same audio path as engine audio
-            if (audioPlayer && audioPlayer->getContext()) {
-                AudioUnitContext* ctx = audioPlayer->getContext();
-                const int bufferSize = static_cast<int>(ctx->circularBufferSize);
-
-                // SIMPLE: Always generate samples and write to buffer
-                // Let the AudioUnit callback handle reading and wrapping
-                std::vector<float> sineBuffer(framesPerUpdate * 2);
-
-                // Calculate frequency based on RPM
-                double frequency = (stats.currentRPM / 600.0) * 100.0;  // 600 RPM -> 100Hz, 6000 RPM -> 1000Hz
-
-                // Maintain continuous phase across main loop iterations
-                static double currentPhase = 0.0;
-
-                // Generate sine wave samples
-                for (int i = 0; i < framesPerUpdate; i++) {
-                    // Calculate phase increment per sample
-                    double phaseIncrement = (2.0 * M_PI * frequency) / 44100.0;
-                    currentPhase += phaseIncrement;
-
-                    // Generate sample
-                    float sample = static_cast<float>(std::sin(currentPhase) * 0.9);  // 90% volume
-
-                    // Write stereo samples
-                    sineBuffer[i * 2] = sample;     // Left channel
-                    sineBuffer[i * 2 + 1] = sample; // Right channel
-                }
-
-                // Write to circular buffer (same path as engine audio)
-                audioPlayer->addToCircularBuffer(sineBuffer.data(), framesPerUpdate);
-            }
-
-            currentTime += updateInterval;
-
-            // Display progress
-            if (args.interactive) {
-                double frequency = (stats.currentRPM / 600.0) * 100.0;
-                std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
-                std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(smoothedThrottle * 100) << "%] ";
-                std::cout << "[Frequency: " << std::setw(4) << static_cast<int>(frequency) << " Hz] ";
-                std::cout << std::flush;
-            } else {
-                int progress = static_cast<int>(currentTime * 100 / args.duration);
-                if (progress != lastProgress && progress % 10 == 0) {
-                    double frequency = (stats.currentRPM / 600.0) * 100.0;
-                    std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
-                              << " | Frequency: " << static_cast<int>(frequency) << " Hz\r" << std::flush;
-                    lastProgress = progress;
-                }
-            }
-
-            // CRITICAL FIX: Add timing control to maintain 60Hz loop rate
-            // Use absolute time-based timing to prevent drift from sleep inaccuracies
-            // This is essential to keep audio generation rate synchronized with consumption rate
-            iterationCount++;
-            auto now = std::chrono::steady_clock::now();
-            auto elapsedTime = std::chrono::duration_cast<std::chrono::microseconds>(
-                now - absoluteStartTime
-            ).count();
-            auto targetTime = static_cast<long long>(iterationCount * updateInterval * 1000000);
-            auto sleepTime = targetTime - elapsedTime;
-
-            if (sleepTime > 0) {
-                std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
-            }
-        }
-
-        std::cout << "\n\nSimulation complete!\n";
-
-        // Get final statistics
-        EngineSimStats finalStats = {};
-        g_engineAPI.GetStats(handle, &finalStats);
-        std::cout << "\nFinal Statistics:\n";
-        std::cout << "  RPM: " << static_cast<int>(finalStats.currentRPM) << "\n";
-        std::cout << "  Final Frequency: " << static_cast<int>((finalStats.currentRPM / 600.0) * 100.0) << " Hz\n";
-
-        // Cleanup
-        if (keyboardInput) {
-            delete keyboardInput;
-        }
-
-        if (audioPlayer) {
-            audioPlayer->stop();
-            audioPlayer->waitForCompletion();
-            std::cout << "[Playback complete]\n";
-            delete audioPlayer;
-        }
-
-        g_engineAPI.Destroy(handle);
-
-        // Note: WAV export not supported in RPM-linked sine mode
-        // since the sine wave is generated in real-time based on RPM
-        if (args.outputWav) {
-            std::cout << "\nWARNING: WAV export not supported in RPM-linked sine mode\n";
-            std::cout << "The sine wave is generated in real-time based on engine RPM.\n";
-        }
-
-        return 0;
-    }
-
-    // ============================================================================
-    // ENGINE SIMULATION MODE
+    // COMMON SETUP - Same for both sine and engine modes
     // ============================================================================
 
-    // Configure simulator
+    // Create simulator
     EngineSimConfig config = {};
     config.sampleRate = sampleRate;
     config.inputBufferSize = 1024;
-    config.audioBufferSize = 96000;  // Match GUI - 2+ seconds at 44.1kHz
+    config.audioBufferSize = 96000;
     config.simulationFrequency = 10000;
     config.fluidSimulationSteps = 8;
     config.targetSynthesizerLatency = 0.02;
@@ -1230,680 +1257,139 @@ int runSimulation(const CommandLineArgs& args) {
     config.convolutionLevel = 0.5f;
     config.airNoise = 1.0f;
 
-    // Create simulator
     EngineSimHandle handle = nullptr;
     EngineSimResult result = g_engineAPI.Create(&config, &handle);
-    if (result != ESIM_SUCCESS || handle == nullptr) {
-        std::cerr << "ERROR: Failed to create simulator: " << g_engineAPI.GetLastError(handle) << "\n";
+    if (result != ESIM_SUCCESS || !handle) {
+        std::cerr << "ERROR: Failed to create simulator\n";
         return 1;
     }
-
-    std::cout << "[1/5] Simulator created successfully\n";
 
     // Load engine configuration
-    std::string configPath = args.engineConfig;
-    std::string assetBasePath;
-    std::string piranhaLibraryPath;
+    std::string configPath;
+    std::string assetBasePath = "engine-sim-bridge/engine-sim";  // Base directory, not full path
 
-    // Resolve Piranha library path to absolute path
+    if (args.sineMode) {
+        configPath = "engine-sim-bridge/engine-sim/assets/main.mr";
+    } else if (args.useDefaultEngine) {
+        configPath = "engine-sim-bridge/engine-sim/assets/main.mr";
+    } else if (args.engineConfig) {
+        configPath = args.engineConfig;
+    } else {
+        std::cerr << "ERROR: No engine configuration specified\n";
+        std::cerr << "Use --script <config.mr> or --default-engine\n";
+        g_engineAPI.Destroy(handle);
+        return 1;
+    }
+
+    // Resolve to absolute paths
     try {
-        std::filesystem::path esPath("engine-sim-bridge/engine-sim/es");
-        if (esPath.is_relative()) {
-            esPath = std::filesystem::absolute(esPath);
+        std::filesystem::path scriptPath(configPath);
+        if (scriptPath.is_relative()) {
+            scriptPath = std::filesystem::absolute(scriptPath);
         }
-        esPath = esPath.lexically_normal();
-        piranhaLibraryPath = esPath.string();
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "ERROR: Failed to resolve Piranha library path: " << e.what() << "\n";
-        g_engineAPI.Destroy(handle);
-        return 1;
-    }
+        scriptPath = scriptPath.lexically_normal();
+        configPath = scriptPath.string();
 
-    if (args.useDefaultEngine) {
-        // Use main.mr from the engine-sim submodule
-        std::filesystem::path defaultScriptPath("engine-sim-bridge/engine-sim/assets/main.mr");
-        // Note: The impulse response filenames already include "es/sound-library/" prefix,
-        // so assetBasePath should point to the parent directory (engine-sim-bridge/engine-sim)
-        std::filesystem::path defaultAssetPath("engine-sim-bridge/engine-sim");
-
-        if (defaultScriptPath.is_relative()) {
-            defaultScriptPath = std::filesystem::absolute(defaultScriptPath);
-        }
-        if (defaultAssetPath.is_relative()) {
-            defaultAssetPath = std::filesystem::absolute(defaultAssetPath);
-        }
-
-        defaultScriptPath = defaultScriptPath.lexically_normal();
-        defaultAssetPath = defaultAssetPath.lexically_normal();
-
-        configPath = defaultScriptPath.string();
-        assetBasePath = defaultAssetPath.string();
-    } else {
-        // Resolve to absolute path using std::filesystem
-        try {
-            std::filesystem::path scriptPath(configPath);
-            if (scriptPath.is_relative()) {
-                // Convert relative path to absolute based on current working directory
-                scriptPath = std::filesystem::absolute(scriptPath);
-            }
-            // Normalize the path (resolve . and ..)
-            scriptPath = scriptPath.lexically_normal();
-            configPath = scriptPath.string();
-
-            // Extract directory from config path for asset resolution
-            // For engine-sim scripts, find the es/sound-library directory
-            if (scriptPath.has_parent_path()) {
-                std::filesystem::path parentPath = scriptPath.parent_path();
-                // Check if we're in the assets directory - if so, use es/sound-library
-                if (parentPath.filename() == "assets") {
-                    // Script is in assets/, go up to engine-sim then to es/sound-library
-                    assetBasePath = (parentPath.parent_path() / "es" / "sound-library").string();
-                } else {
-                    // For other scripts, try to find es/sound-library relative to script
-                    assetBasePath = parentPath.string();
-                }
+        // Extract directory for asset resolution
+        if (scriptPath.has_parent_path()) {
+            std::filesystem::path parentPath = scriptPath.parent_path();
+            if (parentPath.filename() == "assets") {
+                assetBasePath = parentPath.parent_path().string();  // Parent of assets is the base
             } else {
-                // Use current directory if no parent path
-                assetBasePath = ".";
+                assetBasePath = parentPath.string();
             }
-        } catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "ERROR: Failed to resolve path '" << configPath << "': " << e.what() << "\n";
-            g_engineAPI.Destroy(handle);
-            return 1;
         }
-    }
 
-    // Note: All paths have been converted to absolute paths, so we don't need to change directories.
-    // The Piranha compiler can now find imports using the absolute paths provided.
-    // Load the engine configuration script with absolute paths
-    result = g_engineAPI.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
-
-    if (result != ESIM_SUCCESS) {
-        std::cerr << "ERROR: Failed to load engine config: " << g_engineAPI.GetLastError(handle) << "\n";
+        // Resolve asset base path
+        std::filesystem::path assetPath(assetBasePath);
+        if (assetPath.is_relative()) {
+            assetPath = std::filesystem::absolute(assetPath);
+        }
+        assetPath = assetPath.lexically_normal();
+        assetBasePath = assetPath.string();
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "ERROR: Failed to resolve path: " << e.what() << "\n";
         g_engineAPI.Destroy(handle);
         return 1;
     }
 
-    std::cout << "[2/5] Engine configuration loaded: " << configPath << "\n";
-    std::cout << "[2.5/5] Impulse responses loaded automatically\n";
-
-    // Start the audio thread only for interactive/play mode (async rendering).
-    // For WAV-only export, use synchronous EngineSimRender() which avoids
-    // the producer/consumer race condition that causes crackles.
-    if (args.playAudio) {
-        result = g_engineAPI.StartAudioThread(handle);
-        if (result != ESIM_SUCCESS) {
-            std::cerr << "ERROR: Failed to start audio thread: " << g_engineAPI.GetLastError(handle) << "\n";
-            g_engineAPI.Destroy(handle);
-            return 1;
-        }
-        std::cout << "[3/5] Audio thread started (asynchronous rendering)\n";
-    } else {
-        std::cout << "[3/5] Synchronous rendering mode (WAV export)\n";
+    result = g_engineAPI.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
+    if (result != ESIM_SUCCESS) {
+        std::cerr << "ERROR: Failed to load config: " << g_engineAPI.GetLastError(handle) << "\n";
+        g_engineAPI.Destroy(handle);
+        return 1;
     }
+    std::cout << "[Configuration loaded: " << configPath << "]\n";
 
-    // Auto-enable ignition so the engine can run
+    // Start audio thread
+    result = g_engineAPI.StartAudioThread(handle);
+    if (result != ESIM_SUCCESS) {
+        std::cerr << "ERROR: Failed to start audio thread\n";
+        g_engineAPI.Destroy(handle);
+        return 1;
+    }
+    std::cout << "[Audio thread started]\n";
+
+    // Enable ignition
     g_engineAPI.SetIgnition(handle, 1);
-    if (!args.interactive) {
-        std::cout << "[4/5] Ignition enabled (auto)\n";
-    } else {
-        std::cout << "[4/5] Ignition enabled (ready for start) - Press 'S' for starter motor\n";
-    }
+    std::cout << "[Ignition enabled]\n";
 
-    // Initialize audio player if requested
+    // Initialize audio player
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
         if (!audioPlayer->initialize(sampleRate)) {
-            std::cerr << "WARNING: Failed to initialize audio player, continuing without playback\n";
+            std::cerr << "ERROR: Audio init failed\n";
             delete audioPlayer;
-            audioPlayer = nullptr;
-        } else {
-            // Set engine handle for AudioUnit callback
-            audioPlayer->setEngineHandle(handle);
-
-            // Pre-fill circular buffer before starting AudioUnit playback
-            // Use moderate buffering (0.5s) to absorb timing jitter while minimizing latency
-            // This reduces delay from ~1s to ~50-100ms for responsive RPM changes
-            const int preFillFrames = (sampleRate * 40) / 60;  // 40 iterations at 60Hz (~0.67s = ~29400 frames) for lower latency
-            std::vector<float> silenceBuffer(framesPerUpdate * 2, 0.0f);
-            for (int i = 0; i < preFillFrames / framesPerUpdate; i++) {
-                audioPlayer->addToCircularBuffer(silenceBuffer.data(), framesPerUpdate);
-            }
-            std::cout << "[5/5] Pre-filled circular buffer with " << preFillFrames << " frames of silence\n";
-
-            // Start real-time streaming after pre-fill
-            if (!audioPlayer->start()) {
-                std::cerr << "WARNING: Failed to start audio playback\n";
-            }
-            std::cout << "[5/5] AudioUnit audio player initialized (real-time streaming)\n";
-        }
-    } else {
-        std::cout << "[5/5] Audio playback disabled (WAV export mode)\n";
-    }
-
-    // Setup recording buffer
-    // For smooth audio: allocate full duration buffer, write sequentially (like sine wave test)
-    const int bufferFrames = static_cast<int>(args.duration * sampleRate);
-    const int totalSamples = bufferFrames * channels;
-    std::vector<float> audioBuffer(totalSamples);
-
-    // Audio accumulation for smooth playback - track total frames rendered
-    int framesRendered = 0;  // Total frames rendered (for both WAV and playback)
-    // Note: AudioUnit streaming mode doesn't need chunking - callback handles it in real-time
-
-    // Initialize controller
-    RPMController rpmController;
-    if (args.targetRPM > 0) {
-        rpmController.setTargetRPM(args.targetRPM);
-        std::cout << "[5/5] RPM controller set to " << args.targetRPM << " RPM\n";
-    } else if (args.targetLoad >= 0) {
-        std::cout << "[5/5] Load mode set to " << static_cast<int>(args.targetLoad * 100) << "%\n";
-    } else {
-        std::cout << "[5/5] Auto throttle mode\n";
-    }
-
-    std::cout << "\nStarting simulation...\n";
-
-    // Setup keyboard input for interactive mode
-    KeyboardInput* keyboardInput = nullptr;
-    double interactiveTargetRPM = args.targetRPM;
-    double interactiveLoad = (args.targetLoad >= 0) ? args.targetLoad : 0.0;
-    double baselineLoad = interactiveLoad;  // Remember baseline for W key decay
-    bool wKeyPressed = false;  // Track if W is currently pressed
-
-    if (args.interactive) {
-        keyboardInput = new KeyboardInput();
-        std::cout << "\nInteractive mode enabled. Press Q to quit.\n\n";
-        std::cout << "Interactive Controls:\n";
-        std::cout << "  A - Toggle ignition (starts ON)\n";
-        std::cout << "  S - Toggle starter motor\n";
-        std::cout << "  W - Increase throttle\n";
-        std::cout << "  SPACE - Brake\n";
-        std::cout << "  R - Reset to idle\n";
-        std::cout << "  J/K or Down/Up - Decrease/Increase load\n";
-        std::cout << "  Q/ESC - Quit\n\n";
-    }
-
-    // Main simulation loop
-    double currentTime = 0.0;
-    int framesProcessed = 0;  // For progress tracking
-    int lastProgress = 0;
-    double throttle = 0.0;
-    double smoothedThrottle = 0.0;  // For throttle smoothing (matches GUI line 798)
-    auto loopStartTime = std::chrono::steady_clock::now();
-
-    // CRITICAL: Timing control for 60Hz loop rate (matches sine mode)
-    // Without this, the main loop runs at ~90kHz, overwhelming the circular buffer
-    // and causing crackles in audio playback
-    auto absoluteStartTime = std::chrono::steady_clock::now();
-    int totalIterationCount = 0;
-
-    // Initialize warmup phase
-    g_engineAPI.SetStarterMotor(handle, 1);
-    bool starterDisengaged = false;
-    const double warmupDuration = 0.5;  // Reduced from 4.0s to minimize latency
-    const double maxStarterTime = 0.4;   // Reduced proportionally
-    const double minSustainedRPM = 300.0;
-    std::cout << "Starting engine cranking sequence...\n";
-
-    // Set initial warmup RPM target that increases gradually
-    double warmupTargetRPM = 200.0;  // Start with very low target
-
-    while (currentTime < warmupDuration) {
-        EngineSimStats stats = {};
-        g_engineAPI.GetStats(handle, &stats);
-
-        // Gradually increase target RPM during warmup (shortened for reduced latency)
-        if (currentTime < 0.2) {
-            warmupTargetRPM = 800.0;   // Start at idle
-        } else {
-            warmupTargetRPM = 1000.0;  // Slightly above idle
-        }
-
-        // Set RPM controller target for warmup
-        rpmController.setTargetRPM(warmupTargetRPM);
-
-        // Use RPM controller to calculate throttle
-        throttle = rpmController.update(stats.currentRPM, updateInterval);
-
-        // Apply smoothing
-        smoothedThrottle = throttle * 0.5 + smoothedThrottle * 0.5;
-        g_engineAPI.SetThrottle(handle, smoothedThrottle);
-        g_engineAPI.Update(handle, updateInterval);
-        currentTime += updateInterval;
-
-        // CRITICAL: Drain synthesizer audio during warmup to prevent stale data buildup.
-        // For play mode: feed circular buffer via async read.
-        // For WAV-only mode: drain via synchronous render and discard (warmup audio not wanted in WAV).
-        if (args.playAudio && audioPlayer) {
-            std::vector<float> warmupAudio(framesPerUpdate * 2);
-            int warmupRead = 0;
-            for (int retry = 0; retry <= 3 && warmupRead < framesPerUpdate; retry++) {
-                int readThisTime = 0;
-                g_engineAPI.ReadAudioBuffer(handle,
-                    warmupAudio.data() + warmupRead * 2,
-                    framesPerUpdate - warmupRead, &readThisTime);
-                if (readThisTime > 0) warmupRead += readThisTime;
-                if (warmupRead < framesPerUpdate && retry < 3) {
-                    std::this_thread::sleep_for(std::chrono::microseconds(500));
-                }
-            }
-            if (warmupRead > 0) {
-                audioPlayer->addToCircularBuffer(warmupAudio.data(), warmupRead);
-            }
-        } else if (!args.playAudio) {
-            // WAV-only mode: drain warmup audio synchronously and discard it
-            std::vector<float> discardBuf(framesPerUpdate * 2);
-            int discarded = 0;
-            g_engineAPI.Render(handle, discardBuf.data(), framesPerUpdate, &discarded);
-        }
-
-        // Check if engine has started and disengage starter if needed
-        static int sustainedRPMCount = 0;
-        const int requiredSustainedFrames = 15;
-
-        if (!starterDisengaged) {
-            if (stats.currentRPM > minSustainedRPM) {
-                sustainedRPMCount++;
-                if (sustainedRPMCount >= requiredSustainedFrames) {
-                    g_engineAPI.SetStarterMotor(handle, 0);
-                    starterDisengaged = true;
-                    std::cout << "Engine started! Disabling starter motor at " << stats.currentRPM << " RPM.\n";
-                }
-            } else {
-                sustainedRPMCount = 0;
-            }
-        }
-
-        // Emergency cutoff
-        if (!starterDisengaged && currentTime >= maxStarterTime) {
-            g_engineAPI.SetStarterMotor(handle, 0);
-            starterDisengaged = true;
-            std::cout << "Starter motor timeout after " << maxStarterTime << " seconds.\n";
-        }
-
-        if (static_cast<int>(currentTime * 2) % 2 == 0) {
-            std::cout << "  Cranking: " << std::fixed << std::setprecision(0) << stats.currentRPM
-                      << " RPM, Target: " << std::fixed << std::setprecision(0) << warmupTargetRPM
-                      << ", Throttle: " << std::fixed << std::setprecision(2) << smoothedThrottle;
-            if (!starterDisengaged) {
-                std::cout << " (starter ON)";
-            } else {
-                std::cout << " (starter OFF)";
-            }
-            std::cout << "\n";
-        }
-
-        // Timing control: pace warmup loop to 60Hz when playing audio
-        if (args.playAudio) {
-            totalIterationCount++;
-            auto now = std::chrono::steady_clock::now();
-            auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                now - absoluteStartTime).count();
-            auto targetUs = static_cast<long long>(totalIterationCount * updateInterval * 1000000);
-            auto sleepUs = targetUs - elapsedUs;
-            if (sleepUs > 0) {
-                std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
-            }
-        }
-    }
-
-    std::cout << "Warmup complete. Switching to target RPM control...\n";
-
-    // CRITICAL: Reset circular buffer to eliminate warmup audio latency
-    // This discards warmup audio so RPM changes are immediately audible
-    if (args.playAudio && audioPlayer) {
-        audioPlayer->resetCircularBuffer();
-        std::cout << "Circular buffer reset after warmup to minimize latency\n";
-    }
-
-    // Set final target RPM
-    if (args.targetRPM > 0) {
-        rpmController.setTargetRPM(args.targetRPM);
-    }
-
-    currentTime = 0.0;
-
-    // Maintain starter motor state from warmup phase
-    bool starterEnabled = !starterDisengaged;
-    bool engineHasStarted = starterDisengaged;  // Engine has started if starter is disengaged
-    const double runningRPMThreshold = 350.0;  // Lower threshold for sustained running
-    const double restartRPM = 150.0;       // RPM threshold to re-enable starter if engine stalls
-
-  while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
-    // Get current stats
-    EngineSimStats stats = {};
-    g_engineAPI.GetStats(handle, &stats);
-
-    // Handle starter motor logic with improved logic
-    // Only disable starter if it's currently enabled and engine is running
-    if (starterEnabled && stats.currentRPM > runningRPMThreshold) {
-        g_engineAPI.SetStarterMotor(handle, 0);
-        starterEnabled = false;
-        engineHasStarted = true;
-        std::cout << "Engine started! Disabling starter motor at " << stats.currentRPM << " RPM.\n";
-    }
-    // Only re-enable starter if it's currently disabled, engine has started before,
-    // and engine has stalled
-    else if (!starterEnabled && engineHasStarted && stats.currentRPM < restartRPM) {
-        g_engineAPI.SetStarterMotor(handle, 1);
-        starterEnabled = true;
-        std::cout << "Engine stalled. Re-enabling starter motor.\n";
-    }
-
-        // Handle keyboard input in interactive mode
-        if (args.interactive && keyboardInput) {
-            // Track previous key to detect repeat vs new press
-            static int lastKey = -1;
-            int key = keyboardInput->getKey();
-
-            // Reset key state when no key is pressed (key is released)
-            if (key < 0) {
-                lastKey = -1;
-                wKeyPressed = false;  // W key released, enable decay
-            } else if (key != lastKey) {
-                // Only process if this is a new key press (not a repeat)
-                switch (key) {
-                    case 27:  // ESC
-                    case 'q':
-                    case 'Q':
-                        g_running.store(false);
-                        break;
-                    case 'w':
-                    case 'W':
-                        // Increase throttle (load) while pressed, will decay when released
-                        wKeyPressed = true;
-                        interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-                        baselineLoad = interactiveLoad;  // Update baseline to current value
-                        break;
-                    case ' ':
-                        // Brake
-                        interactiveLoad = 0.0;
-                        baselineLoad = 0.0;  // Update baseline
-                        break;
-                    case 'r':
-                    case 'R':
-                        // Reset to idle - DISABLE RPM control to avoid pulsation
-                        interactiveTargetRPM = 0.0;  // Disable RPM control mode
-                        interactiveLoad = 0.2;
-                        baselineLoad = 0.2;
-                        // Don't set RPM controller target - stay in load control mode
-                        break;
-                    case 'a':
-                        // Toggle ignition module - only on initial press, not repeat
-                        // Note: 'A' (65) conflicts with UP arrow on macOS, so we handle it separately
-                        {
-                            static bool ignitionState = true;  // Start enabled by default
-                            ignitionState = !ignitionState;
-                            g_engineAPI.SetIgnition(handle, ignitionState ? 1 : 0);
-                            std::cout << "Ignition " << (ignitionState ? "enabled" : "disabled") << "\n";
-                        }
-                        break;
-                    case 's':
-                    case 'S':
-                        // Toggle starter motor - only on initial press, not repeat
-                        {
-                            static bool starterState = false;
-                            starterState = !starterState;
-                            g_engineAPI.SetStarterMotor(handle, starterState ? 1 : 0);
-                            std::cout << "Starter motor " << (starterState ? "enabled" : "disabled") << "\n";
-                        }
-                        break;
-                    case 65:  // UP arrow (macOS) - also 'A' which we want to avoid
-                        interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-                        baselineLoad = interactiveLoad;  // Update baseline
-                        break;
-                    case 66:  // DOWN arrow (macOS)
-                        interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
-                        baselineLoad = interactiveLoad;  // Update baseline
-                        break;
-                    case 'k':  // Alternative UP key
-                    case 'K':
-                        interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-                        baselineLoad = interactiveLoad;  // Update baseline
-                        break;
-                    case 'j':  // Alternative DOWN key
-                    case 'J':
-                        interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
-                        baselineLoad = interactiveLoad;  // Update baseline
-                        break;
-                }
-                lastKey = key;
-            }
-
-            // Apply W key decay when not pressed
-            if (!wKeyPressed && interactiveLoad > baselineLoad) {
-                // Quick decay back to baseline (50% per frame for immediate response)
-                interactiveLoad = std::max(baselineLoad, interactiveLoad * 0.5);
-            }
-
-            // In interactive mode, use RPM control if target is set
-            if (interactiveTargetRPM > 0) {
-                double pTerm, iTerm, dTerm;
-                throttle = rpmController.update(stats.currentRPM, updateInterval);
-                rpmController.getDebugInfo(pTerm, iTerm, dTerm);
-
-                // Display debug info for stability verification
-                if (framesRendered % 60 == 0) {  // Every second at 60fps
-                    std::cout << "RPM Control Debug - P: " << std::fixed << std::setprecision(3) << pTerm
-                              << ", I: " << iTerm << ", Target: " << interactiveTargetRPM
-                              << ", Current: " << stats.currentRPM << "\n";
-                }
-            } else {
-                throttle = interactiveLoad;
-            }
-        }
-        else if (args.targetRPM > 0 && args.targetLoad < 0) {
-            // RPM control mode
-            throttle = rpmController.update(stats.currentRPM, updateInterval);
-
-            // More frequent output to verify stabilization
-            if (framesRendered % 30 == 0) {  // Every 0.5 seconds at 60fps
-                double pTerm, iTerm, dTerm;
-                rpmController.getDebugInfo(pTerm, iTerm, dTerm);
-                std::cout << "RPM Control: " << stats.currentRPM << "/" << args.targetRPM
-                          << ", Throttle: " << std::fixed << std::setprecision(3) << smoothedThrottle
-                          << ", Load: " << static_cast<int>(stats.currentLoad * 100) << "%"
-                          << ", P: " << pTerm << ", I: " << iTerm << "\n";
-            }
-        }
-        else if (args.targetLoad >= 0) {
-            // Direct load mode
-            throttle = args.targetLoad;
-        }
-        else {
-            // Auto throttle ramp
-            if (currentTime < 0.5) {
-                throttle = currentTime / 0.5;
-            } else {
-                throttle = 1.0;
-            }
-        }
-
-        // Update physics
-        auto simStart = std::chrono::steady_clock::now();
-
-        // Apply throttle smoothing matching GUI behavior
-        // 50/50 split provides responsive control while preventing audio artifacts
-        // Matches engine_sim_application.cpp line 798-801 smoothing behavior
-        smoothedThrottle = throttle * 0.5 + smoothedThrottle * 0.5;
-
-        g_engineAPI.SetThrottle(handle, smoothedThrottle);
-        g_engineAPI.Update(handle, updateInterval);
-        auto simEnd = std::chrono::steady_clock::now();
-
-        // Debug: Log timing issues for synchronization problems
-        auto simDuration = std::chrono::duration_cast<std::chrono::microseconds>(simEnd - simStart).count();
-        if (simDuration > 10000) {  // If physics update takes more than 10ms
-            static int warningCount = 0;
-            if (warningCount++ % 30 == 0) {  // Log periodically to avoid spam
-                std::cout << "[Timing Warning] Physics update took " << (simDuration / 1000.0)
-                          << "ms (target: " << (updateInterval * 1000) << "ms)\n";
-            }
-        }
-
-        // Render audio
-        int framesToRender = framesPerUpdate;
-
-        // In non-interactive mode, check buffer limits
-        if (!args.interactive) {
-            int totalExpectedFrames = static_cast<int>(args.duration * sampleRate);
-            framesToRender = std::min(framesPerUpdate, totalExpectedFrames - framesProcessed);
-        }
-
-        if (framesToRender > 0) {
-            int samplesWritten = 0;
-
-            // CRITICAL: Read from synthesizer into intermediate circular buffer (simplified)
-            // This matches GUI's logic but uses simple circular buffer approach
-            // GUI reads from synthesizer -> writes to m_audioBuffer -> hardware reads from m_audioBuffer
-            // CLI reads from synthesizer -> writes to circularBuffer -> AudioUnit reads from circularBuffer
-            if (args.playAudio && audioPlayer && audioPlayer->getContext()) {
-                // Read from synthesizer with retry to handle audio thread latency
-                // The audio thread may not have finished processing by the time
-                // we read, so we retry with a short sleep to get full frames.
-                std::vector<float> tempBuffer(framesPerUpdate * 2);
-                int totalRead = 0;
-                const int maxRetries = 3;
-
-                for (int retry = 0; retry <= maxRetries && totalRead < framesPerUpdate; retry++) {
-                    int remaining = framesPerUpdate - totalRead;
-                    int readThisTime = 0;
-                    result = g_engineAPI.ReadAudioBuffer(handle,
-                        tempBuffer.data() + totalRead * 2,
-                        remaining, &readThisTime);
-                    if (result == ESIM_SUCCESS && readThisTime > 0) {
-                        totalRead += readThisTime;
-                    }
-                    if (totalRead < framesPerUpdate && retry < maxRetries) {
-                        // Brief yield to let audio thread process
-                        std::this_thread::sleep_for(std::chrono::microseconds(500));
-                    }
-                }
-                samplesWritten = totalRead;
-
-                if (totalRead > 0) {
-                    // Write to intermediate circular buffer (AudioUnit will read from here)
-                    audioPlayer->addToCircularBuffer(tempBuffer.data(), totalRead);
-                }
-            }
-
-            // WAV export: use synchronous rendering directly to file buffer
-            // EngineSimRender generates audio inline (no async audio thread needed),
-            // eliminating the producer/consumer race that causes zero-gap crackles
-            if (!args.playAudio) {
-                float* writePtr = audioBuffer.data() + framesRendered * channels;
-                result = g_engineAPI.Render(handle, writePtr, framesToRender, &samplesWritten);
-
-                if (result == ESIM_SUCCESS && samplesWritten > 0) {
-                    framesRendered += samplesWritten;
-                    framesProcessed += samplesWritten;
-                }
-            } else {
-                // AudioUnit mode: track progress for WAV export if needed
-                framesProcessed += framesToRender;
-                framesRendered += framesToRender;
-            }
-        }
-
-        currentTime += updateInterval;
-
-        // Display progress and diagnostics
-        if (args.interactive) {
-            displayHUD(stats.currentRPM, smoothedThrottle, interactiveTargetRPM, stats);
-
-            // Log buffer diagnostics periodically in interactive mode
-            static int lastDiagnosticFrame = 0;
-            if (framesProcessed - lastDiagnosticFrame >= 180) {  // Every 3 seconds at 60fps
-                int writePtr, readPtr, available, status;
-                audioPlayer->getBufferDiagnostics(writePtr, readPtr, available, status);
-                std::cout << "[Buffer Diagnostics] Write: " << writePtr << ", Read: " << readPtr
-                          << ", Available: " << available << ", Status: " << status
-                          << ", Underruns: " << (audioPlayer->getContext() ? audioPlayer->getContext()->underrunCount.load() : 0) << "\n";
-                lastDiagnosticFrame = framesProcessed;
-            }
-        } else {
-            int totalExpectedFrames = static_cast<int>(args.duration * sampleRate);
-            int progress = static_cast<int>(framesProcessed * 100 / totalExpectedFrames);
-            if (progress != lastProgress && progress % 10 == 0) {
-                std::cout << "  Progress: " << progress << "% (" << framesProcessed << " frames)\r" << std::flush;
-                lastProgress = progress;
-
-                // Log buffer issues periodically during non-interactive mode
-                if (audioPlayer) {
-                    int writePtr, readPtr, available, status;
-                    audioPlayer->getBufferDiagnostics(writePtr, readPtr, available, status);
-                    if (status > 0) {
-                        std::cout << " [Buffer: " << (status == 1 ? "warning" : "critical")
-                                  << ", Available: " << available << "]\r";
-                    }
-                }
-            }
-        }
-
-        // CRITICAL: Timing control to maintain 60Hz loop rate for audio playback
-        // Without this, the loop runs at ~90kHz, overwhelming the circular buffer
-        // and causing crackles. Uses absolute time to prevent drift.
-        if (args.playAudio) {
-            totalIterationCount++;
-            auto now = std::chrono::steady_clock::now();
-            auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                now - absoluteStartTime).count();
-            auto targetUs = static_cast<long long>(totalIterationCount * updateInterval * 1000000);
-            auto sleepUs = targetUs - elapsedUs;
-            if (sleepUs > 0) {
-                std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
-            }
-        }
-    }
-
-    std::cout << "\n\nSimulation complete!\n";
-
-    // Cleanup
-    if (keyboardInput) {
-        delete keyboardInput;
-    }
-
-    if (audioPlayer) {
-        audioPlayer->stop();
-        audioPlayer->cleanup();
-        delete audioPlayer;
-    }
-
-    // Get final statistics
-    EngineSimStats finalStats = {};
-    g_engineAPI.GetStats(handle, &finalStats);
-    std::cout << "\nFinal Statistics:\n";
-    std::cout << "  RPM: " << static_cast<int>(finalStats.currentRPM) << "\n";
-    std::cout << "  Load: " << static_cast<int>(finalStats.currentLoad * 100) << "%\n";
-    std::cout << "  Exhaust Flow: " << finalStats.exhaustFlow << " m^3/s\n";
-    std::cout << "  Manifold Pressure: " << static_cast<int>(finalStats.manifoldPressure) << " Pa\n";
-
-    g_engineAPI.Destroy(handle);
-
-    // Write WAV file
-    if (args.outputWav) {
-        std::cout << "\nWriting WAV file: " << args.outputWav << "\n";
-        std::ofstream wavFile(args.outputWav, std::ios::binary);
-        if (!wavFile) {
-            std::cerr << "ERROR: Failed to create output file\n";
+            g_engineAPI.Destroy(handle);
             return 1;
         }
 
-        WaveHeader header = {};
-        header.dataSize = framesRendered * channels * sizeof(float);
-        header.fileSize = 36 + header.dataSize;
-
-        wavFile.write(reinterpret_cast<const char*>(&header), sizeof(WaveHeader));
-        wavFile.write(reinterpret_cast<const char*>(audioBuffer.data()), framesRendered * channels * sizeof(float));
-        wavFile.close();
-
-        std::cout << "Done! Wrote " << framesRendered * channels << " samples ("
-                  << framesRendered << " frames, " << args.duration << " seconds)\n";
+        // Pre-fill buffer (common for both modes)
+        BufferOps::preFillCircularBuffer(audioPlayer);
+        audioPlayer->start();
+        std::cout << "[Audio playback enabled]\n";
     }
 
-    return 0;
+    // Warmup (common for both modes)
+    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio);
+
+    // Reset buffer after warmup (common for both modes)
+    if (audioPlayer) {
+        BufferOps::resetAndRePrefillBuffer(audioPlayer);
+    }
+
+    // Create appropriate audio source - THE ONLY DIFFERENCE
+    std::unique_ptr<IAudioSource> audioSource;
+    if (args.sineMode) {
+        std::cout << "Mode: SINE TEST\n";
+        audioSource = std::make_unique<SineAudioSource>(handle, g_engineAPI);
+    } else {
+        std::cout << "Mode: REAL ENGINE\n";
+        audioSource = std::make_unique<EngineAudioSource>(handle, g_engineAPI);
+    }
+
+    // Run unified loop - SAME CODE FOR BOTH MODES
+    int exitCode = runUnifiedAudioLoop(handle, g_engineAPI, *audioSource, args, audioPlayer);
+
+    // Cleanup (common for both modes)
+    if (audioPlayer) {
+        audioPlayer->stop();
+        audioPlayer->waitForCompletion();
+        delete audioPlayer;
+    }
+
+    g_engineAPI.Destroy(handle);
+
+    // Note: WAV export not supported in unified mode
+    // The unified loop uses ReadAudioBuffer which doesn't support WAV export
+    // For WAV export, need to use the old engine mode code path
+    if (args.outputWav) {
+        std::cout << "\nWARNING: WAV export not supported in unified mode\n";
+        std::cout << "Use the old engine mode code path for WAV export.\n";
+    }
+
+    return exitCode;
 }
 
 // ============================================================================
