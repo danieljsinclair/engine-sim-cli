@@ -989,7 +989,7 @@ class IAudioSource {
 public:
     virtual ~IAudioSource() = default;
     virtual bool generateAudio(std::vector<float>& buffer, int frames) = 0;
-    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats) = 0;
+    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) = 0;
 };
 
 // Sine wave audio source
@@ -1021,10 +1021,11 @@ public:
         return true;
     }
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats) override {
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
         if (interactive) {
             double frequency = (stats.currentRPM / 600.0) * 100.0;
             std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
+            std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
             std::cout << "[Frequency: " << std::setw(4) << static_cast<int>(frequency) << " Hz] ";
             std::cout << std::flush;
         } else {
@@ -1068,9 +1069,10 @@ public:
         return totalRead > 0;
     }
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats) override {
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
         if (interactive) {
             std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
+            std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
             std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
             std::cout << std::flush;
         } else {
@@ -1116,13 +1118,13 @@ int runUnifiedAudioLoop(
     std::cout << "\nStarting main loop...\n";
 
     while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
-        // Get current stats
-        EngineSimStats stats = {};
-        api.GetStats(handle, &stats);
+        // Get current stats for starter motor check only
+        EngineSimStats starterStats = {};
+        api.GetStats(handle, &starterStats);
 
         // Disable starter once running
         const double minSustainedRPM = 550.0;
-        if (stats.currentRPM > minSustainedRPM) {
+        if (starterStats.currentRPM > minSustainedRPM) {
             api.SetStarterMotor(handle, 0);
         }
 
@@ -1203,6 +1205,10 @@ int runUnifiedAudioLoop(
         api.SetThrottle(handle, throttle);
         api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
 
+        // Get current stats after Update for current iteration values
+        EngineSimStats stats = {};
+        api.GetStats(handle, &stats);
+
         // Generate audio (ONLY DIFFERENCE between modes)
         if (audioPlayer) {
             // Use cursor-chasing to determine how many frames to write
@@ -1219,8 +1225,8 @@ int runUnifiedAudioLoop(
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
-        // Display progress
-        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats);
+        // Display progress - pass throttle for display
+        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats, throttle);
 
         // 60Hz timing control
         timer.sleepToMaintain60Hz();
