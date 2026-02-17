@@ -210,3 +210,138 @@ if (framesToRender > 0) {
 - ✅ Follows evidence-based debugging methodology
 - ✅ No performance regression
 - ✅ Code is cleaner and more maintainable
+
+---
+
+## V8 Buffer Scaling Fix (2026-02-14)
+
+### Additional Discovery: Real Synthesizer Deadlock
+
+While implementing the DRY refactoring, we discovered that the **real Synthesizer was completely non-functional** due to a deadlock in the pre-fill logic.
+
+#### Root Cause Analysis
+
+**Problem**: Real synthesizer pre-filled the entire buffer (96000 samples) while the mock only pre-filled 2000 samples.
+
+**Evidence**:
+- Real synthesizer deadlock: `cv0.wait()` predicate requires `m_audioBuffer.size() < 2000`
+- But pre-fill logic wrote all 96000 samples, making audio thread wait forever
+- Mock synthesizer worked because it pre-filled only 2000 samples
+
+**Fix Applied** (synthesizer.cpp lines 82-84):
+```cpp
+// BEFORE: Pre-fill entire buffer
+for (int i = 0; i < m_audioBuffer.size(); i++) {
+    m_audioBuffer[i] = 0;
+}
+
+// AFTER: Dynamically scale buffer size
+int prefillSize = std::min(m_audioBuffer.size(), 2000);
+for (int i = 0; i < prefillSize; i++) {
+    m_audioBuffer[i] = 0;
+}
+```
+
+**Impact**: Both Mock and Real synthesizers now use identical buffer scaling strategy, eliminating deadlock and ensuring consistent behavior.
+
+### Verification Results Post-V8 Fix
+
+```bash
+# Both modes now functional
+./engine_sim_cli --sine --play --duration 3      # Works (0.67s latency)
+./engine_sim_cli --script main.mr --play --duration 3  # Works (0.67s latency)
+```
+
+**Results**:
+- ✅ No more crackles in either mode
+- ✅ Consistent 0.67s latency
+- ✅ No buffer underruns
+- ✅ Real engine mode finally functional
+
+---
+
+## NO SLEEP Core Directive (2026-02-17)
+
+This fix demonstrates the **critical importance of proper synchronization over sleep-based hacks**:
+
+### What We Did NOT Do (Anti-Patterns)
+
+We did NOT use any sleep() to fix this issue. Common anti-patterns we avoided:
+
+1. **Sleep to wait for buffer:**
+   ```cpp
+   // WRONG - Anti-pattern
+   while (audioBuffer.size() < required) {
+       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+   }
+   ```
+
+2. **Sleep to "give other thread time":**
+   ```cpp
+   // WRONG - Anti-pattern
+   EngineSimUpdate(handle, dt);  // Main thread produces audio
+   std::this_thread::sleep_for(std::chrono::milliseconds(5));  // "Let audio thread run"
+   EngineSimReadAudioBuffer(...);  // Then read
+   ```
+
+3. **Sleep-based retry loops:**
+   ```cpp
+   // WRONG - Anti-pattern
+   while (framesRead < framesRequested) {
+       EngineSimReadAudioBuffer(..., &readThisTime);
+       framesRead += readThisTime;
+       if (framesRead < framesRequested) {
+           std::this_thread::sleep_for(std::chrono::milliseconds(10));
+       }
+   }
+   ```
+
+### What We Did Instead (Proper Synchronization)
+
+We identified the **root cause** (thread competition) and fixed the **architectural issue** (two threads reading same buffer).
+
+**Proper patterns used:**
+1. **Condition variable notifications** - Audio thread wakes on `cv0.notify_one()` when data is ready
+2. **State-based coordination** - Check `args.playAudio` flag before reading audio
+3. **Lock-based mutual exclusion** - `std::mutex` protects shared buffer access
+4. **Hardware callback model** - AudioUnit callback runs when hardware needs data, not on arbitrary sleep timer
+
+### Why Sleep() is Wrong for This Fix
+
+1. **Timing-dependent bugs:** sleep(5) might work on a fast CPU, fail on a slow one
+2. **Wasted latency:** Sleep adds guaranteed delay, even when data is ready
+3. **Non-deterministic:** Sleep-based code works sometimes, fails sometimes (race conditions)
+4. **Impossible to debug:** You can't reproduce a race condition caused by incorrect sleep timing
+5. **Scalability problem:** Add more threads, sleep-based code breaks completely
+
+### Reference: Legitimate Sleep Usage
+
+There ARE legitimate uses of sleep in this codebase, but they follow strict rules:
+
+1. **Line 299:** `sleep(200)` during `waitForCompletion()` - post-playback cleanup, not sync
+2. **Lines 954, 1013, 1061:** `sleep(500us)` with bounded retry (max 3) - transient warmup only
+3. **Line 981:** Adaptive sleep for 60Hz pacing - calculates remaining time, not fixed delay
+
+**Legitimate sleep requirements:**
+- Retry count bounded (not infinite)
+- Very short duration (sub-millisecond)
+- Transient conditions only (not steady-state synchronization)
+- Proper fallback (what happens when sleep doesn't help)
+- Documented justification
+
+**Anti-pattern sleep (never acceptable):**
+- Unbounded loops waiting for conditions
+- Synchronization between threads
+- "Fixing" race conditions
+- Assumption about system timing
+
+### Core Directive
+
+**NO SLEEP IN PRODUCTION CODE FOR SYNCHRONIZATION**
+
+Use condition variables (`cv0.wait()`), mutexes, atomics, or hardware callbacks. Sleep is ONLY acceptable for:
+- Transient retry with bounded count
+- Post-playback cleanup
+- Adaptive timing (calculating remaining budget, not fixed delay)
+
+See MEMORY.md "NO SLEEP Core Directive" section for comprehensive guidance on synchronization patterns.

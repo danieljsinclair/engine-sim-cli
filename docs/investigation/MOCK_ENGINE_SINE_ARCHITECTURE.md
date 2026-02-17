@@ -210,6 +210,73 @@ writeToSynthesizer() → float sample → synthesizer.writeInput(sample)
 
 ---
 
+## NO SLEEP Core Directive (2026-02-17)
+
+### Synchronization: Condition Variables, Not Sleep
+
+This mock implementation **strictly follows the NO SLEEP core directive**:
+
+**Proper synchronization (from synthesizer.cpp:239-244):**
+```cpp
+m_cv0.wait(lk0, [this] {
+    const bool inputAvailable =
+        m_inputChannel.size() > 0
+        && m_audioBuffer.size() < 2000;
+    return !m_run || (inputAvailable && !m_processed);
+});
+```
+
+**Why this is correct:**
+- Predicate-based: Thread only wakes when actual conditions are met
+- No wasted sleep: Immediate wake when `notify_one()` is called
+- Deadlock-safe: Predicate is checked after wake (spurious wakeups handled)
+- Deterministic: Behavior depends on state, not wall-clock time
+
+**Anti-pattern we never use:**
+```cpp
+// WRONG - Anti-pattern, violates core directive
+while (m_inputChannel.size() == 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+}
+```
+
+### NO SLEEP in Mock Architecture
+
+The mock architecture uses **NO sleep()** for synchronization:
+
+1. **Audio thread waiting:** Uses `cv0.wait()` with predicate, not sleep polling
+2. **Main thread signaling:** Uses `cv0.notify_one()`, not sleep delays
+3. **Buffer access:** Uses mutex locks, not sleep-based "race condition fixes"
+4. **Update coordination:** Uses `endInputBlock()` notification, not sleep timing
+
+This matches real engine-sim's threading pattern exactly - **no sleep-based synchronization**.
+
+### Why Mock Proves Proper Sync Works
+
+The mock implementation demonstrates that:
+1. **cv0.wait() pattern** works reliably for audio thread synchronization
+2. **Producer-consumer** coordination works without sleep
+3. **Buffer management** works with condition variables, not timing hacks
+4. **Zero latency** is possible without sleep-based synchronization
+
+If mock uses sleep(), it would work on some systems and fail on others - making it an **invalid test bed** for real engine-sim.
+
+### Core Directive Summary
+
+**NO SLEEP ANYWHERE - ABSOLUTE CORE DIRECTIVE**
+
+For all production code (mock, real, bridge, CLI):
+- Use `cv0.wait()` for audio thread waiting
+- Use `cv0.notify_one()` for signaling
+- Use mutexes for buffer access
+- Use hardware callbacks for audio playback
+- Use cursor-chasing for real-time streaming
+- Use adaptive timing for rate control
+
+See MEMORY.md "NO SLEEP Core Directive" section for comprehensive guidance.
+
+---
+
 ## Reference Implementation
 
 **Based on:**

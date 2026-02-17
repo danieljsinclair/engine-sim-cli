@@ -73,7 +73,7 @@ struct AudioUnitContext {
     // Cursor-chasing buffer (matches GUI approach)
     // Uses hardware feedback to maintain 100ms lead, preventing underruns
     float* circularBuffer;                // Intermediate buffer
-    size_t circularBufferSize;            // Buffer capacity (44100 = 1 second)
+    size_t circularBufferSize;            // Buffer capacity (96000 = 2+ seconds)
     std::atomic<int> writePointer;        // Write position in circular buffer
     std::atomic<int> readPointer;         // Read position (hardware playback cursor)
     std::atomic<int> underrunCount;       // Count of buffer underruns
@@ -84,7 +84,7 @@ struct AudioUnitContext {
     int sampleRate;                       // Sample rate for calculations
 
     AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
-                        circularBuffer(nullptr), circularBufferSize(44100),
+                        circularBuffer(nullptr), circularBufferSize(96000),
                         writePointer(0), readPointer(0),
                         underrunCount(0), bufferStatus(0),
                         totalFramesRead(0), sampleRate(44100) {}
@@ -187,8 +187,8 @@ public:
             return false;
         }
 
-        // Cursor-chasing buffer: 1 second capacity (matches GUI)
-        context->circularBufferSize = sr;  // 44100 samples = 1 second at 44.1kHz
+        // Cursor-chasing buffer: 2+ seconds capacity (matches GUI)
+        context->circularBufferSize = 96000;  // 96000 samples = 2+ seconds at 44.1kHz
         context->circularBuffer = new float[context->circularBufferSize * 2];  // Stereo
         std::memset(context->circularBuffer, 0, context->circularBufferSize * 2 * sizeof(float));
 
@@ -879,8 +879,8 @@ struct AudioLoopConfig {
     static constexpr double UPDATE_INTERVAL = 1.0 / 60.0;  // 60Hz
     static constexpr int FRAMES_PER_UPDATE = SAMPLE_RATE / 60;  // 735 frames
     static constexpr int WARMUP_ITERATIONS = 3;  // Minimal warmup
-    static constexpr int PRE_FILL_ITERATIONS = 6;  // 0.1s initial buffer
-    static constexpr int RE_PRE_FILL_ITERATIONS = 3;  // 0.05s after warmup
+    static constexpr int PRE_FILL_ITERATIONS = 40;  // 0.67s initial buffer (matches working commit)
+    static constexpr int RE_PRE_FILL_ITERATIONS = 0;  // No re-pre-fill (matches working commit)
 };
 
 // Shared buffer operations - DRY: same for both modes
@@ -905,13 +905,15 @@ namespace BufferOps {
         player->resetCircularBuffer();
         std::cout << "Circular buffer reset after warmup\n";
 
-        std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
-        for (int i = 0; i < AudioLoopConfig::RE_PRE_FILL_ITERATIONS; i++) {
-            player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
+        // Re-pre-fill only if configured (0 iterations = no re-pre-fill)
+        if (AudioLoopConfig::RE_PRE_FILL_ITERATIONS > 0) {
+            std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
+            for (int i = 0; i < AudioLoopConfig::RE_PRE_FILL_ITERATIONS; i++) {
+                player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
+            }
+            std::cout << "Re-pre-filled: " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
+                      << " frames (" << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS / 60.0) << "s)\n";
         }
-
-        std::cout << "Re-pre-filled: " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
-                  << " frames (" << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS / 60.0) << "s)\n";
     }
 }
 

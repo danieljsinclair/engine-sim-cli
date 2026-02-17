@@ -72,15 +72,24 @@ target_include_directories(engine-sim-cli
     engine-sim-bridge/include
 )
 
+# Set rpath for CLI executable to find dylibs in build directory
+if(APPLE)
+    set_target_properties(engine-sim-cli PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "@executable_path"
+        BUILD_RPATH "@executable_path"
+    )
+endif()
+
 # Post-build: Ensure dylib libraries are available in build directory
 # The CLI uses dlopen() to load libenginesim.dylib and libenginesim-mock.dylib
 # from the same directory as the executable
-# Note: Both engine-sim-bridge and engine-sim-mock are built with
-# default output to CMAKE_BINARY_DIR, so dylibs are already in the right place
 if(APPLE)
     add_custom_command(TARGET engine-sim-cli POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Engine-sim CLI built successfully"
-        COMMAND ${CMAKE_COMMAND} -E echo "Dylib libraries are available in: ${CMAKE_BINARY_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/engine-sim-bridge/build/libenginesim.dylib ${CMAKE_BINARY_DIR}/libenginesim.dylib
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/libenginesim-mock.dylib ${CMAKE_BINARY_DIR}/libenginesim-mock.dylib
+        COMMAND ${CMAKE_COMMAND} -E echo "Dylib libraries copied to: ${CMAKE_BINARY_DIR}"
         COMMENT "Build complete - dylibs ready for runtime loading"
     )
 endif()

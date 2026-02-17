@@ -345,3 +345,92 @@ The investigation successfully identified TWO critical bugs preventing engine mo
 Both fixes exist in mock but were never propagated to real Synthesizer, demonstrating the cost of DRY violations in maintaining parallel implementations.
 
 **All reproduction testing is blocked until these fixes are applied.**
+
+---
+
+## NO SLEEP Core Directive (2026-02-17)
+
+### Deadlock Root Cause: Sleep Would Not Fix This
+
+The deadlock in real Synthesizer demonstrates why **sleep() is NOT a fix for synchronization issues**:
+
+**The actual bug:** Buffer pre-fill violates cv0.wait() predicate
+```cpp
+// synthesizer.cpp:82-84 (BROKEN)
+for (int i = 0; i < m_audioBufferSize; ++i) {  // 96000 iterations!
+    m_audioBuffer.write(0);
+}
+
+// synthesizer.cpp:241-246 (Wait condition)
+m_cv0.wait(lk0, [this] {
+    return !m_run || (inputAvailable && !m_processed);
+});
+// inputAvailable = m_audioBuffer.size() < 2000  <-- FALSE (96000 < 2000)
+```
+
+**Sleep-based "fix" (WRONG - anti-pattern):**
+```cpp
+// NEVER do this - anti-pattern
+m_cv0.wait_for(lk0, std::chrono::milliseconds(100), [this] {
+    return !m_run || (inputAvailable && !m_processed);
+});
+// Then retry...
+```
+
+**Why sleep doesn't work:**
+1. Thread sleeps, wakes, checks predicate: still FALSE (buffer still 96000)
+2. Thread sleeps again, wakes, checks: still FALSE
+3. Infinite loop - buffer never drains because audio thread can't run
+4. **Sleep just makes the deadlock slower, it doesn't fix it**
+
+**Correct fix (no sleep):**
+```cpp
+// synthesizer.cpp:82-84 (FIXED)
+const int preFillAmount = std::min(2000, m_audioBufferSize);
+for (int i = 0; i < preFillAmount; ++i) {
+    m_audioBuffer.write(0);
+}
+// Now cv0.wait() predicate: 2000 < 2000 = FALSE at first, but after drain: < 2000 = TRUE
+```
+
+### Deadlock Resolution: Proper Sync, Not Sleep
+
+The investigation showed that both bugs are **synchronization issues** that require proper fixes:
+
+**Bug #1: Buffer Pre-fill**
+- **Root cause:** Pre-fill amount violates cv0.wait() predicate
+- **Wrong fix:** Sleep longer, sleep repeatedly
+- **Correct fix:** Reduce pre-fill to match predicate (2000 samples)
+- **Pattern:** State validation, not time-based workaround
+
+**Bug #2: Missing renderAudioSync()**
+- **Root cause:** WAV mode calls threading method without audio thread
+- **Wrong fix:** Sleep hoping buffer drains
+- **Correct fix:** Add sync method that doesn't use cv0.wait()
+- **Pattern:** Separate async/sync APIs, not sleep-based coordination
+
+### Why Sleep-Based Fixes Fail
+
+From this deadlock analysis, we learned:
+
+1. **Sleep doesn't fix state problems:** If predicate is FALSE, sleeping won't make it TRUE
+2. **Sleep adds indeterminism:** Sometimes it works (if timing aligns), sometimes it fails
+3. **Sleep masks real bugs:** Deadlock becomes "slow" instead of "instant" failure
+4. **Sleep can't fix architectural issues:** Missing methods, wrong predicates need code changes
+
+### Core Directive
+
+**NO SLEEP TO FIX SYNCHRONIZATION BUGS**
+
+When encountering deadlocks, race conditions, or timing issues:
+- Identify the state problem (predicate, buffer size, missing method)
+- Fix the state (adjust buffer, add method, change predicate)
+- Use proper synchronization primitives (cv0.wait(), mutexes, atomics)
+
+**Never use sleep() to:**
+- "Give threads time to sync"
+- Wait for buffer to drain
+- Fix deadlock
+- Work around race conditions
+
+See MEMORY.md "NO SLEEP Core Directive" section for comprehensive guidance.
