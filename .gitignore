@@ -1,5 +1,6 @@
 # Build directories
 build/
+build-*/
 cmake-build-*/
 
 # CMake generated files
@@ -26,9 +27,28 @@ engine-sim-cli
 .DS_Store
 Thumbs.db
 
+# Temporary files
+*.bak
+*.new
+*~
+
+# Root-level library files (belong in build/)
+*.dylib
+*.a
+
+# Root-level log files (use test_logs/ or archive/)
+*.log
+
+# Root-level config files (use assets/)
+*.mr
+
+# Duplicate directories
+es/
+engine-sim/
+CMakeFiles/
+
 # Test outputs
 *.wav
 test_*.mr
-*.log
 
 .cache/
