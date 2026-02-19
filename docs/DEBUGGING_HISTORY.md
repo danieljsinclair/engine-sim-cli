@@ -239,43 +239,52 @@ During intense debugging sessions, it's easy to lose track of what was tried and
 - Communicating with collaborators
 - Future maintenance and debugging
 
+### Phase 6: Sine Mode Fix (February 19, 2026)
+
+**Problem**: After repository cleanup, sine mode audio had severe underruns (~170 in 5 seconds).
+
+**Root Cause**: 
+1. Using `ReadAudioBuffer` instead of `Render` - the former doesn't process input synchronously
+2. Large buffer sizes caused latency without fixing timing issues
+3. Pre-fill was too small (1470 frames = 0.033s)
+
+**Fix Applied**:
+1. Changed from `g_engineAPI.ReadAudioBuffer` to `g_engineAPI.Render` for synchronous processing
+2. Reduced `circularBufferSize` from 176400 to 96000
+3. Reduced `preFillIterations` from 240 to 40 (~0.67s)
+4. Set `m_targetBufferLevel` to 2000 in mock synthesizer
+
+**Files Modified**:
+- `src/engine_sim_cli.cpp` - Use Render(), smaller buffers
+- `engine-sim-bridge/src/mock_engine_sim.cpp` - Dynamic buffer sizing
+
+**Result**: Sine mode now produces smooth audio with ZERO underruns.
+
+**Outstanding Issues**:
+- Engine mode (V8) still has underruns and slow startup
+- Need to test `allChannelsHaveData()` fix vs. `channel[0]` approach
+- `engine-sim-bridge` is at detached HEAD (04ecb18) instead of master
+- Need to consolidate and commit submodule changes
+
 ## Current Status
 
-As of January 28, 2026:
-- All critical bugs have been fixed
-- Audio output is clean and smooth
-- Diagnostic tools are comprehensive
-- Documentation is consolidated
-- Codebase is stable
+As of February 19, 2026:
+- **Sine mode**: WORKING - smooth audio, zero underruns
+- **Engine mode**: ISSUES - underruns, slow startup, needs investigation
+- **Submodules**: Need cleanup - detached HEADs, uncommitted changes
 
-The engine-sim-cli project is now fully functional with:
-- Proper engine startup (starter motor enabled)
-- Clean audio output (mono-to-stereo fix, buffer management fix)
-- Comprehensive diagnostics (diagnostics.cpp with all features)
-- Clear documentation (3 consolidated guides)
+## Outstanding Tasks
 
-## References
-
-### Original Investigation Documents
-These were created during the investigation phase and are now replaced by the consolidated documentation:
-- Research into exhaust flow values
-- Audio path analysis
-- Code flow diagrams
-- Bug fix implementation reports
-
-### Git Commits
-Key commits that fixed issues:
-- "Update bridge with Piranha fix" - Mono-to-stereo conversion
-- "Update bridge submodule to latest with META_MUTATION" - Submodule sync
-- Various intermediate fixes during investigation
-
-### Related Projects
-- **engine-sim** - Original engine simulation library (GUI application)
-- **engine-sim-bridge** - Bridge API that wraps engine-sim for CLI use
-- **engine-sim-cli** - This project (command-line interface)
+1. **Fix engine mode** - Investigate V8 underruns and slow startup
+2. **Test allChannelsHaveData()** - Determine if this fix helps or causes hangs
+3. **Clean up submodules**:
+   - `engine-sim-bridge`: Merge 04ecb18 to master, commit changes
+   - `engine-sim`: Push local commits to fork, ensure on master
+4. **Remove temp files**: `engine-sim-cli.stripped`, `telemetry-id`, `es.bak/`
+5. **Commit working changes** to all three repos
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: January 28, 2026
-**Status**: Complete - Project stable and fully functional
+**Document Version**: 1.1
+**Last Updated**: February 19, 2026
+**Status**: Sine mode fixed, engine mode in progress
