@@ -238,53 +238,43 @@ During intense debugging sessions, it's easy to lose track of what was tried and
 - Understanding the timeline of fixes
 - Communicating with collaborators
 - Future maintenance and debugging
+### Phase 6: Repository Cleanup and Build Investigation (February 19, 2026)
 
-### Phase 6: Sine Mode Fix (February 19, 2026)
+**Problem**: After repository cleanup, both sine and engine modes have severe underruns.
 
-**Problem**: After repository cleanup, sine mode audio had severe underruns (~170 in 5 seconds).
+**Investigation**:
+- Compared source files with working backup
+- Found that working binary was built from source that no longer exists
+- Working object files are smaller (56,400 bytes vs 79,464 bytes for CLI)
+- Source files show broken values: `circularBufferSize=176400`, `preFillIterations=240`
 
-**Root Cause**: 
-1. Using `ReadAudioBuffer` instead of `Render` - the former doesn't process input synchronously
-2. Large buffer sizes caused latency without fixing timing issues
-3. Pre-fill was too small (1470 frames = 0.033s)
+**Attempted Fixes**:
+1. Changed from `ReadAudioBuffer` to `Render` - partially helped
+2. Reduced buffer sizes - made latency worse
+3. Copied working object files from backup - produced smooth audio but source doesn't match
 
-**Fix Applied**:
-1. Changed from `g_engineAPI.ReadAudioBuffer` to `g_engineAPI.Render` for synchronous processing
-2. Reduced `circularBufferSize` from 176400 to 96000
-3. Reduced `preFillIterations` from 240 to 40 (~0.67s)
-4. Set `m_targetBufferLevel` to 2000 in mock synthesizer
-
-**Files Modified**:
-- `src/engine_sim_cli.cpp` - Use Render(), smaller buffers
-- `engine-sim-bridge/src/mock_engine_sim.cpp` - Dynamic buffer sizing
-
-**Result**: Sine mode now produces smooth audio with ZERO underruns.
-
-**Outstanding Issues**:
-- Engine mode (V8) still has underruns and slow startup
-- Need to test `allChannelsHaveData()` fix vs. `channel[0]` approach
-- `engine-sim-bridge` is at detached HEAD (04ecb18) instead of master
-- Need to consolidate and commit submodule changes
+**Current State**:
+- All repos clean and on master
+- All submodules on master
+- Build from source works but produces broken audio
+- Working binary exists in backup but source is lost
 
 ## Current Status
 
 As of February 19, 2026:
-- **Sine mode**: WORKING - smooth audio, zero underruns
-- **Engine mode**: ISSUES - underruns, slow startup, needs investigation
-- **Submodules**: Need cleanup - detached HEADs, uncommitted changes
+- **Sine mode**: BROKEN - severe underruns, sounds terrible
+- **Engine mode**: BROKEN - severe underruns, lag, sounds terrible  
+- **Submodules**: All on master, clean
+- **Build**: Working from source
 
 ## Outstanding Tasks
 
-1. **Fix engine mode** - Investigate V8 underruns and slow startup
-2. **Test allChannelsHaveData()** - Determine if this fix helps or causes hangs
-3. **Clean up submodules**:
-   - `engine-sim-bridge`: Merge 04ecb18 to master, commit changes
-   - `engine-sim`: Push local commits to fork, ensure on master
-4. **Remove temp files**: `engine-sim-cli.stripped`, `telemetry-id`, `es.bak/`
-5. **Commit working changes** to all three repos
+1. **Find correct source code** - Working binary was built from unknown source
+2. **Compare object files** - Determine what source produced working binary
+3. **Fix audio path** - Get back to smooth sine and engine audio
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Last Updated**: February 19, 2026
-**Status**: Sine mode fixed, engine mode in progress
+**Status**: Both modes broken, investigation ongoing
