@@ -953,7 +953,7 @@ namespace WarmupOps {
                     if (readThisTime > 0) warmupRead += readThisTime;
 
                     if (warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE && retry < 3) {
-                        std::this_thread::sleep_for(std::chrono::microseconds(500));
+                        // No sleep - blocking prevents keyboard input
                     }
                 }
                 // DISCARD warmup audio - do NOT send to circular buffer
@@ -1059,14 +1059,6 @@ public:
 
         api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
 
-        if (totalRead < frames) {
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
-            int additionalRead = 0;
-            api.ReadAudioBuffer(handle, buffer.data() + totalRead * 2, frames - totalRead, &additionalRead);
-            if (additionalRead > 0) {
-                totalRead += additionalRead;
-            }
-        }
 
         return totalRead > 0;
     }

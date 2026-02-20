@@ -278,3 +278,63 @@ As of February 19, 2026:
 **Document Version**: 1.2
 **Last Updated**: February 19, 2026
 **Status**: Both modes broken, investigation ongoing
+
+### Phase 7: DRY Architecture Principle (February 19, 2026)
+
+**CRITICAL ARCHITECTURAL PRINCIPLE**:
+
+Sine mode (mock engine) and engine mode MUST share the same code paths:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    UNIFIED AUDIO PIPELINE                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Sine Mode              │  Engine Mode                           │
+│  (MockSynthesizer)      │  (Synthesizer)                         │
+│                         │                                        │
+│  libenginesim-mock.dylib│  libenginesim.dylib                    │
+│         ↓               │         ↓                              │
+│  ReadAudioBuffer() ─────┴───────── ReadAudioBuffer()             │
+│         ↓                         ↓                              │
+│         └───────────┬─────────────┘                              │
+│                     ↓                                            │
+│              Circular Buffer                                     │
+│                     ↓                                            │
+│              AudioUnit Callback                                  │
+│                     ↓                                            │
+│              Speaker Output                                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**SHARED COMPONENTS (must be identical for both modes)**:
+1. **KeyboardInput** - Same class, same terminal setup
+2. **Circular Buffer** - Same size, same read/write logic
+3. **Cursor-chasing** - Same target latency (100ms)
+4. **Pre-fill** - Same iterations (6 = 100ms)
+5. **ReadAudioBuffer()** - Both modes read from synthesizer
+6. **Main loop timing** - Same 60Hz loop, same sleep logic
+7. **displayProgress()** - Same format (or unified class)
+
+**VIOLATIONS TO AVOID**:
+- ❌ SineAudioSource generating samples directly (use ReadAudioBuffer)
+- ❌ Different pre-fill iterations between modes
+- ❌ Different buffer sizes between modes
+- ❌ Different keyboard handling between modes
+- ❌ Different loop termination conditions
+
+**WHY DRY MATTERS**:
+- Sine mode is a diagnostic tool for the audio pipeline
+- If sine works but engine doesn't, the problem is in the synthesizer
+- If both fail the same way, the problem is in the shared pipeline
+- Having different code paths defeats the diagnostic purpose
+
+**Current Issues**:
+- SineAudioSource generates its own sine wave instead of using mock synthesizer
+- Pre-fill was 0.67s instead of 0.1s (now fixed)
+- Keyboard input not working in engine mode (investigation needed)
+
+---
+
+**Document Version**: 1.3
+**Last Updated**: February 19, 2026
+**Status**: Sine working, engine keyboard not responding
