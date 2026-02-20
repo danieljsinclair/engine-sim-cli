@@ -271,12 +271,21 @@ As of February 20, 2026:
 
 ## Outstanding Issues
 
-1. **~1% underrun rate** - Occasional minor underruns during playback, not audible but visible in diagnostics
-2. **DRY violation in SineAudioSource** - See Phase 7 for details
+1. **DRY violation in SineAudioSource** - See Phase 7 for details
+2. **Occasional buffer underrun on Merlin V12** - Observed one underrun during Merlin V12 session:
+   ```
+   [2725 RPM] [Throttle:   0%] [Flow: 0.00 m3/s] [Audio Diagnostics] Buffer underrun #10 - requested: 471, available: 0
+   ```
+   This occurred at high RPM (2725) with throttle at 0%. **UNDERRUNS ARE AUDIBLE** - causes dropouts during playback. Investigate: during rapid RPM changes. The "underrun #10" counter suggests 10 underruns may have occurred. Investigate:
+   - Whether underruns correlate with rapid RPM changes
+   - If buffer lead time needs adjustment for high-RPM engines
+   - Whether synthesizer can keep up with audio thread demand during transients
+
+**Note**: Underruns are rare and generally not audible, but worth investigating for production quality.
 
 ---
 
-**Document Version**: 1.3
+**Document Version**: 1.5
 **Last Updated**: February 20, 2026
 **Status**: Both modes working, minor underrun issue remains
 
@@ -349,7 +358,7 @@ The `SineAudioSource` class generates sine samples directly instead of using `Re
 - **Sine mode**: WORKING - smooth audio, keyboard responsive with `--interactive` flag
 - **Engine mode**: WORKING - smooth audio, keyboard responsive with `--interactive` flag
 - **DRY violation**: SineAudioSource generates directly (acceptable for diagnostic purposes)
-- **Outstanding issue**: ~1% underrun rate during playback (not audible)
+- **Outstanding issue**: Underrun rate during playback (AUDIBLE on Merlin V12 and Ferrari 412 T2)
 
 **Usage**:
 ```bash
@@ -360,8 +369,437 @@ The `SineAudioSource` class generates sine samples directly instead of using `Re
 ./engine_sim_cli --interactive
 ```
 
+### Phase 8: Multi-Engine Support and Script Loading (February 20, 2026)
+
+**Problem**: Engine scripts in subdirectories could not find `engine_sim.mr` and assets.
+
+**1. assetBasePath Fix**:
+Scripts in subdirectories (like `es/engines/atg-video-2/07_gm_ls.mr`) need to find `engine_sim.mr` which is at `es/`. The fix searches upward from the script's parent directory to find `engine_sim.mr` and uses that directory as assetBasePath.
+
+**2. Engine Wrapper Pattern**:
+The atg-video-2 engine scripts define a `main` node but don't call it. We created thin wrapper files at `es/` level that:
+- Import engine_sim.mr
+- Import themes/default.mr
+- Import the specific engine file
+- Call use_default_theme() and main()
+
+**3. New Wrapper Files Created**:
+- `es/v8_gm_ls.mr` (GM LS V8)
+- `es/subaru_ej25.mr` (converted from standalone to wrapper)
+- `es/2jz.mr` (Toyota 2JZ)
+- `es/ferrari_f136.mr` (Ferrari F136 V8)
+- `es/radial_9.mr` (Radial 9-cylinder)
+- `es/lfa_v10.mr` (Lexus LFA V10)
+- `es/ferrari_412_t2.mr` (Ferrari 412 T2 V12)
+- `es/v6_60_degree.mr` (60-degree V6)
+- `es/v6_odd_fire.mr` (Odd-fire V6)
+- `es/v6_even_fire.mr` (Even-fire V6)
+
+**4. Bridge Buffer Drain**:
+The bridge now drains pre-fill samples from the synthesizer before starting the audio thread (lines 393-399 in engine_sim_bridge.cpp). This prevents stale samples from causing audio artifacts at startup.
+
+**5. All Engines Tested and Working**:
+All 10 engine configurations now load and produce clean audio output.
+
 ---
 
-**Document Version**: 1.4
+**Document Version**: 1.5
 **Last Updated**: February 20, 2026
-**Status**: Both modes working, ~1% underrun issue remains
+**Status**: All engines working, multi-engine support complete
+
+### Phase 9: Future Feature Research - Physics-Based Starter Sound (February 20, 2026)
+
+**User Request**: Investigate whether engine-sim could integrate a physics-modulated starter motor sound that responds to:
+- Torque changes as engine fires
+- Pitch changes based on RPM
+- Harmonics changes as load varies
+- Current draw simulation
+
+**Context**: The Merlin V12 has a distinctive high-pitched "catching" sound during startup that the user noticed as a very aero-engine characteristic.
+
+---
+
+## Research Findings
+
+### 1. Current State: No Starter Sound Exists in engine-sim
+
+**The starter motor is purely a physics constraint with no audio output path.**
+
+Evidence from `engine-sim-bridge/engine-sim/src/starter_motor.cpp`:
+```cpp
+void StarterMotor::calculate(Output *output, atg_scs::SystemState *state) {
+    // ... setup Jacobian matrices ...
+    
+    if (m_rotationSpeed < 0) {
+        output->limits[0][0] = m_enabled ? -m_maxTorque : 0.0;
+        output->limits[0][1] = 0.0;
+    }
+    else {
+        output->limits[0][0] = 0.0;
+        output->limits[0][1] = m_enabled ? m_maxTorque : 0.0;
+    }
+}
+```
+
+The `StarterMotor` class:
+- Inherits from `atg_scs::Constraint` (physics constraint)
+- Applies torque to the crankshaft when `m_enabled = true`
+- Has NO audio synthesis or output capability
+- Has NO connection to the synthesizer
+
+### 2. How the Merlin V12 Produces Its Distinctive Startup Sound
+
+**The sound comes from the exhaust audio, NOT a separate starter sound.**
+
+From `es/engines/atg-video-2/11_merlin_v12.mr` (lines 144-160):
+```mr
+engine engine(
+    name: "Merlin V-1650-9 [V12] (NA)",
+    starter_torque: 190 * units.lb_ft,     // HIGH torque
+    starter_speed: 200 * units.rpm,        // LOW target speed
+    redline: 3000 * units.rpm,             // LOW redline for aero engine
+    // ... other parameters ...
+)
+```
+
+Key Merlin V12 characteristics that create its distinctive startup:
+1. **High starter torque** (190 lb-ft) - creates strong cranking
+2. **Large rotational inertia** (crank 400 lb, flywheel 200 lb) - slow spin-up
+3. **12 cylinders with 60° V** - distinctive firing pattern during startup
+4. **Impulse response** (`ir_lib.minimal_muffling_01`) - minimal muffling preserves raw engine sound
+
+The "catching" sound the user hears is actually:
+- Individual combustion events firing as the engine cranks
+- Exhaust pulses being processed through the synthesizer
+- The physics of a large aero engine spinning up with high inertia
+
+### 3. Audio Generation Architecture in engine-sim
+
+**How exhaust audio is generated** (from `piston_engine_simulator.cpp` lines 371-413):
+
+```cpp
+void PistonEngineSimulator::writeToSynthesizer() {
+    // For each cylinder, calculate exhaust flow based on:
+    // - Combustion chamber pressure
+    // - Exhaust runner pressure
+    // - Valve lift timing
+    // - Header pipe length (delay)
+    
+    const double exhaustFlow =
+        attenuation_3 * 1600 * (
+            1.0 * (chamber->m_exhaustRunnerAndPrimary.pressure() - atm)
+            + 0.1 * chamber->m_exhaustRunnerAndPrimary.dynamicPressure(1.0, 0.0)
+            + 0.1 * chamber->m_exhaustRunnerAndPrimary.dynamicPressure(-1.0, 0.0));
+    
+    // Apply delay for header length
+    const double delayedExhaustPulse = m_delayFilters[i].fast_f(exhaustFlow);
+    
+    // Write to synthesizer for audio output
+    synthesizer().writeInput(m_exhaustFlowStagingBuffer);
+}
+```
+
+The synthesizer then:
+1. Applies jitter/noise based on engine parameters
+2. Convolves with impulse response (exhaust muffler simulation)
+3. Applies leveling and antialiasing
+4. Outputs 16-bit audio samples
+
+**Critical gap**: There is NO equivalent for starter motor sound. The synthesizer only processes exhaust flow.
+
+### 4. Available Physics Parameters for Starter Sound Modulation
+
+From `starter_motor.h`:
+```cpp
+class StarterMotor : public atg_scs::Constraint {
+public:
+    double m_ks;             // Spring constant (constraint stiffness)
+    double m_kd;             // Damping constant
+    double m_maxTorque;      // Maximum torque (190 lb-ft for Merlin)
+    double m_rotationSpeed;  // Target rotation speed (200 RPM)
+    bool m_enabled;          // Is starter motor engaged?
+};
+```
+
+Additional available parameters from physics:
+- Actual crankshaft RPM (from `m_engine->getRpm()`)
+- Crankshaft angular velocity
+- Combustion chamber pressure (load resistance)
+- Flywheel moment of inertia
+
+### 5. Existing Starter Sound Research
+
+The project already has research in `archive/STARTER_SOUND_TUNING_GUIDE.md` for a Python-based synthetic starter sound generator (`generate_starter_sound.py`).
+
+Key findings from that research:
+- Real DC motors are **noise-dominated** (~42% broadband noise)
+- Three-oscillator architecture works well:
+  - mainOsc: sine wave at motor frequency
+  - gearOsc: triangle wave at 2x (metallic gear teeth)
+  - humOsc: sine at 0.5x (sub-harmonic resonance)
+- Motor shaft speed ≠ engine cranking speed (14.4:1 gear ratio typical)
+- Frequency scales from ~100 Hz to ~580 Hz based on motor RPM
+- Load variation creates 6-8 Hz modulation (compression strokes)
+
+---
+
+## Technical Implementation Options
+
+### Option A: Extend Synthesizer with Starter Motor Channel
+
+**Architecture**:
+```
+StarterMotor::calculate() 
+    → writeToStarterSynthesizer()
+        → Synthesizer::writeInput(starterChannel, data)
+```
+
+**Pros**:
+- Physics-accurate (starter torque/load affects sound in real-time)
+- Integrates with existing audio pipeline
+- Can use impulse response for starter housing resonance
+
+**Cons**:
+- Requires modifying engine-sim core library
+- More complex to implement
+- Need to define what "starter sound" means in physics terms
+
+**Implementation sketch**:
+```cpp
+void PistonEngineSimulator::writeToSynthesizer() {
+    // Existing exhaust flow code...
+    
+    // NEW: Starter motor sound
+    if (m_starterMotor.m_enabled) {
+        const double starterLoad = calculateStarterLoad();  // From crankshaft resistance
+        const double motorRPM = m_engine->getRpm() * 14.4;  // Gear ratio
+        const double torqueRatio = actualTorque / m_starterMotor.m_maxTorque;
+        
+        double starterSignal = generateStarterSignal(motorRPM, starterLoad, torqueRatio);
+        synthesizer().writeInput(starterChannel, &starterSignal);
+    }
+}
+```
+
+### Option B: Impulse Response for Starter Sound (Recommended)
+
+**Architecture**:
+- Create a starter motor impulse response WAV file
+- Apply it to a synthetic starter signal
+- Modulate the signal based on physics parameters
+
+**Pros**:
+- Minimal changes to engine-sim core
+- Uses existing convolution infrastructure
+- Can create realistic starter sounds from recordings
+- Easy to customize per-engine
+
+**Cons**:
+- Impulse responses are static (can't fully capture RPM-dependent pitch)
+- Less physics-integrated than Option A
+
+**Implementation sketch**:
+```mr
+// In engine definition:
+exhaust_system starter_sound(
+    impulse_response: ir_lib.starter_motor_01,
+    audio_volume: 0.3
+)
+```
+
+### Option C: CLI-Side Synthetic Starter Sound
+
+**Architecture**:
+- Generate starter sound entirely in `engine_sim_cli.cpp`
+- Read physics parameters from bridge API
+- Mix with exhaust audio in output buffer
+
+**Pros**:
+- No changes to engine-sim library
+- Can use existing Python research directly
+- Easy to iterate on sound design
+
+**Cons**:
+- Duplicate audio pipeline
+- Less integrated with physics
+- Harder to make per-engine customization
+
+**Implementation sketch** (in engine_sim_cli.cpp):
+```cpp
+class StarterSoundGenerator {
+    double m_motorRPM;
+    double m_load;
+    double m_enabled;
+    
+public:
+    void updateFromPhysics(EngineSimStats stats) {
+        m_motorRPM = stats.currentRPM * 14.4;
+        m_load = calculateLoad(stats);
+        m_enabled = stats.starterEnabled;
+    }
+    
+    int16_t generateSample() {
+        if (!m_enabled) return 0;
+        // Three-oscillator synthesis based on Python research
+        double mainOsc = sin(phase) * 0.35;
+        double gearOsc = sawtooth(2*phase) * 0.25;
+        double humOsc = sin(0.5*phase) * 0.18;
+        double noise = random() * 0.42;
+        return (mainOsc + gearOsc + humOsc + noise) * 32767;
+    }
+};
+```
+
+---
+
+## Recommended Approach: Option B + C Hybrid
+
+**Phase 1 (Immediate)**: CLI-side synthetic starter sound
+- Implement `StarterSoundGenerator` class based on Python research
+- Read `m_starterMotor.m_enabled` from bridge API
+- Modulate frequency based on RPM from physics
+- Mix with exhaust audio output
+
+**Phase 2 (Future)**: Impulse response integration
+- Create starter motor impulse responses (different for car/truck/aero)
+- Allow engine scripts to specify `starter_impulse_response`
+- Convolve synthetic signal with IR for housing resonance
+
+**Phase 3 (Long-term)**: Core library integration
+- Add `writeToStarterSynthesizer()` to `PistonEngineSimulator`
+- Create dedicated synthesizer channel for starter
+- Full physics integration (torque, load, voltage sag simulation)
+
+---
+
+## Key Implementation Details
+
+### Frequency Calculation
+
+The Python research shows motor shaft speed is the key frequency determinant:
+```python
+MOTOR_GEAR_RATIO = 14.4  # Starter motor shaft speed / engine speed ratio
+MOTOR_RPM_TARGET = 3600.0  # Typical starter motor shaft speed at full load
+MAIN_OSC_BASE = 580.0  # Hz at 3600 RPM motor shaft
+
+# Frequency scales linearly with motor RPM
+freq = MAIN_OSC_BASE * (motor_rpm / MOTOR_RPM_TARGET)
+```
+
+For engine-sim CLI:
+```cpp
+double motorRPM = engineRPM * 14.4;
+double frequency = 580.0 * (motorRPM / 3600.0);
+// Range: ~100 Hz (low cranking) to ~580 Hz (full cranking)
+```
+
+### Load Modulation
+
+Engine compression creates rhythmic load on starter:
+```cpp
+// Load variation frequency = cylinders * RPM / 120
+// For V12 at 200 RPM: 12 * 200 / 120 = 20 Hz
+double loadFreq = cylinderCount * engineRPM / 120.0;
+double loadDepth = 0.20;  // 20% RPM dip under compression
+```
+
+### Voltage Sag Simulation
+
+Real 12V starters sag under load:
+```cpp
+double voltageSag = 12.0 - (currentDraw / maxCurrent) * 1.2;  // Sag to 10.8V
+double voltageFactor = voltageSag / 12.0;
+// Apply to frequency and amplitude
+frequency *= (0.95 + 0.05 * voltageFactor);
+amplitude *= (0.92 + 0.08 * voltageFactor);
+```
+
+---
+
+## Summary
+
+| Aspect | Finding |
+|--------|---------|
+| **Current starter sound** | None - starter motor is physics-only, no audio |
+| **Merlin V12 startup sound source** | Exhaust audio from physics, impulse response `minimal_muffling_01` |
+| **Technical feasibility** | HIGH - all physics parameters are available |
+| **Recommended approach** | Hybrid: CLI synthesis + future impulse response support |
+| **Key parameters for modulation** | RPM, starter enabled, crankshaft load, gear ratio |
+
+**Next Steps**:
+1. Create `StarterSoundGenerator` class in engine_sim_cli.cpp
+2. Add `EngineSimGetStarterEnabled()` to bridge API
+3. Implement three-oscillator synthesis from Python research
+4. Test with Merlin V12 to compare with existing startup sound
+
+---
+
+**Document Version**: 1.6
+**Last Updated**: February 20, 2026
+**Status**: Research complete, implementation pending
+
+---
+
+## Future Tasks & Research
+
+### Priority 1: Outstanding Issues
+
+1. **DRY violation in SineAudioSource** - See Phase 7 for details
+2. **Buffer underrun investigation** - Observed on Merlin V12 and Ferrari 412 T2:
+   - Merlin V12: `[Audio Diagnostics] Buffer underrun #10 - requested: 471, available: 0` at 2725 RPM
+   - Ferrari 412 T2: More underruns than other engines (possibly due to complexity)
+   - Investigate: Correlation with engine complexity, RPM transients, buffer sizing
+3. **Complex engine performance** - Ferrari 412 T2 shows more underruns; investigate if complex engines need different buffering
+
+### Priority 2: Feature Enhancements
+
+4. **Physics-Based Starter Sound** (See Phase 9 for full research)
+   - Implement `StarterSoundGenerator` class
+   - Modulate by RPM, torque, load
+   - Configurable per engine in .mr files
+   - Research complete, implementation pending
+
+5. **Throttle-Off Pops & Backfire Simulation**
+   - **Current status**: NOT implemented (documented as TODO in engine-sim)
+   - **WAV files**: Used for impulse responses (convolution reverb), not discrete sounds
+   - **Feasibility**: MEDIUM-HIGH - could use existing GasSystem fuel/oxygen tracking
+   - **Implementation would require**:
+     - Physics: Track unburnt fuel reaching exhaust
+     - Detection: Throttle lift events
+     - Audio: Procedural pop generation or sample triggering
+   - **Existing parameters**: `n_fuel()`, `n_o2()`, throttle position
+
+6. **Community Engine Integration**
+   - **Source**: https://catalog.engine-sim.parts/ (2,340+ parts, 4,160+ users)
+   - **Hellcat available**: "Hellephant 7.0" - 920HP, 2700 lbft
+   - **Popular engines**: 2JZ, EJ25, Viper V10, Porsche V10, BMW V12, Cosworth DFV
+   - **Method**: Download .mr → place in es/engines/ → create wrapper file
+
+### Priority 3: Platform Expansion
+
+7. **iOS Port**
+   - **Feasibility**: POSSIBLE (3-4 weeks effort)
+   - **Audio**: Already using AudioUnit (compatible with iOS Remote I/O)
+   - **Dependencies**: All pure C++, portable
+   - **Blockers**:
+     - CLI not allowed → SwiftUI wrapper required (1-2 weeks)
+     - App sandbox → Bundle assets with app
+     - Code signing → Apple Developer account ($99/yr)
+   - **Author's position**: Confirmed feasible but no plans to port
+   - **CMake**: Native iOS support since 3.14
+
+### Community Resources
+
+| Resource | URL |
+|----------|-----|
+| Parts Catalog | https://catalog.engine-sim.parts/ |
+| Original repo | https://github.com/ange-yaghi/engine-sim |
+| Community Edition | https://github.com/Engine-Simulator/engine-sim-community-edition |
+| engine-sim-garage | https://github.com/kirbyguy22/engine-sim-garage |
+| Discord | https://discord.gg/engine-sim-official |
+
+---
+
+**Document Version**: 1.7
+**Last Updated**: February 20, 2026
+**Status**: Main features complete, future tasks documented
