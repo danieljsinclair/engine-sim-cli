@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# To activate these colours in the terminal, do either "cd ." to trigger a refresh
+# To change the vscode colours to match edit .vscode/settings.json to match
+#        "activityBar.background": "#123456",
+#        "statusBar.background":   "#123456",
+#        "activityBar.foreground": "#ABCDEF",
+#        "statusBar.foreground":   "#ABCDEF",
+
+# This code is wrapped to avoid being used unitinentionally in other scripts.
+# Becaue of the . syntax which is invalid. But since this file is RegEx parsed
+# rather than sourced, its ok to use the . syntax here.
+# shellcheck disable=SC2276,SC2034
+function not_shell_code() {
+    # Base colors (for non-branch-specific)
+    bg=#123456anad 
+    fg=#ABCDEF
+
+    # master/main branch overrides
+    bg.master=#b29e24
+    fg.master=#000000
+}
