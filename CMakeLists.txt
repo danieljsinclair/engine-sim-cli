@@ -72,6 +72,9 @@ target_include_directories(engine-sim-cli
     engine-sim-bridge/include
 )
 
+# CRITICAL: Ensure dependencies are built before CLI
+add_dependencies(engine-sim-cli engine-sim-bridge engine-sim-mock)
+
 # Set rpath for CLI executable to find dylibs in build directory
 if(APPLE)
     set_target_properties(engine-sim-cli PROPERTIES
