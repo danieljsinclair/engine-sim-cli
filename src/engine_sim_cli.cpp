@@ -1290,30 +1290,17 @@ int runSimulation(const CommandLineArgs& args) {
         scriptPath = scriptPath.lexically_normal();
         configPath = scriptPath.string();
 
-        // Find assetBasePath by searching upward for engine_sim.mr
-        // This handles scripts in subdirectories like es/engines/atg-video-2/
-        std::filesystem::path searchPath = scriptPath.parent_path();
-        bool foundAssetBase = false;
-        
-        while (searchPath.has_parent_path() && searchPath != searchPath.parent_path()) {
-            std::filesystem::path engineSimPath = searchPath / "engine_sim.mr";
-            if (std::filesystem::exists(engineSimPath)) {
-                assetBasePath = searchPath.string();
-                foundAssetBase = true;
-                std::cerr << "DEBUG: Found engine_sim.mr at " << engineSimPath << "\n";
-                std::cerr << "DEBUG: assetBasePath set to " << assetBasePath << "\n";
-                break;
+        // Extract directory for asset resolution
+        if (scriptPath.has_parent_path()) {
+            std::filesystem::path parentPath = scriptPath.parent_path();
+            if (parentPath.filename() == "assets") {
+                assetBasePath = parentPath.parent_path().string();  // Parent of assets is the base
+            } else {
+                assetBasePath = parentPath.string();
             }
-            searchPath = searchPath.parent_path();
         }
-        
-        // Fallback: use script's parent directory if engine_sim.mr not found
-        if (!foundAssetBase) {
-            assetBasePath = scriptPath.parent_path().string();
-            std::cerr << "DEBUG: engine_sim.mr not found in ancestor directories, using script parent: " << assetBasePath << "\n";
-        }
-        
-        // Resolve asset base path to absolute
+
+        // Resolve asset base path
         std::filesystem::path assetPath(assetBasePath);
         if (assetPath.is_relative()) {
             assetPath = std::filesystem::absolute(assetPath);
