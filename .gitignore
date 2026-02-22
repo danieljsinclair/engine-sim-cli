@@ -39,14 +39,6 @@ Thumbs.db
 # Root-level log files (use test_logs/ or archive/)
 *.log
 
-# Root-level config files (use assets/)
-*.mr
-
-# Duplicate directories
-es/
-engine-sim/
-CMakeFiles/
-
 # Test outputs
 *.wav
 test_*.mr

@@ -1,0 +1,500 @@
+import "engine_sim.mr"
+
+// V2 Update with corrected values and useable in 0.1.14a
+
+units units()
+constants constants()
+impulse_response_library ir_lib()
+
+label cycle(2 * 360 * units.deg)
+label cylcycle(720/8.0*units.deg)
+label cycle90(90 * units.deg)
+
+
+private node amg_distributor {
+    input wires;
+    input timing_curve;
+    input rev_limit: 7250 * units.rpm;
+    input limiter_duration: 0.05;
+    alias output __out:
+        ignition_module(timing_curve: timing_curve, rev_limit: rev_limit, limiter_duration: limiter_duration)
+            .connect_wire(wires.wire1, 0)
+            .connect_wire(wires.wire5, 1 * cycle90)
+            .connect_wire(wires.wire4, 2 * cycle90)
+            .connect_wire(wires.wire8, 3 * cycle90)
+            .connect_wire(wires.wire6, 4 * cycle90)
+            .connect_wire(wires.wire3, 5 * cycle90)
+            .connect_wire(wires.wire7, 6 * cycle90)
+            .connect_wire(wires.wire2, 7 * cycle90)
+            ;
+}
+
+//1 - 5 - 4 - 8 - 6 - 3 - 7 - 2 M156
+
+private node wires {
+    output wire1: ignition_wire();
+    output wire2: ignition_wire();
+    output wire3: ignition_wire();
+    output wire4: ignition_wire();
+    output wire5: ignition_wire();
+    output wire6: ignition_wire();
+	output wire7: ignition_wire();
+	output wire8: ignition_wire();
+}
+
+private node add_sym_sample {
+    input angle;
+    input lift;
+    input this;
+    alias output __out: this;
+
+    this.add_sample(angle * units.deg, lift * units.thou)
+    this.add_sample(-angle * units.deg, lift * units.thou)
+}
+
+private node amg_lobe_profile_int {
+    alias output __out:
+        harmonic_cam_lobe(
+            duration_at_50_thou: 264 * units.deg,  //288
+            gamma: 3,
+            lift: 11 * units.mm,      //14.5
+            steps: 100
+        );
+}
+
+private node amg_lobe_profile_exh {
+    alias output __out:
+        harmonic_cam_lobe(
+            duration_at_50_thou: 264 * units.deg,    //280
+            gamma: 3,
+            lift: 9.8 * units.mm,        //14.5
+            steps: 100
+        );
+}
+
+private node camshaft_builder {
+    input lobe_profile: amg_lobe_profile_int();
+	input ex_lobe_profile: amg_lobe_profile_exh();
+    input intake_lobe_profile: lobe_profile;
+    input exhaust_lobe_profile: ex_lobe_profile;
+    input lobe_separation: 112.0 * units.deg;
+    input intake_lobe_center: lobe_separation;
+    input exhaust_lobe_center: 112.0 * units.deg;
+    input advance: 0.0 * units.deg;
+    input base_radius: 0.6 * units.inch;
+
+    output intake_cam_0: _intake_cam_0;
+	output intake_cam_1: _intake_cam_1;
+    output exhaust_cam_0: _exhaust_cam_0;
+	output exhaust_cam_1: _exhaust_cam_1;
+
+    camshaft_parameters params(
+        advance: advance,
+        base_radius: base_radius
+    )
+
+    camshaft _intake_cam_0(params, lobe_profile: intake_lobe_profile)
+	camshaft _intake_cam_1(params, lobe_profile: intake_lobe_profile)
+    camshaft _exhaust_cam_0(params, lobe_profile: exhaust_lobe_profile)
+	camshaft _exhaust_cam_1(params, lobe_profile: exhaust_lobe_profile)
+
+
+    label rot60(60 * units.deg)
+    label rot90(90 * units.deg)
+    label rot120(120 * units.deg)
+	label rot135(135 * units.deg)
+    label rot180(180 * units.deg)
+    label rot360(360 * units.deg)
+	label rot(90 * units.deg)
+	
+	// 1-5-3-7-4-8-2-6 
+    // 4   8
+    // 3   7
+    // 2   6
+    // 1   5
+    // 1 - 5 - 4 - 8 - 6 - 3 - 7 - 2 M156
+	
+    _intake_cam_0
+        .add_lobe(rot360 + intake_lobe_center + 0 * rot)     // 1      
+        .add_lobe(rot360 + intake_lobe_center + 6 * rot)     // 2                     
+        .add_lobe(rot360 + intake_lobe_center + 5 * rot)     // 3                     
+        .add_lobe(rot360 + intake_lobe_center + 2 * rot)     // 4      
+    
+    _intake_cam_1
+        .add_lobe(rot360 + intake_lobe_center + 1 * rot)     // 5      
+        .add_lobe(rot360 + intake_lobe_center + 4 * rot)     // 6                     
+        .add_lobe(rot360 + intake_lobe_center + 6 * rot)     // 7                     
+        .add_lobe(rot360 + intake_lobe_center + 3 * rot)     // 8      
+        
+    _exhaust_cam_0
+        .add_lobe(rot360 - exhaust_lobe_center + 0 * rot)    // 1
+        .add_lobe(rot360 - exhaust_lobe_center + 6 * rot)    // 2
+        .add_lobe(rot360 - exhaust_lobe_center + 5 * rot)    // 3
+        .add_lobe(rot360 - exhaust_lobe_center + 2 * rot)    // 4
+    
+    _exhaust_cam_1
+        .add_lobe(rot360 - exhaust_lobe_center + 1 * rot)    // 5
+        .add_lobe(rot360 - exhaust_lobe_center + 4 * rot)    // 6
+        .add_lobe(rot360 - exhaust_lobe_center + 6 * rot)    // 7
+        .add_lobe(rot360 - exhaust_lobe_center + 3 * rot)    // 8
+}
+
+private node add_flow_sample {
+    input lift;
+    input flow;
+    input this;
+    alias output __out: this;
+
+    this.add_sample(lift * units.mm, k_28inH2O(flow))
+}
+
+private node amg_head {
+    input intake_camshaft;
+    input exhaust_camshaft;
+    input chamber_volume: 28.23 * units.cc;
+	input intake_runner_volume: 250.0 * units.cc;
+    input intake_runner_cross_section_area: 100.0 * units.cm2;
+    input exhaust_runner_volume: 250.0 * units.cc;
+    input exhaust_runner_cross_section_area: 100.0 * units.cm2;
+    input flip_display: false;
+
+	input flow_attenuation: 1.0;
+    input lift_scale: 1.0;
+    alias output __out: head;
+
+    function intake_flow(1 * units.mm)
+    intake_flow
+        .add_flow_sample(0 * lift_scale, 0 * flow_attenuation)
+        .add_flow_sample(1 * lift_scale, 40 * flow_attenuation)
+        .add_flow_sample(2 * lift_scale, 100 * flow_attenuation)
+        .add_flow_sample(3 * lift_scale, 168 * flow_attenuation)
+        .add_flow_sample(4 * lift_scale, 196 * flow_attenuation)
+        .add_flow_sample(5 * lift_scale, 228 * flow_attenuation)
+        .add_flow_sample(6 * lift_scale, 254 * flow_attenuation)
+        .add_flow_sample(7 * lift_scale, 274 * flow_attenuation)
+        .add_flow_sample(8 * lift_scale, 285 * flow_attenuation)
+        .add_flow_sample(9 * lift_scale, 314 * flow_attenuation)
+        .add_flow_sample(10 * lift_scale, 330 * flow_attenuation)
+        .add_flow_sample(11 * lift_scale, 343 * flow_attenuation)
+        .add_flow_sample(12 * lift_scale, 355 * flow_attenuation)
+		.add_flow_sample(13 * lift_scale, 359 * flow_attenuation)
+		.add_flow_sample(14 * lift_scale, 360 * flow_attenuation)
+
+    function exhaust_flow(1 * units.mm)
+    exhaust_flow
+        .add_flow_sample(0 * lift_scale, 0 * flow_attenuation)
+        .add_flow_sample(1 * lift_scale, 42 * flow_attenuation)
+        .add_flow_sample(2 * lift_scale, 110 * flow_attenuation)
+        .add_flow_sample(3 * lift_scale, 140 * flow_attenuation)
+        .add_flow_sample(4 * lift_scale, 170 * flow_attenuation)
+        .add_flow_sample(5 * lift_scale, 194 * flow_attenuation)
+        .add_flow_sample(6 * lift_scale, 228 * flow_attenuation)
+        .add_flow_sample(7 * lift_scale, 237 * flow_attenuation)
+        .add_flow_sample(8 * lift_scale, 253 * flow_attenuation)
+        .add_flow_sample(9 * lift_scale, 288 * flow_attenuation)
+        .add_flow_sample(10 * lift_scale, 292 * flow_attenuation)
+        .add_flow_sample(11 * lift_scale, 317 * flow_attenuation)
+        .add_flow_sample(12 * lift_scale, 323 * flow_attenuation)
+		.add_flow_sample(13 * lift_scale, 331 * flow_attenuation)
+		.add_flow_sample(14 * lift_scale, 342 * flow_attenuation)
+
+
+    cylinder_head head(
+        chamber_volume: chamber_volume,
+        intake_runner_volume: intake_runner_volume,
+        intake_runner_cross_section_area: intake_runner_cross_section_area,
+        exhaust_runner_volume: exhaust_runner_volume,
+        exhaust_runner_cross_section_area: exhaust_runner_cross_section_area,
+
+        intake_port_flow: intake_flow,
+        exhaust_port_flow: exhaust_flow,
+        intake_camshaft: intake_camshaft,
+        exhaust_camshaft: exhaust_camshaft,
+        flip_display: flip_display
+    )
+}
+
+public node amg_vehicle {
+   input mass: (1730 + 80) * units.kg;
+   input diff_ratio: 2.82;   
+   input tire_radius: 12.7 * units.inch;
+
+   alias output __out: vehicle;
+
+   vehicle vehicle(
+    mass: mass,
+    diff_ratio: diff_ratio,
+    tire_radius: tire_radius
+   )
+}
+
+public node amg_transmission {
+    input max_clutch_torque: 680 * units.lb_ft;
+    alias output __out:
+        transmission(max_clutch_torque)
+            .add_gear(4.38)
+            .add_gear(2.86)
+            .add_gear(1.92)
+            .add_gear(1.37)
+            .add_gear(1.0)
+            .add_gear(0.82)
+            .add_gear(0.73);
+}
+
+
+public node M156 {
+    alias output __out: engine;
+
+    engine engine(
+        name: "Mercedes-AMG M156 (C 63 W204) V2",
+        starter_torque: 200 * units.lb_ft,
+        starter_speed: 1400 * units.rpm,
+        redline: 7250 * units.rpm,
+        fuel: fuel(
+            max_turbulence_effect: 1.0,
+            burning_efficiency_randomness: 0.0,
+            max_burning_efficiency: 1.0
+        ),
+        simulation_frequency: 8500
+    )
+
+    wires wires()
+
+    crankshaft c0(
+        throw: 94.6 * units.mm / 2,
+        flywheel_mass: 11.7934 * units.kg,
+        mass: 16.2 * units.kg,
+        friction_torque: 10.0 * units.lb_ft,
+        moment_of_inertia: 0.22986844776863666 * 0.9,
+        position_x: 0.0,
+        position_y: 0.0,
+        tdc: 45.0 * units.deg
+    )
+
+    rod_journal rj0(angle: 90.0*units.deg)
+    rod_journal rj1(angle: 0.0*units.deg)
+    rod_journal rj2(angle: 180.0*units.deg)
+    rod_journal rj3(angle: 270.0*units.deg)
+
+// 4   8
+// 3   7
+// 2   6
+// 1   5
+//1 - 5 - 4 - 8 - 6 - 3 - 7 - 2 M156
+
+	
+    c0
+        .add_rod_journal(rj0)
+        .add_rod_journal(rj1)
+        .add_rod_journal(rj2)
+        .add_rod_journal(rj3)
+
+    piston_parameters piston_params(
+        mass: 420 * units.g,
+        //blowby: k_28inH2O(0.1),
+        compression_height: 29.0 * units.mm,
+        wrist_pin_position: 0.0,
+        displacement: 0.0
+    )
+
+    connecting_rod_parameters cr_params(
+        mass: 408.0 * units.g,
+        moment_of_inertia: 0.0015884918028487504,
+        center_of_mass: 0.0,
+        length: 144.0 * units.mm
+    )
+
+    cylinder_bank_parameters bank_params(
+        bore: 102.2 * units.mm,
+        deck_height: 224.0 * units.mm   //225
+    )
+
+    intake intake(
+        plenum_volume: 5.0 * units.L,
+        plenum_cross_section_area: 25.0 * units.cm2,
+        intake_flow_rate: k_carb(800.0),
+        idle_flow_rate: k_carb(0.00),
+        idle_throttle_plate_position: 0.99598,
+        throttle_gamma: 1.0
+    )
+
+    exhaust_system_parameters es_params(
+        outlet_flow_rate: k_carb(1000.0),
+        primary_tube_length: 18.0 * units.inch,
+        primary_flow_rate: k_carb(800.0),
+        velocity_decay: 0.5,
+        volume: 20.0 * units.L
+    )
+
+    exhaust_system_parameters es_params2(
+        outlet_flow_rate: k_carb(1000.0),
+        primary_tube_length: 18.0 * units.inch,
+        primary_flow_rate: k_carb(800.0),
+        velocity_decay: 0.5,
+        volume: 20.0 * units.L
+    )
+
+	
+    exhaust_system exhaust0(es_params, audio_volume: 0.5, impulse_response: ir_lib.default_0)
+    exhaust_system exhaust1(es_params, audio_volume: 1.0, impulse_response: ir_lib.default_0)
+ 
+    cylinder_bank b0(bank_params, angle: 45 * units.deg)
+    b0
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj0,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire1
+        )
+		.add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj1,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire2
+        )
+		.add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj2,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire3
+        )
+		.add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj3,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire4
+        )
+
+	cylinder_bank b1(bank_params, angle: -45 * units.deg)
+	b1
+		.add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj0,
+            intake: intake,
+            exhaust_system: exhaust1,
+            ignition_wire: wires.wire5
+        )
+		.add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj1,
+            intake: intake,
+            exhaust_system: exhaust1,
+            ignition_wire: wires.wire6
+        )
+		.add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj2,
+            intake: intake,
+            exhaust_system: exhaust1,
+            ignition_wire: wires.wire7
+        )
+		.add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj3,
+            intake: intake,
+            exhaust_system: exhaust1,
+            ignition_wire: wires.wire8
+        )
+	
+
+    engine
+        .add_cylinder_bank(b0)
+		.add_cylinder_bank(b1)
+
+    engine.add_crankshaft(c0)
+
+
+    camshaft_builder camshaft(
+	    lobe_profile: amg_lobe_profile_int(),
+		ex_lobe_profile: amg_lobe_profile_exh()
+	)
+
+    b0.set_cylinder_head (
+        amg_head(
+            intake_camshaft: camshaft.intake_cam_0,
+            exhaust_camshaft: camshaft.exhaust_cam_0
+        )
+    )
+	
+	b1.set_cylinder_head (
+		amg_head(
+			intake_camshaft: camshaft.intake_cam_1,
+			exhaust_camshaft: camshaft.exhaust_cam_1,
+			flip_display:true
+		)
+	)
+
+    function timing_curve(1000 * units.rpm)
+    timing_curve
+        .add_sample(0000 * units.rpm, 15 * units.deg)
+        .add_sample(1000 * units.rpm, 28 * units.deg)
+        .add_sample(2000 * units.rpm, 35 * units.deg)
+        .add_sample(3000 * units.rpm, 35 * units.deg)
+        .add_sample(4000 * units.rpm, 40 * units.deg)
+        .add_sample(5000 * units.rpm, 42 * units.deg)
+        .add_sample(6000 * units.rpm, 45 * units.deg)
+        .add_sample(7000 * units.rpm, 51 * units.deg)
+		.add_sample(8000 * units.rpm, 55 * units.deg)
+		.add_sample(9000 * units.rpm, 60 * units.deg)
+
+    engine.add_ignition_module(
+        amg_distributor(
+            wires: wires,
+            timing_curve: timing_curve,
+            rev_limit: 7250 * units.rpm,
+            limiter_duration: 0.05
+        ))
+}
+
+public node C63_vehicle {
+    alias output __out: vehicle;
+    vehicle vehicle(
+        mass: 1730 * units.kg,
+        drag_coefficient: 0.34,
+        cross_sectional_area: (1980 * units.mm) * (1383 * units.mm),
+        diff_ratio: 2.82,
+        tire_radius: (713.74 / 2) * units.mm,
+        rolling_resistance: 20
+        )
+}
+
+private node C63_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 1250 * units.Nm,
+            max_clutch_flex: 10 * units.deg,
+            limit_clutch_flex: true,
+            clutch_stiffness: 50 * units.Nm / units.deg,
+            clutch_damping: 1.0,
+            simulate_flex: true
+        )
+        .add_gear(4.34)
+        .add_gear(2.89)
+        .add_gear(1.92)
+        .add_gear(1.37)
+        .add_gear(1.00)
+        .add_gear(0.82)
+        .add_gear(0.73);
+}
+
+public node main{
+    run(
+        engine: M156(),
+        transmission: C63_transmission(),
+        vehicle: C63_vehicle()
+    )
+}
+
+main()
