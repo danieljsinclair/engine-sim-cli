@@ -10,6 +10,7 @@ cmake_install.cmake
 compile_commands.json
 CTestTestfile.cmake
 _deps/
+Makefile
 
 # Executables
 engine-sim-cli
