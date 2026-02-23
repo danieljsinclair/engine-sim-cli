@@ -23,10 +23,3 @@ clean:
 
 test: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE) test
-
-# Forward other targets
-%: submodules
-	@if [ ! -f $(BUILD_DIR)/Makefile ]; then \
-		mkdir -p $(BUILD_DIR) && cd $(BUILD_DIR) && cmake ..; \
-	fi
-	@cd $(BUILD_DIR) && $(MAKE) $@

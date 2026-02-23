@@ -40,8 +40,9 @@ Thumbs.db
 # Root-level log files (use test_logs/ or archive/)
 *.log
 
-# Test outputs
+# Test outputs (but keep sound library wav files)
 *.wav
+!es/sound-library/**/*.wav
 test_*.mr
 
 .cache/
