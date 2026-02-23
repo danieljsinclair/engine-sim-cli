@@ -3,12 +3,18 @@
 
 BUILD_DIR ?= build
 
-.PHONY: all clean test
+.PHONY: all clean test submodules
 
-all: $(BUILD_DIR)/Makefile
+all: submodules $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE)
 
-$(BUILD_DIR)/Makefile:
+submodules:
+	@if [ ! -f engine-sim-bridge/CMakeLists.txt ]; then \
+		echo "Initializing submodules..."; \
+		git submodule update --init --recursive; \
+	fi
+
+$(BUILD_DIR)/Makefile: submodules
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake ..
 
@@ -19,7 +25,7 @@ test: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE) test
 
 # Forward other targets
-%:
+%: submodules
 	@if [ ! -f $(BUILD_DIR)/Makefile ]; then \
 		mkdir -p $(BUILD_DIR) && cd $(BUILD_DIR) && cmake ..; \
 	fi
