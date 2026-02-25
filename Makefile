@@ -2,6 +2,7 @@
 # Handles both fresh clone and development builds
 
 BUILD_DIR ?= build
+BUILD_TYPE ?= Release
 
 .PHONY: all clean test submodules
 
@@ -16,7 +17,7 @@ submodules:
 
 $(BUILD_DIR)/Makefile: submodules
 	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake ..
+	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
 
 clean:
 	@rm -rf $(BUILD_DIR)
