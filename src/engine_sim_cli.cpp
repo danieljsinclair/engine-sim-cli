@@ -879,7 +879,7 @@ struct AudioLoopConfig {
     static constexpr double UPDATE_INTERVAL = 1.0 / 60.0;  // 60Hz
     static constexpr int FRAMES_PER_UPDATE = SAMPLE_RATE / 60;  // 735 frames
     static constexpr int WARMUP_ITERATIONS = 3;  // Minimal warmup
-    static constexpr int PRE_FILL_ITERATIONS = 40;  // 0.67s initial buffer (matches working commit)
+    static constexpr int PRE_FILL_ITERATIONS = 6;  // ~90ms - enough for several CoreAudio callbacks
     static constexpr int RE_PRE_FILL_ITERATIONS = 0;  // No re-pre-fill (matches working commit)
 };
 
