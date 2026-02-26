@@ -33,6 +33,7 @@ typedef EngineSimResult (*PFN_EngineSimSetDynoHold)(EngineSimHandle, int, double
 typedef EngineSimResult (*PFN_EngineSimUpdate)(EngineSimHandle, double);
 typedef EngineSimResult (*PFN_EngineSimRender)(EngineSimHandle, float*, int32_t, int32_t*);
 typedef EngineSimResult (*PFN_EngineSimReadAudioBuffer)(EngineSimHandle, float*, int32_t, int32_t*);
+typedef EngineSimResult (*PFN_EngineSimRequestSamples)(EngineSimHandle, float*, int32_t, int32_t*);
 typedef EngineSimResult (*PFN_EngineSimGetStats)(EngineSimHandle, EngineSimStats*);
 typedef const char* (*PFN_EngineSimGetLastError)(EngineSimHandle);
 typedef const char* (*PFN_EngineSimGetVersion)(void);
@@ -58,6 +59,7 @@ struct EngineSimAPI {
     PFN_EngineSimUpdate Update;
     PFN_EngineSimRender Render;
     PFN_EngineSimReadAudioBuffer ReadAudioBuffer;
+    PFN_EngineSimRequestSamples RequestSamples;
     PFN_EngineSimGetStats GetStats;
     PFN_EngineSimGetLastError GetLastError;
     PFN_EngineSimGetVersion GetVersion;
@@ -75,6 +77,9 @@ struct EngineSimAPI {
             return false; \
         } \
     } while(0)
+
+// Global library handle for dlsym calls (avoid RTLD_DEFAULT stderr output)
+extern void* g_libHandle;
 
 // Get executable directory path
 inline std::string GetExecutableDir() {
@@ -125,6 +130,8 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
 
     // Load library
     api.libHandle = dlopen(libPath.c_str(), RTLD_NOW);
+    // Store globally for dlsym calls (avoid RTLD_DEFAULT stderr output)
+    g_libHandle = api.libHandle;
     if (!api.libHandle) {
         std::cerr << "ERROR: Failed to load " << libPath << ": " << dlerror() << "\n";
         return false;
@@ -148,6 +155,8 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
     LOAD_FUNC(api, Update);
     LOAD_FUNC(api, Render);
     LOAD_FUNC(api, ReadAudioBuffer);
+    // RequestSamples is only available in real library, not mock
+    // It's loaded separately in setEngineHandle to avoid library load failure
     LOAD_FUNC(api, GetStats);
     LOAD_FUNC(api, GetLastError);
     LOAD_FUNC(api, GetVersion);

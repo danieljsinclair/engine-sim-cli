@@ -144,8 +144,46 @@ Option B: Ring buffer queue
 
 - [x] Sine mode: No underruns
 - [x] Ferrari F136: No underruns
-- [ ] Interactive mode: No crashes, clean quit (Q key hang not tested)
-- [x] Latency: Reduced pre-fill from 0.67s (was 0.1s causing underruns)
+- [ ] Interactive mode: No crashes, clean quit (not tested)
+- [x] Pull-based API implemented and working
+
+## Implementation Complete (2025-02-25)
+
+**Successfully implemented pull-based architecture:**
+
+### Changes Made:
+
+1. **Added `renderAudioOnDemand()` to synthesizer** (engine-sim-bridge/engine-sim/src/synthesizer.cpp)
+   - New public method that renders audio synchronously without waiting for condition variable
+   - No cap on samples rendered (unlike async thread's 2000-sample cap)
+
+2. **Added `EngineSimRequestSamples()` API** (engine-sim-bridge/include/engine_sim_bridge.h, src/engine_sim_bridge.cpp)
+   - New pull-based API function
+   - Calls `renderAudioOnDemand()` to generate samples on-demand
+   - Reads from `m_audioBuffer` and returns samples to callback
+
+3. **Updated CLI for pull-based architecture** (src/engine_sim_cli.cpp, src/engine_sim_loader.h)
+   - Removed circular buffer from `AudioUnitContext`
+   - Removed `addToCircularBuffer()`, `calculateCursorChasingSamples()`, `resetCircularBuffer()` methods
+   - Updated callback to call `EngineSimRequestSamples()` directly
+   - Removed pre-fill logic (not needed for pull-based)
+   - Added global `g_libHandle` for dlsym calls (to avoid RTLD_DEFAULT stderr)
+
+### Architecture (Now 2 threads):
+- Main thread: Physics @ 60Hz + write to synthesizer input ring buffer
+- CoreAudio callback: Requests samples on-demand via `EngineSimRequestSamples()`
+- **No CLI circular buffer, no cursor-chasing**
+
+### Benefits:
+- ✅ No race conditions (single reader/writer)
+- ✅ Minimal latency (callback requests what it needs)
+- ✅ No underruns (callback can wait for samples)
+- ✅ Cleaner code (removed circular buffer complexity)
+
+### Testing Results:
+- ✅ Sine mode: Works correctly
+- ✅ Ferrari F136: No underruns, clean audio
+- ❓ Interactive mode: Not tested
 
 ## Recent Fixes (2025-02-25)
 

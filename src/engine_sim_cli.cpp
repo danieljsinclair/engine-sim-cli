@@ -66,23 +66,18 @@ struct WaveHeader {
 // ============================================================================
 
 // AudioUnit callback context - stores engine simulator handle for rendering
+// Pull-based: No circular buffer - callback requests samples on-demand
 struct AudioUnitContext {
     EngineSimHandle engineHandle;         // Engine simulator handle
     std::atomic<bool> isPlaying;          // Playback state
-
-    // Circular buffer for audio (produced by main, consumed by callback)
-    float* circularBuffer;                // Intermediate buffer
-    size_t circularBufferSize;            // Buffer capacity (96000 = 2+ seconds)
-    std::atomic<int> writePointer;        // Write position in circular buffer
-    std::atomic<int> readPointer;         // Read position (hardware playback cursor)
-    std::atomic<int> underrunCount;       // Count of buffer underruns
-
     int sampleRate;                       // Sample rate for calculations
 
+    // Function pointer for EngineSimRequestSamples (loaded dynamically)
+    using PFN_EngineSimRequestSamples = EngineSimResult(*)(EngineSimHandle, float*, int32_t, int32_t*);
+    PFN_EngineSimRequestSamples RequestSamples;  // Function pointer loaded from library
+
     AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
-                        circularBuffer(nullptr), circularBufferSize(96000),
-                        writePointer(0), readPointer(0),
-                        underrunCount(0), sampleRate(44100) {}
+                        sampleRate(44100), RequestSamples(nullptr) {}
 };
 
 class AudioPlayer {
@@ -205,14 +200,7 @@ public:
 
         std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
 
-        // Allocate circular buffer for cursor-chasing audio
-        context->circularBufferSize = 96000;  // 2+ seconds at 44.1kHz
-        context->circularBuffer = new float[context->circularBufferSize * 2];  // Stereo
-        std::memset(context->circularBuffer, 0, context->circularBufferSize * 2 * sizeof(float));
-
-        // Initialize with 100ms offset (cursor-chasing initial state)
-        context->writePointer.store(static_cast<int>(sr * 0.1));  // 100ms ahead
-        context->readPointer.store(0);
+        // Pull-based: No circular buffer - callback requests samples on-demand
 
         return true;
     }
@@ -237,6 +225,17 @@ public:
     void setEngineHandle(EngineSimHandle handle) {
         if (context) {
             context->engineHandle = handle;
+            // Load RequestSamples function pointer for pull-based architecture
+            // Only available in the real library, not in mock
+            // Use g_libHandle instead of RTLD_DEFAULT to avoid stderr output
+            context->RequestSamples = reinterpret_cast<AudioUnitContext::PFN_EngineSimRequestSamples>(
+                dlsym(g_libHandle, "EngineSimRequestSamples"));
+            // Note: Not found in mock library is OK - it doesn't need pull-based rendering
+            if (!context->RequestSamples) {
+                // Clear the error for mock library (not an error)
+                // The mock library generates samples synchronously, doesn't need this function
+                dlerror();  // Clear any error from dlsym
+            }
         }
     }
 
@@ -287,90 +286,6 @@ public:
         }
     }
 
-    // Add samples to circular buffer
-    void addToCircularBuffer(const float* samples, int frameCount) {
-        if (!context || !context->circularBuffer) return;
-
-        int writePtr = context->writePointer.load();
-        const int bufferSize = static_cast<int>(context->circularBufferSize);
-
-        if (writePtr + frameCount <= bufferSize) {
-            for (int i = 0; i < frameCount; i++) {
-                context->circularBuffer[(writePtr + i) * 2] = samples[i * 2];
-                context->circularBuffer[(writePtr + i) * 2 + 1] = samples[i * 2 + 1];
-            }
-        } else {
-            int firstSegment = bufferSize - writePtr;
-            for (int i = 0; i < firstSegment; i++) {
-                context->circularBuffer[(writePtr + i) * 2] = samples[i * 2];
-                context->circularBuffer[(writePtr + i) * 2 + 1] = samples[i * 2 + 1];
-            }
-            int secondSegment = frameCount - firstSegment;
-            for (int i = 0; i < secondSegment; i++) {
-                context->circularBuffer[i * 2] = samples[(firstSegment + i) * 2];
-                context->circularBuffer[i * 2 + 1] = samples[(firstSegment + i) * 2 + 1];
-            }
-        }
-
-        int newWritePtr = (writePtr + frameCount) % bufferSize;
-        context->writePointer.store(newWritePtr);
-    }
-
-    // Calculate cursor-chasing samples
-    int calculateCursorChasingSamples(int defaultFrames) {
-        if (!context) return defaultFrames;
-
-        const int bufferSize = static_cast<int>(context->circularBufferSize);
-        const int writePtr = context->writePointer.load();
-        const int readPtr = context->readPointer.load();
-
-        int currentLead;
-        if (writePtr >= readPtr) {
-            currentLead = writePtr - readPtr;
-        } else {
-            currentLead = (bufferSize - readPtr) + writePtr;
-        }
-
-        const int targetLead = static_cast<int>(context->sampleRate * 0.1);
-
-        const int maxLead = static_cast<int>(context->sampleRate * 0.5);
-        if (currentLead > maxLead) {
-            int newWritePtr = (readPtr + static_cast<int>(context->sampleRate * 0.05)) % bufferSize;
-            context->writePointer.store(newWritePtr);
-            currentLead = static_cast<int>(context->sampleRate * 0.05);
-        }
-
-        int targetWritePtr = (readPtr + targetLead) % bufferSize;
-
-        int maxWrite;
-        if (targetWritePtr >= writePtr) {
-            maxWrite = targetWritePtr - writePtr;
-        } else {
-            maxWrite = (bufferSize - writePtr) + targetWritePtr;
-        }
-
-        int newLead;
-        if (targetWritePtr >= readPtr) {
-            newLead = targetWritePtr - readPtr;
-        } else {
-            newLead = (bufferSize - readPtr) + targetWritePtr;
-        }
-
-        if (currentLead > newLead) {
-            return 0;
-        }
-
-        return std::min(maxWrite, defaultFrames);
-    }
-
-    void resetCircularBuffer() {
-        if (context && context->circularBuffer) {
-            context->writePointer.store(static_cast<int>(context->sampleRate * 0.1));
-            context->readPointer.store(0);
-            std::memset(context->circularBuffer, 0, context->circularBufferSize * 2 * sizeof(float));
-        }
-    }
-
 private:
     AudioUnit audioUnit;
     AudioDeviceID deviceID;
@@ -402,9 +317,7 @@ private:
             return noErr;
         }
 
-        // Read from circular buffer (cursor-chasing: main thread writes, callback reads)
-        const int bufferSize = static_cast<int>(ctx->circularBufferSize);
-
+        // Pull-based: Request samples on-demand from synthesizer
         for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
             AudioBuffer& buffer = ioData->mBuffers[i];
             float* data = static_cast<float*>(buffer.mData);
@@ -414,44 +327,28 @@ private:
                 framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
             }
 
-            // Read from circular buffer using simple modulo arithmetic
-            int readPtr = ctx->readPointer.load();
-            int writePtr = ctx->writePointer.load();
+            // Call new API to request samples directly from synthesizer
+            int32_t framesWritten = 0;
+            EngineSimResult result = ESIM_SUCCESS;
 
-            // Calculate how much data is available in circular buffer
-            int available;
-            if (writePtr >= readPtr) {
-                available = writePtr - readPtr;
-            } else {
-                available = (bufferSize - readPtr) + writePtr;
+            if (ctx->RequestSamples) {
+                result = ctx->RequestSamples(
+                    ctx->engineHandle,
+                    data,
+                    static_cast<int32_t>(framesToWrite),
+                    &framesWritten
+                );
             }
 
-            int framesToRead = std::min(static_cast<int>(framesToWrite), available);
-
-            // Copy from circular buffer to AudioUnit output
-            for (int frame = 0; frame < framesToRead; frame++) {
-                int readPos = (readPtr + frame) % bufferSize;
-                data[frame * 2] = ctx->circularBuffer[readPos * 2];
-                data[frame * 2 + 1] = ctx->circularBuffer[readPos * 2 + 1];
+            if (result != ESIM_SUCCESS) {
+                // Output silence on error
+                std::memset(data, 0, buffer.mDataByteSize);
             }
 
-            // Fill rest with silence if underrun
-            if (framesToRead < static_cast<int>(framesToWrite)) {
-                ctx->underrunCount.fetch_add(1);
-                int silenceFrames = framesToWrite - framesToRead;
-                std::memset(data + framesToRead * 2, 0, silenceFrames * 2 * sizeof(float));
-
-                // Log underrun periodically
-                if (ctx->underrunCount.load() % 10 == 0) {
-                    std::cout << "[Audio] Buffer underrun #" << ctx->underrunCount.load()
-                              << " - requested: " << framesToWrite
-                              << ", available: " << available << "\n";
-                }
+            if (result != ESIM_SUCCESS) {
+                // Output silence on error
+                std::memset(data, 0, buffer.mDataByteSize);
             }
-
-            // Update read pointer (hardware playback cursor position)
-            int newReadPtr = (readPtr + framesToRead) % bufferSize;
-            ctx->readPointer.store(newReadPtr);
         }
 
         return noErr;
@@ -587,6 +484,7 @@ public:
 static std::atomic<bool> g_running(true);
 static std::atomic<bool> g_interactiveMode(false);
 static EngineSimAPI g_engineAPI = {};
+void* g_libHandle = nullptr;  // Global library handle for dlsym calls
 
 void signalHandler(int signal) {
     g_running.store(false);
@@ -778,36 +676,10 @@ struct AudioLoopConfig {
 
 // Shared buffer operations
 namespace BufferOps {
-    void preFillCircularBuffer(AudioPlayer* player) {
-        if (!player) return;
-
-        std::cout << "Pre-filling audio buffer...\n";
-        std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
-
-        for (int i = 0; i < AudioLoopConfig::PRE_FILL_ITERATIONS; i++) {
-            player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
-        }
-
-        std::cout << "Buffer pre-filled: " << (AudioLoopConfig::PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
-                  << " frames (" << (AudioLoopConfig::PRE_FILL_ITERATIONS / 60.0) << "s)\n";
-    }
-
-    void resetAndRePrefillBuffer(AudioPlayer* player) {
-        if (!player) return;
-
-        player->resetCircularBuffer();
-        std::cout << "Circular buffer reset after warmup\n";
-
-        if (AudioLoopConfig::RE_PRE_FILL_ITERATIONS > 0) {
-            std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
-            for (int i = 0; i < AudioLoopConfig::RE_PRE_FILL_ITERATIONS; i++) {
-                player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
-            }
-            std::cout << "Re-pre-filled: " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
-                      << " frames (" << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS / 60.0) << "s)\n";
-        }
-    }
 }
+
+// Pull-based: No pre-fill needed - callback requests samples on-demand
+// No resetAndRePrefillBuffer needed for pull-based architecture
 
 // Shared warmup phase logic
 namespace WarmupOps {
@@ -1095,17 +967,8 @@ int runUnifiedAudioLoop(
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
 
-        // Generate audio (ONLY DIFFERENCE between modes)
-        if (audioPlayer) {
-            int framesToWrite = audioPlayer->calculateCursorChasingSamples(AudioLoopConfig::FRAMES_PER_UPDATE);
-
-            if (framesToWrite > 0) {
-                std::vector<float> audioBuffer(framesToWrite * 2);
-                if (audioSource.generateAudio(audioBuffer, framesToWrite)) {
-                    audioPlayer->addToCircularBuffer(audioBuffer.data(), framesToWrite);
-                }
-            }
-        }
+        // Pull-based: No circular buffer - callback requests samples on-demand
+        // Main loop only updates physics, doesn't generate audio
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
@@ -1235,8 +1098,8 @@ int runSimulation(const CommandLineArgs& args) {
             return 1;
         }
 
-        // Pre-fill buffer (audio starts after warmup to preserve pre-fill)
-        BufferOps::preFillCircularBuffer(audioPlayer);
+        // Pull-based: No pre-fill needed - callback requests samples on-demand
+        // Audio starts after warmup
     }
 
     // Warmup (common for both modes) - run BEFORE starting audio playback
