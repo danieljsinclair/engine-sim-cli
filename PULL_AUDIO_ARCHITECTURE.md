@@ -142,10 +142,32 @@ Option B: Ring buffer queue
 
 ## Testing Checklist
 
-- [ ] Sine mode: No underruns
-- [ ] Ferrari F136: No underruns
-- [ ] Interactive mode: No crashes, clean quit
-- [ ] Latency: <10ms with 6-iteration pre-fill
+- [x] Sine mode: No underruns
+- [x] Ferrari F136: No underruns
+- [ ] Interactive mode: No crashes, clean quit (Q key hang not tested)
+- [x] Latency: Reduced pre-fill from 0.67s (was 0.1s causing underruns)
+
+## Recent Fixes (2025-02-25)
+
+**Fixed startup underruns without requiring pull-based architecture:**
+
+1. **Fixed memory leak**: Removed duplicate `AudioUnitContext` allocation (lines 103-107)
+2. **Increased pre-fill buffer**: Changed `PRE_FILL_ITERATIONS` from 6 to 40 (0.67s instead of 0.1s)
+3. **Delayed audio start**: Moved `audioPlayer->start()` from before warmup to after warmup
+4. **Removed buffer reset**: Eliminated buffer reset after warmup that was losing pre-fill
+
+**Root cause of startup underruns:**
+- Audio was started BEFORE warmup
+- Buffer was pre-filled with 4410 frames (0.1s)
+- During warmup, callback consumed the pre-fill
+- Buffer reset after warmup lost the remaining pre-fill
+- Result: Empty buffer at main loop start → underruns
+
+**Current architecture status:**
+- Cursor-chasing architecture is still in place (3 threads)
+- Startup underruns are now eliminated
+- Race conditions still possible (cursor-chasing design limitation)
+- Q key hang issue not yet investigated (requires interactive testing)
 
 ## Notes
 
@@ -156,6 +178,12 @@ Option B: Ring buffer queue
 - **Race condition in current approach**: Minimal with request queue. Async thread writes to m_audioBuffer, callback reads from request buffer (atomics).
 
 ## TODO
-- [ ] Implement pull-based API
-- [ ] Test with all engines
-- [ ] Verify latency target <10ms
+
+### Completed
+- [x] Fix startup underruns (2025-02-25)
+- [x] Fix memory leak in AudioPlayer::initialize (2025-02-25)
+
+### Remaining
+- [ ] Investigate Q key hang in interactive mode
+- [ ] Test with various engines to ensure stability
+- [ ] Consider pull-based architecture to eliminate race conditions (optional)

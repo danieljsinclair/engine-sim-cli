@@ -103,10 +103,6 @@ public:
         context = new AudioUnitContext();
         context->sampleRate = sr;
 
-            // Create callback context
-        context = new AudioUnitContext();
-        context->sampleRate = sr;
-
         // Set up audio format - PCM float32 stereo
         AudioStreamBasicDescription format = {};
         format.mSampleRate = sampleRate;
@@ -776,8 +772,8 @@ struct AudioLoopConfig {
     static constexpr double UPDATE_INTERVAL = 1.0 / 60.0;  // 60Hz
     static constexpr int FRAMES_PER_UPDATE = SAMPLE_RATE / 60;  // 735 frames
     static constexpr int WARMUP_ITERATIONS = 3;  // Minimal warmup
-    static constexpr int PRE_FILL_ITERATIONS = 6;  // ~90ms - enough for several CoreAudio callbacks
-    static constexpr int RE_PRE_FILL_ITERATIONS = 0;  // No re-pre-fill (matches working commit)
+    static constexpr int PRE_FILL_ITERATIONS = 40;  // 0.67s - enough for warmup period
+    static constexpr int RE_PRE_FILL_ITERATIONS = 0;  // No re-pre-fill
 };
 
 // Shared buffer operations
@@ -1239,18 +1235,17 @@ int runSimulation(const CommandLineArgs& args) {
             return 1;
         }
 
-        // Pre-fill buffer
+        // Pre-fill buffer (audio starts after warmup to preserve pre-fill)
         BufferOps::preFillCircularBuffer(audioPlayer);
-        audioPlayer->start();
-        std::cout << "[Audio playback enabled]\n";
     }
 
-    // Warmup (common for both modes)
+    // Warmup (common for both modes) - run BEFORE starting audio playback
     WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio);
 
-    // Reset buffer after warmup
+    // Start audio playback after warmup (preserves pre-fill buffer)
     if (audioPlayer) {
-        BufferOps::resetAndRePrefillBuffer(audioPlayer);
+        audioPlayer->start();
+        std::cout << "[Audio playback enabled]\n";
     }
 
     // Create appropriate audio source - THE ONLY DIFFERENCE

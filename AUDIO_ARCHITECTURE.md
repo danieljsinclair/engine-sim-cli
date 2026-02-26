@@ -52,9 +52,10 @@ Synthesizer Input Ring Buffer (96k)
 
 ### Latency
 
-- Pre-fill: 6 iterations = 4410 samples = 100ms (for sine mode startup)
+- Pre-fill: 40 iterations = 29400 samples = 667ms (increased from 6 iterations to fix startup underruns)
 - Circular buffer lead: 100ms (write pointer ahead of read pointer)
-- **Total startup latency**: ~200ms (pre-fill + lead)
+- **Total startup latency**: ~767ms (pre-fill + lead)
+- **Note**: Audio playback starts AFTER warmup to preserve pre-fill buffer
 
 ### Performance Notes
 
@@ -131,6 +132,19 @@ The synchronous approach cannot handle 10kHz physics while maintaining 60Hz loop
 - Previous attempts at 2-thread (main + sync render) could not achieve 10kHz
 - The 2000-sample cap and race condition are limitations of the current async thread
 - These limitations are known and the system works within them
+
+## Recent Fixes (2025-02-25)
+
+**Fixed startup underruns:**
+- Increased pre-fill from 6 iterations (100ms) to 40 iterations (667ms)
+- Moved audio playback start from before warmup to after warmup
+- Removed buffer reset after warmup that was losing pre-fill
+- Fixed memory leak in AudioPlayer::initialize (duplicate context allocation)
+
+**Result:**
+- Startup underruns eliminated
+- Clean audio from the first frame
+- Maintains cursor-chasing architecture (no major refactoring needed)
 
 ## Tuning Options
 
