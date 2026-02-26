@@ -1,5 +1,0 @@
-if(EXISTS "/Users/danielsinclair/vscode/engine-sim-cli/engine-sim/dependencies/submodules/simple-2d-constraint-solver/simple-2d-constraint-solver-test[1]_tests.cmake")
-  include("/Users/danielsinclair/vscode/engine-sim-cli/engine-sim/dependencies/submodules/simple-2d-constraint-solver/simple-2d-constraint-solver-test[1]_tests.cmake")
-else()
-  add_test(simple-2d-constraint-solver-test_NOT_BUILT simple-2d-constraint-solver-test_NOT_BUILT)
-endif()

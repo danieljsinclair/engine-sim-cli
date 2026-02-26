@@ -1,5 +1,0 @@
-if(EXISTS "/Users/danielsinclair/vscode/engine-sim-cli/engine-sim/engine-sim-test[1]_tests.cmake")
-  include("/Users/danielsinclair/vscode/engine-sim-cli/engine-sim/engine-sim-test[1]_tests.cmake")
-else()
-  add_test(engine-sim-test_NOT_BUILT engine-sim-test_NOT_BUILT)
-endif()
