@@ -9,14 +9,15 @@ BUILD_TYPE ?= Release
 
 .PHONY: all clean test submodules check-cmake
 
+all: check-cmake submodules $(BUILD_DIR)/Makefile
+	@cd $(BUILD_DIR) && $(MAKE)
+
 check-cmake:
 	@if [ -f CMakeCache.txt ] && ! grep -q "CMAKE_BUILD_TYPE:STRING=Release" CMakeCache.txt; then \
 		echo "ERROR: Root CMakeCache.txt exists with wrong BUILD_TYPE. This happens when running 'cmake -S . -B .' directly."; \
 		echo "Please run 'git checkout Makefile' and then use 'make' instead."; \
 		exit 1; \
 	fi
-
-all: check-cmake submodules $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE)
 
 submodules:
