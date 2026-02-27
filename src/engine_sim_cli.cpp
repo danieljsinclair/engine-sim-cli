@@ -804,8 +804,14 @@ public:
     double getDirectRPM() const { return directRPM; }
 
     int generateAudio(std::vector<float>& buffer, int frames) override {
-        // Use direct RPM, not stats - instant response for diagnostics
+        // Audio diagnostics - track what's being generated vs consumed
         double frequency = (directRPM / 600.0) * 100.0;
+
+        // Log samples generated for debugging
+        static int debugCounter = 0;
+        if (++debugCounter % 50 == 0) {
+            std::cout << "[Sine DEBUG] Generated " << frames << " samples at " << frequency << " Hz, phase=" << currentPhase << "\n";
+        }
 
         double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
         for (int i = 0; i < frames; i++) {
