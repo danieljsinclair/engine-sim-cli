@@ -33,12 +33,13 @@ typedef EngineSimResult (*PFN_EngineSimSetDynoHold)(EngineSimHandle, int, double
 typedef EngineSimResult (*PFN_EngineSimUpdate)(EngineSimHandle, double);
 typedef EngineSimResult (*PFN_EngineSimRender)(EngineSimHandle, float*, int32_t, int32_t*);
 typedef EngineSimResult (*PFN_EngineSimReadAudioBuffer)(EngineSimHandle, float*, int32_t, int32_t*);
-typedef EngineSimResult (*PFN_EngineSimRequestSamples)(EngineSimHandle, float*, int32_t, int32_t*);
 typedef EngineSimResult (*PFN_EngineSimGetStats)(EngineSimHandle, EngineSimStats*);
 typedef const char* (*PFN_EngineSimGetLastError)(EngineSimHandle);
 typedef const char* (*PFN_EngineSimGetVersion)(void);
 typedef EngineSimResult (*PFN_EngineSimValidateConfig)(const EngineSimConfig*);
 typedef EngineSimResult (*PFN_EngineSimLoadImpulseResponse)(EngineSimHandle, int, const int16_t*, int, float);
+typedef EngineSimResult (*PFN_EngineSimWaitProcessed)(EngineSimHandle);
+typedef EngineSimResult (*PFN_EngineSimRenderAudioSync)(EngineSimHandle);
 
 // Global function pointers (loaded at runtime via dlopen)
 struct EngineSimAPI {
@@ -59,12 +60,13 @@ struct EngineSimAPI {
     PFN_EngineSimUpdate Update;
     PFN_EngineSimRender Render;
     PFN_EngineSimReadAudioBuffer ReadAudioBuffer;
-    PFN_EngineSimRequestSamples RequestSamples;
     PFN_EngineSimGetStats GetStats;
     PFN_EngineSimGetLastError GetLastError;
     PFN_EngineSimGetVersion GetVersion;
     PFN_EngineSimValidateConfig ValidateConfig;
     PFN_EngineSimLoadImpulseResponse LoadImpulseResponse;
+    PFN_EngineSimWaitProcessed WaitProcessed;
+    PFN_EngineSimRenderAudioSync RenderAudioSync;
 };
 
 // Helper macro for loading function pointers
@@ -78,8 +80,16 @@ struct EngineSimAPI {
         } \
     } while(0)
 
-// Global library handle for dlsym calls (avoid RTLD_DEFAULT stderr output)
-extern void* g_libHandle;
+// Helper macro for loading optional function pointers
+#define LOAD_FUNC_OPTIONAL(api, name) \
+    do { \
+        api.name = (PFN_EngineSim##name)dlsym(api.libHandle, "EngineSim" #name); \
+        if (!api.name) { \
+            /* Optional function, don't fail if not found */ \
+            api.name = nullptr; \
+        } \
+    } while(0) \
+
 
 // Get executable directory path
 inline std::string GetExecutableDir() {
@@ -130,8 +140,6 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
 
     // Load library
     api.libHandle = dlopen(libPath.c_str(), RTLD_NOW);
-    // Store globally for dlsym calls (avoid RTLD_DEFAULT stderr output)
-    g_libHandle = api.libHandle;
     if (!api.libHandle) {
         std::cerr << "ERROR: Failed to load " << libPath << ": " << dlerror() << "\n";
         return false;
@@ -155,13 +163,13 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
     LOAD_FUNC(api, Update);
     LOAD_FUNC(api, Render);
     LOAD_FUNC(api, ReadAudioBuffer);
-    // RequestSamples is only available in real library, not mock
-    // It's loaded separately in setEngineHandle to avoid library load failure
     LOAD_FUNC(api, GetStats);
     LOAD_FUNC(api, GetLastError);
     LOAD_FUNC(api, GetVersion);
     LOAD_FUNC(api, ValidateConfig);
     LOAD_FUNC(api, LoadImpulseResponse);
+    LOAD_FUNC_OPTIONAL(api, WaitProcessed);  // Optional - not needed for pull-based mode
+    LOAD_FUNC_OPTIONAL(api, RenderAudioSync);  // Optional - use Render if not available
 
     return true;
 }

@@ -66,18 +66,15 @@ struct WaveHeader {
 // ============================================================================
 
 // AudioUnit callback context - stores engine simulator handle for rendering
-// Pull-based: No circular buffer - callback requests samples on-demand
 struct AudioUnitContext {
     EngineSimHandle engineHandle;         // Engine simulator handle
+    const EngineSimAPI* engineAPI;       // Engine simulator API for pull-based reads
     std::atomic<bool> isPlaying;          // Playback state
+    std::atomic<int> underrunCount;       // Count of buffer underruns
     int sampleRate;                       // Sample rate for calculations
 
-    // Function pointer for EngineSimRequestSamples (loaded dynamically)
-    using PFN_EngineSimRequestSamples = EngineSimResult(*)(EngineSimHandle, float*, int32_t, int32_t*);
-    PFN_EngineSimRequestSamples RequestSamples;  // Function pointer loaded from library
-
-    AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
-                        sampleRate(44100), RequestSamples(nullptr) {}
+    AudioUnitContext() : engineHandle(nullptr), engineAPI(nullptr), isPlaying(false),
+                        underrunCount(0), sampleRate(44100) {}
 };
 
 class AudioPlayer {
@@ -169,12 +166,69 @@ public:
             return false;
         }
 
+        // Request small hardware buffer for low latency
+        // Default is ~512 frames (~11.6ms). Request 64 frames (~1.5ms).
+        UInt32 requestedFrames = 64;
+        status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioUnitProperty_MaximumFramesPerSlice,
+            kAudioUnitScope_Global,
+            0,
+            &requestedFrames,
+            sizeof(requestedFrames)
+        );
+        if (status != noErr) {
+            std::cerr << "WARNING: Could not set buffer size: " << status << "\n";
+        }
+
         // Initialize AudioUnit
         status = AudioUnitInitialize(audioUnit);
         if (status != noErr) {
             std::cerr << "ERROR: Failed to initialize AudioUnit: " << status << "\n";
             cleanup();
             return false;
+        }
+
+        // Also set the hardware device buffer size for truly low latency
+        {
+            AudioObjectPropertyAddress bufferSizeAddr = {
+                kAudioDevicePropertyBufferFrameSize,
+                kAudioObjectPropertyScopeGlobal,
+                kAudioObjectPropertyElementMain
+            };
+            // Get default device first
+            AudioDeviceID defaultDevice = 0;
+            AudioObjectPropertyAddress defaultDeviceAddr = {
+                kAudioHardwarePropertyDefaultOutputDevice,
+                kAudioObjectPropertyScopeGlobal,
+                kAudioObjectPropertyElementMain
+            };
+            UInt32 devSize = sizeof(defaultDevice);
+            AudioObjectGetPropertyData(kAudioObjectSystemObject, &defaultDeviceAddr, 0, nullptr, &devSize, &defaultDevice);
+
+            if (defaultDevice != 0) {
+                UInt32 hwBufferSize = 64;
+                status = AudioObjectSetPropertyData(defaultDevice, &bufferSizeAddr, 0, nullptr, sizeof(hwBufferSize), &hwBufferSize);
+                if (status == noErr) {
+                    std::cout << "[Audio] Hardware buffer size set to " << hwBufferSize << " frames\n";
+                } else {
+                    // Try 128 as fallback
+                    hwBufferSize = 128;
+                    status = AudioObjectSetPropertyData(defaultDevice, &bufferSizeAddr, 0, nullptr, sizeof(hwBufferSize), &hwBufferSize);
+                    if (status == noErr) {
+                        std::cout << "[Audio] Hardware buffer size set to " << hwBufferSize << " frames (fallback)\n";
+                    } else {
+                        std::cerr << "WARNING: Could not set hardware buffer size: " << status << "\n";
+                    }
+                }
+
+                // Read back actual buffer size
+                UInt32 actualSize = 0;
+                UInt32 propSize = sizeof(actualSize);
+                AudioObjectGetPropertyData(defaultDevice, &bufferSizeAddr, 0, nullptr, &propSize, &actualSize);
+                std::cout << "[Audio] Actual hardware buffer size: " << actualSize << " frames ("
+                          << std::fixed << std::setprecision(1) << (actualSize * 1000.0 / sr) << "ms)\n";
+            }
         }
 
         // Get default output device for diagnostics
@@ -199,9 +253,7 @@ public:
         }
 
         std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
-
-        // Pull-based: No circular buffer - callback requests samples on-demand
-
+        std::cout << "[Audio] PULL-BASED MODE: Callback reads directly from synthesizer buffer (async thread with no cap)\n";
         return true;
     }
 
@@ -225,22 +277,17 @@ public:
     void setEngineHandle(EngineSimHandle handle) {
         if (context) {
             context->engineHandle = handle;
-            // Load RequestSamples function pointer for pull-based architecture
-            // Only available in the real library, not in mock
-            // Use g_libHandle instead of RTLD_DEFAULT to avoid stderr output
-            context->RequestSamples = reinterpret_cast<AudioUnitContext::PFN_EngineSimRequestSamples>(
-                dlsym(g_libHandle, "EngineSimRequestSamples"));
-            // Note: Not found in mock library is OK - it doesn't need pull-based rendering
-            if (!context->RequestSamples) {
-                // Clear the error for mock library (not an error)
-                // The mock library generates samples synchronously, doesn't need this function
-                dlerror();  // Clear any error from dlsym
-            }
         }
     }
 
-  
-    
+    // Set the engine simulator API for pull-based reads
+    void setEngineAPI(const EngineSimAPI* api) {
+        if (context) {
+            context->engineAPI = api;
+        }
+    }
+
+
     // Start playback - begins real-time streaming
     bool start() {
         if (!audioUnit) return false;
@@ -281,8 +328,25 @@ public:
     }
 
     void waitForCompletion() {
+        // In streaming mode, we just wait a bit for final samples to play
         if (isPlaying) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+    }
+
+    // Expose context for main loop access
+    AudioUnitContext* getContext() { return context; }
+
+    // Get underrun count for diagnostics
+    int getUnderrunCount() {
+        if (!context) return 0;
+        return context->underrunCount.load();
+    }
+
+    // Reset underrun count
+    void resetUnderrunCount() {
+        if (context) {
+            context->underrunCount.store(0);
         }
     }
 
@@ -296,6 +360,7 @@ private:
     // Static callback for real-time audio rendering
     // This is called by the audio hardware when it needs samples
     // CRITICAL: Must be real-time safe (no allocations, no blocking, no locks)
+    // PULL-BASED: Reads directly from synthesizer via g_engineAPI.ReadAudioBuffer()
     static OSStatus audioUnitCallback(
         void* refCon,
         AudioUnitRenderActionFlags* actionFlags,
@@ -317,36 +382,53 @@ private:
             return noErr;
         }
 
-        // Pull-based: Request samples on-demand from synthesizer
-        for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-            AudioBuffer& buffer = ioData->mBuffers[i];
-            float* data = static_cast<float*>(buffer.mData);
+        // Diagnostic: log if CoreAudio provides unexpected buffer count
+        static bool loggedBufferCount = false;
+        if (!loggedBufferCount) {
+            std::cout << "[AudioCallback] mNumberBuffers=" << ioData->mNumberBuffers
+                      << " numberFrames=" << numberFrames << "\n";
+            loggedBufferCount = true;
+        }
 
-            UInt32 framesToWrite = numberFrames;
-            if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
-                framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
+        // Pull-based: Read directly from synthesizer buffer
+        if (ctx->engineHandle) {
+            for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                AudioBuffer& buffer = ioData->mBuffers[i];
+                float* data = static_cast<float*>(buffer.mData);
+
+                // Calculate how many frames we can write
+                UInt32 framesToWrite = numberFrames;
+                if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
+                    framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
+                }
+
+                // Read directly from synthesizer
+                int32_t framesRead = 0;
+                if (ctx->engineAPI) {
+                    ctx->engineAPI->ReadAudioBuffer(ctx->engineHandle, data, static_cast<int>(framesToWrite), &framesRead);
+                }
+
+                // Check for underrun
+                if (framesRead < static_cast<int>(framesToWrite)) {
+                    ctx->underrunCount.fetch_add(1);
+                    // Log underrun periodically (every 10th underrun to avoid spam)
+                    if (ctx->underrunCount.load() % 10 == 0) {
+                        std::cout << "[Audio Diagnostics] Buffer underrun #" << ctx->underrunCount.load()
+                                  << " - requested: " << framesToWrite << ", available: " << framesRead << "\n";
+                    }
+
+                    // Fill rest with silence if underrun
+                    if (framesRead > 0) {
+                        int silenceFrames = framesToWrite - framesRead;
+                        std::memset(data + framesRead * 2, 0, silenceFrames * 2 * sizeof(float));
+                    }
+                }
             }
-
-            // Call new API to request samples directly from synthesizer
-            int32_t framesWritten = 0;
-            EngineSimResult result = ESIM_SUCCESS;
-
-            if (ctx->RequestSamples) {
-                result = ctx->RequestSamples(
-                    ctx->engineHandle,
-                    data,
-                    static_cast<int32_t>(framesToWrite),
-                    &framesWritten
-                );
-            }
-
-            if (result != ESIM_SUCCESS) {
-                // Output silence on error
-                std::memset(data, 0, buffer.mDataByteSize);
-            }
-
-            if (result != ESIM_SUCCESS) {
-                // Output silence on error
+        } else {
+            // No engine handle - output silence
+            for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                AudioBuffer& buffer = ioData->mBuffers[i];
+                float* data = static_cast<float*>(buffer.mData);
                 std::memset(data, 0, buffer.mDataByteSize);
             }
         }
@@ -484,7 +566,6 @@ public:
 static std::atomic<bool> g_running(true);
 static std::atomic<bool> g_interactiveMode(false);
 static EngineSimAPI g_engineAPI = {};
-void* g_libHandle = nullptr;  // Global library handle for dlsym calls
 
 void signalHandler(int signal) {
     g_running.store(false);
@@ -648,7 +729,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 // Display Interactive HUD
 // ============================================================================
 
-void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimStats& stats) {
+void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimStats& stats, int underrunCount) {
     std::cout << "\r";
     std::cout << "[" << std::fixed << std::setprecision(0) << std::setw(4) << rpm << " RPM] ";
     std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
@@ -656,6 +737,7 @@ void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimSt
         std::cout << "[Target: " << std::setw(4) << static_cast<int>(targetRPM) << " RPM] ";
     }
     std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
+    std::cout << "[Underruns: " << underrunCount << "] ";
     std::cout << std::flush;
 }
 
@@ -667,95 +749,43 @@ void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimSt
 struct AudioLoopConfig {
     static constexpr int SAMPLE_RATE = 44100;
     static constexpr int CHANNELS = 2;
-    static constexpr double UPDATE_INTERVAL = 1.0 / 60.0;  // 60Hz
-    static constexpr int FRAMES_PER_UPDATE = SAMPLE_RATE / 60;  // 735 frames
-    static constexpr int WARMUP_ITERATIONS = 3;  // Minimal warmup
-    static constexpr int PRE_FILL_ITERATIONS = 40;  // 0.67s - enough for warmup period
-    static constexpr int RE_PRE_FILL_ITERATIONS = 0;  // No re-pre-fill
+    static constexpr int MAX_READ_FRAMES = 4096;  // Max frames to read per iteration
 };
 
-// Shared buffer operations
-namespace BufferOps {
-}
+// Warmup: prime the synthesizer so it has audio data ready before playback starts
+void runWarmup(EngineSimHandle handle, const EngineSimAPI& api, AudioPlayer* audioPlayer, bool playAudio) {
+    static constexpr int WARMUP_ITERATIONS = 3;
+    std::cout << "Priming synthesizer pipeline (" << WARMUP_ITERATIONS << " iterations)...\n";
 
-// Pull-based: No pre-fill needed - callback requests samples on-demand
-// No resetAndRePrefillBuffer needed for pull-based architecture
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        EngineSimStats stats = {};
+        api.GetStats(handle, &stats);
 
-// Shared warmup phase logic
-namespace WarmupOps {
-    void runWarmup(EngineSimHandle handle, const EngineSimAPI& api, AudioPlayer* audioPlayer, bool playAudio) {
-        std::cout << "Priming synthesizer pipeline (" << AudioLoopConfig::WARMUP_ITERATIONS << " iterations)...\n";
+        api.SetThrottle(handle, 0.6);
+        api.Update(handle, 1.0 / 60.0);
 
-        double smoothedThrottle = 0.6;
-        double currentTime = 0.0;
+        // Use RenderAudioSync if available, otherwise just Update (pull-based mode will handle rendering)
+        if (api.RenderAudioSync) {
+            api.RenderAudioSync(handle);
+        }
 
-        for (int i = 0; i < AudioLoopConfig::WARMUP_ITERATIONS; i++) {
-            EngineSimStats stats = {};
-            api.GetStats(handle, &stats);
+        std::cout << "  Priming: " << stats.currentRPM << " RPM\n";
 
-            api.SetThrottle(handle, smoothedThrottle);
-            api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
-
-            currentTime += AudioLoopConfig::UPDATE_INTERVAL;
-
-            std::cout << "  Priming: " << stats.currentRPM << " RPM\n";
-
-            // Drain audio if in play mode - DISCARD to prevent crackles
-            // Warmup audio contains starter motor noise and transients
-            // The buffer was pre-filled with silence, callback reads from that during warmup
-            if (playAudio && audioPlayer) {
-                std::vector<float> discardBuffer(AudioLoopConfig::FRAMES_PER_UPDATE * 2);
-                int warmupRead = 0;
-
-                for (int retry = 0; retry <= 3 && warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE; retry++) {
-                    int readThisTime = 0;
-                    api.ReadAudioBuffer(handle,
-                        discardBuffer.data() + warmupRead * 2,
-                        AudioLoopConfig::FRAMES_PER_UPDATE - warmupRead,
-                        &readThisTime);
-
-                    if (readThisTime > 0) warmupRead += readThisTime;
-
-                    if (warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE && retry < 3) {
-                        // No sleep - blocking prevents keyboard input
-                    }
-                }
-                // DISCARD warmup audio - do NOT send to circular buffer
-                // Buffer was pre-initialized with 100ms offset, so callback reads silence during warmup
-            }
+        // Drain warmup audio to prevent crackles from starter motor transients
+        if (playAudio) {
+            std::vector<float> discardBuffer(AudioLoopConfig::MAX_READ_FRAMES * 2);
+            int discarded = 0;
+            api.ReadAudioBuffer(handle, discardBuffer.data(), AudioLoopConfig::MAX_READ_FRAMES, &discarded);
         }
     }
-}
-
-// Shared timing control
-namespace TimingOps {
-    struct LoopTimer {
-        std::chrono::steady_clock::time_point absoluteStartTime;
-        int iterationCount;
-
-        LoopTimer() : absoluteStartTime(std::chrono::steady_clock::now()), iterationCount(0) {}
-
-        void sleepToMaintain60Hz() {
-            iterationCount++;
-            auto now = std::chrono::steady_clock::now();
-            auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                now - absoluteStartTime).count();
-            auto targetUs = static_cast<long long>(iterationCount * AudioLoopConfig::UPDATE_INTERVAL * 1000000);
-            auto sleepUs = targetUs - elapsedUs;
-
-            if (sleepUs > 0) {
-                std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
-            }
-        }
-    };
 }
 
 // Audio source abstraction - the ONLY difference between modes
 class IAudioSource {
 public:
     virtual ~IAudioSource() = default;
-    virtual bool generateAudio(std::vector<float>& buffer, int frames) = 0;
-    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) = 0;
+    virtual int generateAudio(std::vector<float>& buffer, int frames) = 0;
+    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) = 0;
 };
 
 // Sine wave audio source
@@ -764,43 +794,47 @@ private:
     EngineSimHandle handle;
     const EngineSimAPI& api;
     double currentPhase;
+    double directRPM;  // Direct RPM control - no physics smoothing
 
 public:
     SineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
-        : handle(h), api(a), currentPhase(0.0) {}
+        : handle(h), api(a), currentPhase(0.0), directRPM(0.0) {}
 
-    bool generateAudio(std::vector<float>& buffer, int frames) override {
-        EngineSimStats stats = {};
-        api.GetStats(handle, &stats);
+    void setDirectRPM(double rpm) { directRPM = rpm; }
+    double getDirectRPM() const { return directRPM; }
 
-        double frequency = (stats.currentRPM / 600.0) * 100.0;
+    int generateAudio(std::vector<float>& buffer, int frames) override {
+        // Use direct RPM, not stats - instant response for diagnostics
+        double frequency = (directRPM / 600.0) * 100.0;
 
+        double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
         for (int i = 0; i < frames; i++) {
-            double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
-            currentPhase += phaseIncrement;
-
             float sample = static_cast<float>(std::sin(currentPhase) * 0.9);
             buffer[i * 2] = sample;
             buffer[i * 2 + 1] = sample;
+            currentPhase += phaseIncrement;
         }
+        // Keep phase in [0, 2*PI) to prevent floating-point precision loss
+        currentPhase = std::fmod(currentPhase, 2.0 * M_PI);
 
-        return true;
+        return frames;
     }
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) override {
+        double frequency = (directRPM / 600.0) * 100.0;
         if (interactive) {
-            double frequency = (stats.currentRPM / 600.0) * 100.0;
-            std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
+            std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << directRPM << " RPM] ";
             std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
             std::cout << "[Frequency: " << std::setw(4) << static_cast<int>(frequency) << " Hz] ";
+            std::cout << "[Underruns: " << underrunCount << "] ";
             std::cout << std::flush;
         } else {
             static int lastProgress = 0;
             int progress = static_cast<int>(currentTime * 100 / duration);
             if (progress != lastProgress && progress % 10 == 0) {
-                double frequency = (stats.currentRPM / 600.0) * 100.0;
-                std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
-                          << " | Frequency: " << static_cast<int>(frequency) << " Hz\r" << std::flush;
+                std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(directRPM)
+                          << " | Frequency: " << static_cast<int>(frequency) << " Hz"
+                          << " | Underruns: " << underrunCount << "\r" << std::flush;
                 lastProgress = progress;
             }
         }
@@ -817,27 +851,26 @@ public:
     EngineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
         : handle(h), api(a) {}
 
-    bool generateAudio(std::vector<float>& buffer, int frames) override {
-        // Read from synthesizer with retry
+    int generateAudio(std::vector<float>& buffer, int frames) override {
         int totalRead = 0;
-
         api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
-
-
-        return totalRead > 0;
+        return totalRead;
     }
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) override {
         if (interactive) {
             std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
             std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
             std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
+            std::cout << "[Underruns: " << underrunCount << "] ";
             std::cout << std::flush;
         } else {
             static int lastProgress = 0;
             int progress = static_cast<int>(currentTime * 100 / duration);
             if (progress != lastProgress && progress % 10 == 0) {
-                std::cout << "  Progress: " << progress << "% (" << static_cast<int>(currentTime * AudioLoopConfig::SAMPLE_RATE) << " frames)\r" << std::flush;
+                std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
+                          << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
+                          << " | Underruns: " << underrunCount << "\r" << std::flush;
                 lastProgress = progress;
             }
         }
@@ -853,10 +886,11 @@ int runUnifiedAudioLoop(
     const EngineSimAPI& api,
     IAudioSource& audioSource,
     const CommandLineArgs& args,
-    AudioPlayer* audioPlayer)
+    AudioPlayer* audioPlayer,
+    SineAudioSource* sineSource = nullptr)
 {
-    double currentTime = 0.0;
-    TimingOps::LoopTimer timer;
+    auto loopStartTime = std::chrono::steady_clock::now();
+    auto lastTime = std::chrono::steady_clock::now();
 
     // Setup keyboard input if interactive
     KeyboardInput* keyboardInput = nullptr;
@@ -872,10 +906,27 @@ int runUnifiedAudioLoop(
     // Enable starter motor
     g_engineAPI.SetStarterMotor(handle, 1);
 
-    // Main loop
-    std::cout << "\nStarting main loop...\n";
+    // Reusable audio buffer - generous size for variable frame reads
+    std::vector<float> audioBuffer(AudioLoopConfig::MAX_READ_FRAMES * 2);
 
-    while ((!args.interactive && currentTime < args.duration) || (args.interactive && g_running.load())) {
+    // Main loop - Pull-based mode, callback reads directly from synthesizer
+    std::cout << "\nStarting main loop (pull-based mode)..." << std::endl;
+
+    while (g_running.load()) {
+        // Check duration for non-interactive mode using wall-clock time
+        double currentTime = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - loopStartTime).count();
+        if (!args.interactive && currentTime >= args.duration) break;
+
+        // Measure real elapsed wall-clock time
+        auto now = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration<double>(now - lastTime).count();
+        lastTime = now;
+
+        // Clamp dt to prevent spiral on first frame or after debugger pause
+        if (elapsed > 0.1) elapsed = 0.1;
+        if (elapsed < 0.0001) elapsed = 0.0001;
+
         // Get current stats for starter motor check only
         EngineSimStats starterStats = {};
         api.GetStats(handle, &starterStats);
@@ -913,16 +964,14 @@ int runUnifiedAudioLoop(
                         baselineLoad = interactiveLoad;
                         break;
                     case 'a':
-                        // Toggle ignition - only on initial press, not repeat
                         {
-                            static bool ignitionState = true;  // Start enabled by default
+                            static bool ignitionState = true;
                             ignitionState = !ignitionState;
                             api.SetIgnition(handle, ignitionState ? 1 : 0);
                             std::cout << "Ignition " << (ignitionState ? "enabled" : "disabled") << "\n";
                         }
                         break;
                     case 's':
-                        // Toggle starter motor - only on initial press, not repeat
                         {
                             static bool starterState = false;
                             starterState = !starterState;
@@ -930,19 +979,19 @@ int runUnifiedAudioLoop(
                             std::cout << "Starter motor " << (starterState ? "enabled" : "disabled") << "\n";
                         }
                         break;
-                    case 65:  // UP arrow (macOS) - conflicts with 'A', but arrow takes precedence
+                    case 65:  // UP arrow
                         interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
                         baselineLoad = interactiveLoad;
                         break;
-                    case 66:  // DOWN arrow (macOS)
+                    case 66:  // DOWN arrow
                         interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
                         baselineLoad = interactiveLoad;
                         break;
-                    case 'k': case 'K':  // Alternative UP key
+                    case 'k': case 'K':
                         interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
                         baselineLoad = interactiveLoad;
                         break;
-                    case 'j': case 'J':  // Alternative DOWN key
+                    case 'j': case 'J':
                         interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
                         baselineLoad = interactiveLoad;
                         break;
@@ -959,24 +1008,54 @@ int runUnifiedAudioLoop(
         double throttle = args.interactive ? interactiveLoad :
                          (currentTime < 0.5 ? currentTime / 0.5 : 1.0);
 
-        // Update engine
-        api.SetThrottle(handle, throttle);
-        api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+        // For sine mode: map throttle directly to RPM (instant, no physics)
+        if (sineSource) {
+            sineSource->setDirectRPM(throttle * 6000.0);
+        }
 
-        // Get current stats after Update
+        // Advance simulation by real elapsed time
+        api.SetThrottle(handle, throttle);
+        api.Update(handle, elapsed);
+
+        // Render ALL input that was just produced into audio buffer
+        // Use RenderAudioSync if available
+        if (api.RenderAudioSync) {
+            api.RenderAudioSync(handle);
+        }
+
+        // Pull-based mode: Callback reads directly from synthesizer
+        // No need to read and copy to circular buffer here
+        int32_t framesRead = 0;
+
+        // Get stats for display
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
 
-        // Pull-based: No circular buffer - callback requests samples on-demand
-        // Main loop only updates physics, doesn't generate audio
+        // Get underrun count for display
+        int underrunCount = audioPlayer ? audioPlayer->getUnderrunCount() : 0;
 
-        currentTime += AudioLoopConfig::UPDATE_INTERVAL;
+        // Early iteration diagnostics (first 50 iterations)
+        static int iterCount = 0;
+        iterCount++;
+        if (iterCount <= 50) {
+            std::cout << "[iter " << iterCount << "] dt=" << std::fixed << std::setprecision(3) << (elapsed*1000)
+                      << "ms underruns=" << underrunCount << std::endl;
+        }
 
-        // Display progress - pass throttle for display
-        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats, throttle);
+        // Periodic diagnostics (~every 1s)
+        static auto lastDiagTime = std::chrono::steady_clock::now();
+        auto diagNow = std::chrono::steady_clock::now();
+        if (std::chrono::duration<double>(diagNow - lastDiagTime).count() > 1.0) {
+            lastDiagTime = diagNow;
+            std::cout << "\n[Diag] dt=" << std::fixed << std::setprecision(1) << (elapsed*1000)
+                      << "ms underruns=" << underrunCount << "\n";
+        }
 
-        // 60Hz timing control
-        timer.sleepToMaintain60Hz();
+        // Display progress
+        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats, throttle, underrunCount);
+
+        // Yield CPU briefly - NOT sleep for timing, just prevent 100% CPU spin
+        std::this_thread::yield();
     }
 
     if (keyboardInput) {
@@ -1007,7 +1086,7 @@ int runSimulation(const CommandLineArgs& args) {
     config.fluidSimulationSteps = 8;
     config.targetSynthesizerLatency = 0.02;
     config.volume = 1.0f;
-    config.convolutionLevel = 0.5f;
+    config.convolutionLevel = 1.0f;
     config.airNoise = 1.0f;
 
     EngineSimHandle handle = nullptr;
@@ -1072,16 +1151,12 @@ int runSimulation(const CommandLineArgs& args) {
         g_engineAPI.Destroy(handle);
         return 1;
     }
-    std::cout << "[Configuration loaded: " << configPath << "]\n";
+    std::cout << "[Configuration loaded: " << configPath << "]" << std::endl;
 
-    // Start audio thread
-    EngineSimResult startThreadResult = g_engineAPI.StartAudioThread(handle);
-    if (startThreadResult != ESIM_SUCCESS) {
-        std::cerr << "ERROR: Failed to start audio thread\n";
-        g_engineAPI.Destroy(handle);
-        return 1;
-    }
-    std::cout << "[Audio thread started]\n";
+    // No async audio thread - using synchronous rendering via RenderAudioSync().
+    // Async thread has 2000-sample cap and WaitProcessed deadlocks.
+    // Sync render uses full 96000-sample buffer, no race conditions.
+    std::cout << "[Using synchronous audio rendering]" << std::endl;
 
     // Enable ignition
     g_engineAPI.SetIgnition(handle, 1);
@@ -1098,31 +1173,43 @@ int runSimulation(const CommandLineArgs& args) {
             return 1;
         }
 
-        // Pull-based: No pre-fill needed - callback requests samples on-demand
-        // Audio starts after warmup
-    }
+        // Set engine handle and API for pull-based callback
+        audioPlayer->setEngineHandle(handle);
+        audioPlayer->setEngineAPI(&g_engineAPI);
 
-    // Warmup (common for both modes) - run BEFORE starting audio playback
-    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio);
+        // Start async render thread - fills m_audioBuffer continuously
+        // Callback reads directly from m_audioBuffer (pull-based, no CLI circular buffer)
+        // Async thread has NO CAP (removed 2000-sample limit) to prevent underruns
+        g_engineAPI.StartAudioThread(handle);
+        std::cout << "[Async render thread started (no buffer cap)]\n";
 
-    // Start audio playback after warmup (preserves pre-fill buffer)
-    if (audioPlayer) {
         audioPlayer->start();
         std::cout << "[Audio playback enabled]\n";
     }
 
+    // Warmup (common for both modes)
+    runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio);
+
+    // Reset underrun count after warmup
+    if (audioPlayer) {
+        audioPlayer->resetUnderrunCount();
+    }
+
     // Create appropriate audio source - THE ONLY DIFFERENCE
     std::unique_ptr<IAudioSource> audioSource;
+    SineAudioSource* sineSource = nullptr;
     if (args.sineMode) {
         std::cout << "Mode: SINE TEST\n";
-        audioSource = std::make_unique<SineAudioSource>(handle, g_engineAPI);
+        auto sine = std::make_unique<SineAudioSource>(handle, g_engineAPI);
+        sineSource = sine.get();
+        audioSource = std::move(sine);
     } else {
         std::cout << "Mode: REAL ENGINE\n";
         audioSource = std::make_unique<EngineAudioSource>(handle, g_engineAPI);
     }
 
     // Run unified loop - SAME CODE FOR BOTH MODES
-    int exitCode = runUnifiedAudioLoop(handle, g_engineAPI, *audioSource, args, audioPlayer);
+    int exitCode = runUnifiedAudioLoop(handle, g_engineAPI, *audioSource, args, audioPlayer, sineSource);
 
     // Cleanup (common for both modes)
     if (audioPlayer) {
