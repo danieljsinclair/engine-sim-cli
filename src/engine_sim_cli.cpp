@@ -1081,7 +1081,7 @@ int runSimulation(const CommandLineArgs& args) {
     EngineSimConfig config = {};
     config.sampleRate = sampleRate;
     config.inputBufferSize = 1024;
-    config.audioBufferSize = 96000;
+    config.audioBufferSize = 22050;  // ~500ms latency (down from 96000 = 2.2s)
     config.simulationFrequency = 10000;
     config.fluidSimulationSteps = 8;
     config.targetSynthesizerLatency = 0.02;
