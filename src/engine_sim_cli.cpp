@@ -1386,11 +1386,6 @@ int runSimulation(const CommandLineArgs& args) {
                 g_engineAPI.Destroy(handle);
                 return 1;
             }
-
-            // Pre-fill buffer (circular buffer mode only)
-            BufferOps::preFillCircularBuffer(audioPlayer);
-            audioPlayer->start();
-            std::cout << "[Audio playback enabled]\n";
         }
     }
 
@@ -1402,8 +1397,8 @@ int runSimulation(const CommandLineArgs& args) {
         BufferOps::resetAndRePrefillBuffer(audioPlayer);
     }
 
-    // Start audio playback (circular buffer mode only)
-    if (audioPlayer && !args.syncPull) {
+    // Start audio playback (both modes need this)
+    if (audioPlayer) {
         audioPlayer->start();
         std::cout << "[Audio playback enabled]\n";
     }
