@@ -60,6 +60,8 @@ The only difference is the source of the audio data:
 
 Both data sources feed into the identical audio infrastructure.
 
+> **IMPORTANT:** This equivalence is critical for diagnostics. Sine mode is designed to mirror engine mode's audio pipeline, allowing developers to test and debug audio issues without running the full engine simulation. See [DIAGNOSTICS](#diagnostics) for details.
+
 ---
 
 ## Side-by-Side Behavior Comparison
@@ -476,5 +478,46 @@ This equivalence proof allows us to focus debugging efforts on the engine simula
 
 ---
 
+## Diagnostics
+
+### Why Sine Mirrors Engine
+
+Sine mode is designed to be a diagnostic tool that **mirrors the engine audio pipeline exactly**. This means:
+
+- **Any audio issue in engine mode will also appear in sine mode**
+- **Fixes validated in sine mode will work in engine mode**
+- **Performance testing in sine mode accurately predicts engine mode behavior**
+
+### Audio Pipeline Verification
+
+Use sine mode to verify audio pipeline fixes:
+
+```bash
+# Test circular buffer mode
+./build/engine-sim-cli --sine --play
+
+# Test sync-pull mode  
+./build/engine-sim-cli --sine --play --sync-pull
+```
+
+Compare behavior with engine mode:
+
+```bash
+# Test engine with same mode
+./build/engine-sim-cli --interactive --play --script es/v8_gm_ls.mr
+./build/engine-sim-cli --interactive --play --sync-pull --script es/v8_gm_ls.mr
+```
+
+If sine mode has underruns/crackles, the issue is in the shared audio infrastructure (not the engine simulation).
+
+### Cross-References
+
+- See `docs/investigation/phase3-bug-fixes/FINAL_AUDIO_TEST_REPORT.md` for audio test methodology
+- See `docs/investigation/phase3-bug-fixes/BUGFIX3_REPORT.md` for buffer underrun analysis
+- See `docs/DIAGNOSTICS_GUIDE.md` for full diagnostic procedures
+
+---
+
 *Generated: 2026-02-07*
 *Proof Status: CONFIRMED - Interface equivalence proven through testing and analysis*
+*Last Updated: 2026-02-28 - Added diagnostics section emphasizing sine-engine equivalence*
