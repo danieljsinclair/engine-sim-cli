@@ -1050,18 +1050,24 @@ private:
     EngineSimHandle handle;
     const EngineSimAPI& api;
     double currentPhase;
+    bool useRenderOnDemand;
 
 public:
-    SineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
-        : handle(h), api(a), currentPhase(0.0) {}
+    SineAudioSource(EngineSimHandle h, const EngineSimAPI& a, bool syncPull = false)
+        : handle(h), api(a), currentPhase(0.0), useRenderOnDemand(syncPull) {}
 
     bool generateAudio(std::vector<float>& buffer, int frames) override {
-        // Get audio from engine synthesizer - this is the SAME path as engine mode
-        // This allows sine to demonstrate the same audio issues (crackles, dropouts) as the real engine
         int totalRead = 0;
-        api.RenderOnDemand(handle, buffer.data(), frames, &totalRead);
+        
+        if (useRenderOnDemand) {
+            // Sync-pull mode: directly render from engine
+            api.RenderOnDemand(handle, buffer.data(), frames, &totalRead);
+        } else {
+            // Circular buffer mode: read from pre-filled buffer
+            api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
+        }
 
-        // Modulate with sine wave for testing - still goes through engine pipeline
+        // Modulate with sine wave for testing
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
         
@@ -1435,7 +1441,7 @@ int runSimulation(const CommandLineArgs& args) {
     std::unique_ptr<IAudioSource> audioSource;
     if (args.sineMode) {
         std::cout << "Mode: SINE TEST\n";
-        audioSource = std::make_unique<SineAudioSource>(handle, g_engineAPI);
+        audioSource = std::make_unique<SineAudioSource>(handle, g_engineAPI, args.syncPull);
     } else {
         std::cout << "Mode: REAL ENGINE\n";
         audioSource = std::make_unique<EngineAudioSource>(handle, g_engineAPI);
