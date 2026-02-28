@@ -1044,7 +1044,7 @@ public:
     virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) = 0;
 };
 
-// Sine wave audio source
+// Sine wave audio source - uses ENGINE audio pipeline to demonstrate engine audio issues
 class SineAudioSource : public IAudioSource {
 private:
     EngineSimHandle handle;
@@ -1056,21 +1056,27 @@ public:
         : handle(h), api(a), currentPhase(0.0) {}
 
     bool generateAudio(std::vector<float>& buffer, int frames) override {
+        // Get audio from engine synthesizer - this is the SAME path as engine mode
+        // This allows sine to demonstrate the same audio issues (crackles, dropouts) as the real engine
+        int totalRead = 0;
+        api.RenderOnDemand(handle, buffer.data(), frames, &totalRead);
+
+        // Modulate with sine wave for testing - still goes through engine pipeline
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
-
+        
         double frequency = (stats.currentRPM / 600.0) * 100.0;
+        double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
 
-        for (int i = 0; i < frames; i++) {
-            double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
+        for (int i = 0; i < totalRead; i++) {
             currentPhase += phaseIncrement;
-
-            float sample = static_cast<float>(std::sin(currentPhase) * 0.9);
-            buffer[i * 2] = sample;
-            buffer[i * 2 + 1] = sample;
+            float sineMod = static_cast<float>(std::sin(currentPhase) * 0.9);
+            // Mix sine with engine audio (50/50)
+            buffer[i * 2] = buffer[i * 2] * 0.5f + sineMod * 0.5f;
+            buffer[i * 2 + 1] = buffer[i * 2 + 1] * 0.5f + sineMod * 0.5f;
         }
 
-        return true;
+        return totalRead > 0;
     }
 
     void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
