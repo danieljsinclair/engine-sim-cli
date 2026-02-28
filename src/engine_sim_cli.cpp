@@ -267,6 +267,11 @@ public:
         }
     }
 
+    // Check if sync-pull mode is enabled
+    bool isSyncPullMode() const {
+        return context && context->engineAPI != nullptr;
+    }
+
   
     
     // Start playback - begins real-time streaming
@@ -1249,7 +1254,13 @@ int runUnifiedAudioLoop(
         api.GetStats(handle, &stats);
 
         // Generate audio (ONLY DIFFERENCE between modes)
+        // Check if sync-pull mode by testing if context has engineAPI set
+        bool isSyncPull = false;
         if (audioPlayer) {
+            isSyncPull = audioPlayer->isSyncPullMode();
+        }
+        
+        if (audioPlayer && !isSyncPull) {
             // Use cursor-chasing to determine how many frames to write
             // This maintains 100ms lead and prevents buffer underruns/overruns
             int framesToWrite = audioPlayer->calculateCursorChasingSamples(AudioLoopConfig::FRAMES_PER_UPDATE);
@@ -1260,7 +1271,15 @@ int runUnifiedAudioLoop(
                     audioPlayer->addToCircularBuffer(audioBuffer.data(), framesToWrite);
                 }
             }
+        } else if (isSyncPull && args.sineMode) {
+            // For sine mode with sync-pull, use the audio source
+            int framesToWrite = AudioLoopConfig::FRAMES_PER_UPDATE;
+            std::vector<float> audioBuffer(framesToWrite * 2);
+            if (audioSource.generateAudio(audioBuffer, framesToWrite)) {
+                // In sync-pull, callback reads directly - no circular buffer
+            }
         }
+        // For engine sync-pull mode, main loop just does Update() - callback handles rendering
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
