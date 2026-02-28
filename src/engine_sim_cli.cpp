@@ -233,7 +233,9 @@ public:
         }
 
         std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
-        std::cout << "[Audio] Sync pull model - direct render on audio callback\n";
+        if (syncPull) {
+            std::cout << "[Audio] Sync pull model - direct render on audio callback\n";
+        }
         return true;
     }
 
@@ -1372,7 +1374,8 @@ int runSimulation(const CommandLineArgs& args) {
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
-        if (args.syncPull) {
+        // Only use sync-pull for engine mode (not sine mode which generates its own audio)
+        if (args.syncPull && !args.sineMode) {
             if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
                 std::cerr << "ERROR: Audio init failed\n";
                 delete audioPlayer;
