@@ -1045,44 +1045,36 @@ public:
 };
 
 // Sine wave audio source - uses ENGINE audio pipeline to demonstrate engine audio issues
+// CRITICAL: Sine uses the SAME code path as engine mode for diagnostics
+// Both sine and engine go through: generateAudio -> circular buffer -> callback
 class SineAudioSource : public IAudioSource {
 private:
     EngineSimHandle handle;
     const EngineSimAPI& api;
     double currentPhase;
-    bool useRenderOnDemand;
 
 public:
-    SineAudioSource(EngineSimHandle h, const EngineSimAPI& a, bool syncPull = false)
-        : handle(h), api(a), currentPhase(0.0), useRenderOnDemand(syncPull) {}
+    SineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
+        : handle(h), api(a), currentPhase(0.0) {}
 
     bool generateAudio(std::vector<float>& buffer, int frames) override {
-        int totalRead = 0;
-        
-        if (useRenderOnDemand) {
-            // Sync-pull mode: directly render from engine
-            api.RenderOnDemand(handle, buffer.data(), frames, &totalRead);
-        } else {
-            // Circular buffer mode: read from pre-filled buffer
-            api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
-        }
-
-        // Modulate with sine wave for testing
+        // Get engine audio stats for frequency calculation
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
         
         double frequency = (stats.currentRPM / 600.0) * 100.0;
         double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
 
-        for (int i = 0; i < totalRead; i++) {
+        // Generate pure sine wave - goes into buffer just like engine audio would
+        // This is the SAME pipeline as engine: main loop -> buffer -> callback
+        for (int i = 0; i < frames; i++) {
             currentPhase += phaseIncrement;
-            float sineMod = static_cast<float>(std::sin(currentPhase) * 0.9);
-            // Mix sine with engine audio (50/50)
-            buffer[i * 2] = buffer[i * 2] * 0.5f + sineMod * 0.5f;
-            buffer[i * 2 + 1] = buffer[i * 2 + 1] * 0.5f + sineMod * 0.5f;
+            float sample = static_cast<float>(std::sin(currentPhase) * 0.9);
+            buffer[i * 2] = sample;
+            buffer[i * 2 + 1] = sample;
         }
 
-        return totalRead > 0;
+        return true;
     }
 
     void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
@@ -1441,7 +1433,7 @@ int runSimulation(const CommandLineArgs& args) {
     std::unique_ptr<IAudioSource> audioSource;
     if (args.sineMode) {
         std::cout << "Mode: SINE TEST\n";
-        audioSource = std::make_unique<SineAudioSource>(handle, g_engineAPI, args.syncPull);
+        audioSource = std::make_unique<SineAudioSource>(handle, g_engineAPI);
     } else {
         std::cout << "Mode: REAL ENGINE\n";
         audioSource = std::make_unique<EngineAudioSource>(handle, g_engineAPI);
