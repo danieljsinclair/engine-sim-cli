@@ -1372,25 +1372,40 @@ int runSimulation(const CommandLineArgs& args) {
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
-        if (!audioPlayer->initialize(sampleRate)) {
-            std::cerr << "ERROR: Audio init failed\n";
-            delete audioPlayer;
-            g_engineAPI.Destroy(handle);
-            return 1;
-        }
+        if (args.syncPull) {
+            if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
+                std::cerr << "ERROR: Audio init failed\n";
+                delete audioPlayer;
+                g_engineAPI.Destroy(handle);
+                return 1;
+            }
+        } else {
+            if (!audioPlayer->initialize(sampleRate)) {
+                std::cerr << "ERROR: Audio init failed\n";
+                delete audioPlayer;
+                g_engineAPI.Destroy(handle);
+                return 1;
+            }
 
-        // Pre-fill buffer (common for both modes)
-        BufferOps::preFillCircularBuffer(audioPlayer);
-        audioPlayer->start();
-        std::cout << "[Audio playback enabled]\n";
+            // Pre-fill buffer (circular buffer mode only)
+            BufferOps::preFillCircularBuffer(audioPlayer);
+            audioPlayer->start();
+            std::cout << "[Audio playback enabled]\n";
+        }
     }
 
-    // Warmup (common for both modes)
-    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio);
+    // Warmup (common for both modes, but different audio handling)
+    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio && !args.syncPull);
 
-    // Reset buffer after warmup (common for both modes)
-    if (audioPlayer) {
+    // Reset buffer after warmup (circular buffer mode only)
+    if (audioPlayer && !args.syncPull) {
         BufferOps::resetAndRePrefillBuffer(audioPlayer);
+    }
+
+    // Start audio playback (circular buffer mode only)
+    if (audioPlayer && !args.syncPull) {
+        audioPlayer->start();
+        std::cout << "[Audio playback enabled]\n";
     }
 
     // Create appropriate audio source - THE ONLY DIFFERENCE
