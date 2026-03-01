@@ -1257,33 +1257,8 @@ int runUnifiedAudioLoop(
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
 
-        // Generate audio (ONLY DIFFERENCE between modes)
-        // Check if sync-pull mode by testing if context has engineAPI set
-        bool isSyncPull = false;
-        if (audioPlayer) {
-            isSyncPull = audioPlayer->isSyncPullMode();
-        }
-        
-        if (audioPlayer && !isSyncPull) {
-            // Use cursor-chasing to determine how many frames to write
-            // This maintains 100ms lead and prevents buffer underruns/overruns
-            int framesToWrite = audioPlayer->calculateCursorChasingSamples(AudioLoopConfig::FRAMES_PER_UPDATE);
-
-            if (framesToWrite > 0) {
-                std::vector<float> audioBuffer(framesToWrite * 2);
-                if (audioSource.generateAudio(audioBuffer, framesToWrite)) {
-                    audioPlayer->addToCircularBuffer(audioBuffer.data(), framesToWrite);
-                }
-            }
-        } else if (isSyncPull && args.sineMode) {
-            // For sine mode with sync-pull, use the audio source
-            int framesToWrite = AudioLoopConfig::FRAMES_PER_UPDATE;
-            std::vector<float> audioBuffer(framesToWrite * 2);
-            if (audioSource.generateAudio(audioBuffer, framesToWrite)) {
-                // In sync-pull, callback reads directly - no circular buffer
-            }
-        }
-        // For engine sync-pull mode, main loop just does Update() - callback handles rendering
+        // Audio is rendered in callback via RenderOnDemand (sync-pull model)
+        // Both sine and engine use the same path - callback renders from synthesizer
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
@@ -1393,43 +1368,29 @@ int runSimulation(const CommandLineArgs& args) {
     g_engineAPI.SetIgnition(handle, 1);
     std::cout << "[Ignition enabled]\n";
 
-    // Initialize audio player
+    // Initialize audio player - ALWAYS use sync-pull model (no circular buffer)
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
-        // Only use sync-pull for engine mode (not sine mode which generates its own audio)
-        if (args.syncPull && !args.sineMode) {
-            if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
-                std::cerr << "ERROR: Audio init failed\n";
-                delete audioPlayer;
-                g_engineAPI.Destroy(handle);
-                return 1;
-            }
-        } else {
-            if (!audioPlayer->initialize(sampleRate)) {
-                std::cerr << "ERROR: Audio init failed\n";
-                delete audioPlayer;
-                g_engineAPI.Destroy(handle);
-                return 1;
-            }
+        // Always use sync-pull - callback renders audio directly
+        if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
+            std::cerr << "ERROR: Audio init failed\n";
+            delete audioPlayer;
+            g_engineAPI.Destroy(handle);
+            return 1;
         }
     }
 
-    // Warmup (common for both modes, but different audio handling)
-    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio && !args.syncPull);
+    // Warmup - render audio to prime synthesizer
+    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, false);
 
-    // Reset buffer after warmup (circular buffer mode only)
-    if (audioPlayer && !args.syncPull) {
-        BufferOps::resetAndRePrefillBuffer(audioPlayer);
-    }
-
-    // Start audio playback (both modes need this)
+    // Start audio playback
     if (audioPlayer) {
         audioPlayer->start();
         std::cout << "[Audio playback enabled]\n";
     }
 
-    // Create appropriate audio source - THE ONLY DIFFERENCE
+    // Create appropriate audio source - sine uses same pipeline as engine
     std::unique_ptr<IAudioSource> audioSource;
     if (args.sineMode) {
         std::cout << "Mode: SINE TEST\n";
