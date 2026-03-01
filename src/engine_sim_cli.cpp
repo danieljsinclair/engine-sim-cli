@@ -1,12 +1,42 @@
 // engine-sim CLI: Interactive command-line interface for engine simulation
 //
-// Features:
-// - Load engine configurations from .mr files
-// - RPM control via --rpm or interactive mode
-// - Load control via --load or interactive mode
-// - Interactive keyboard control with --interactive
-// - Real-time audio playback with --play
-// - WAV file export
+// ============================================================================
+// ARCHITECTURE: SYNCHRONOUS PULL MODEL (Default since 2026-02-28)
+// ============================================================================
+//
+// This file implements the SYNCHRONOUS PULL MODEL for audio. The circular
+// buffer model has been REMOVED entirely.
+//
+// HOW IT WORKS:
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │                         MAIN LOOP (60Hz)                           │
+// │  1. api.SetThrottle(handle, throttle)                              │
+// │  2. api.Update(handle, dt) - advances physics, feeds synthesizer   │
+// │  3. api.GetStats(handle, &stats) - reads RPM, etc.               │
+// └─────────────────────────────────────────────────────────────────────┘
+//                                 │
+//                                 ▼ (synthesizer has audio data)
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │                    AUDIO CALLBACK (44.1kHz)                         │
+// │  ctx->engineAPI->RenderOnDemand(handle, buffer, frames, &read)    │
+// │     └─> synthesizer.renderAudioOnDemand()                         │
+// │         └─> reads from input channel, processes, outputs         │
+// └─────────────────────────────────────────────────────────────────────┘
+//
+// KEY DIFFERENCES FROM CIRCULAR BUFFER:
+// - NO circular buffer - audio rendered directly in callback
+// - NO async audio thread - single-threaded, no threading issues
+// - NO condition variable blocking - renderAudioOnDemand() skips CV wait
+// - LOW LATENCY - rendered on-demand, not buffered ahead
+//
+// SINE MODE AS DIAGNOSTIC:
+// - Sine mode uses EXACTLY the same pipeline as engine mode
+// - Both call Update() in main loop
+// - Both use RenderOnDemand() in callback
+// - If sine works but engine has crackles, issue is in engine/synthesizer
+// - If both have issues, issue is in shared audio infrastructure
+//
+// ============================================================================
 
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"

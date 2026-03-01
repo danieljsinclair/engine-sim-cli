@@ -478,6 +478,60 @@ This equivalence proof allows us to focus debugging efforts on the engine simula
 
 ---
 
+## Architecture: Synchronous Pull Model (Default)
+
+### Current Implementation (2026-02-28)
+
+**The circular buffer has been REMOVED. Sync-pull is now the default and only audio model.**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     MAIN LOOP (60Hz)                           │
+│  ┌─────────────┐    ┌─────────────┐                          │
+│  │ Update()    │    │ GetStats()  │                          │
+│  │ (physics)   │    │ (RPM, etc)  │                          │
+│  └─────────────┘    └─────────────┘                          │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  AUDIO CALLBACK (44.1kHz)                       │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ RenderOnDemand() - renders audio on-demand              │   │
+│  │ - Reads from synthesizer input channel                  │   │
+│  │ - Processes through filters                            │   │
+│  │ - Outputs directly to audio buffer                     │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Points
+
+1. **No circular buffer** - Audio is rendered directly in callback
+2. **No threading** - Single-threaded, no async thread
+3. **No condition variables** - `renderAudioOnDemand()` skips CV wait
+4. **Low latency** - Audio rendered when needed, not buffered ahead
+5. **Sine = Engine** - Sine mode uses exact same pipeline as engine for diagnostics
+
+### Why This Works
+
+- Main loop runs at 60Hz, calls `Update()` which feeds the synthesizer
+- Audio callback runs at 44.1kHz, calls `RenderOnDemand()` to render audio
+- `RenderOnDemand()` doesn't block - it processes whatever is available
+- If no audio is available, it outputs silence (no deadlock)
+
+### Testing
+
+```bash
+# Both modes now use sync-pull
+./build/engine-sim-cli --sine --play                    # Sine test
+./build/engine-sim-cli --interactive --play --script es/v8_gm_ls.mr  # Engine test
+```
+
+If sine works but engine doesn't, the issue is in the engine/synthesizer, not audio infrastructure.
+
+---
+
 ## Diagnostics
 
 ### Why Sine Mirrors Engine
