@@ -7,10 +7,16 @@
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
 
-.PHONY: all clean test submodules check-cmake
+.PHONY: all clean scrub test submodules check-cmake
 
 all: check-cmake submodules $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE)
+
+scrub: clean
+	@echo "Scrubbing all build artifacts..."
+	@rm -f engine-sim-bridge/*.dylib
+	@rm -f engine-sim-bridge/engine-sim/*.dylib
+	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
 
 check-cmake:
 	@if [ -f CMakeCache.txt ] && ! grep -q "CMAKE_BUILD_TYPE:STRING=Release" CMakeCache.txt; then \

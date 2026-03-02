@@ -560,11 +560,7 @@ private:
                     std::cout << "\n";
                 }
 
-                // Zero-fill any remaining frames
-                if (framesRead < static_cast<int>(framesToRender)) {
-                    int silenceFrames = framesToRender - framesRead;
-                    std::memset(data + framesRead * 2, 0, silenceFrames * 2 * sizeof(float));
-                }
+                // NOTE: Bridge handles underruns with sample-and-hold - no need to zero-fill here
             }
             return noErr;
         }
@@ -1289,9 +1285,14 @@ int runUnifiedAudioLoop(
         double throttle = args.interactive ? interactiveLoad :
                          (currentTime < 0.5 ? currentTime / 0.5 : 1.0);
 
-        // Update engine
+        // Set throttle (this always needs to be called to update engine state)
         api.SetThrottle(handle, throttle);
-        api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+        
+        if (args.sineMode) {
+            // Sine mode: Update() runs simulation and generates audio
+            api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+        }
+        // Engine mode in sync-pull: Skip Update() - RenderOnDemand in audio callback runs simulation
 
         // Get current stats after Update for current iteration values
         EngineSimStats stats = {};
@@ -1485,6 +1486,11 @@ int main(int argc, char* argv[]) {
     if (!LoadEngineSimLibrary(g_engineAPI, args.sineMode)) {
         std::cerr << "ERROR: Failed to load engine-sim library\n";
         return 1;
+    }
+
+    // Verify build ID
+    if (g_engineAPI.GetVersion) {
+        std::cout << "[Bridge: " << g_engineAPI.GetVersion() << "]\n";
     }
 
     std::cout << "Configuration:\n";
