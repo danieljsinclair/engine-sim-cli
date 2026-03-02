@@ -550,6 +550,16 @@ private:
                 int framesRead = 0;
                 ctx->engineAPI->RenderOnDemand(ctx->engineHandle, data, framesToRender, &framesRead);
 
+                // DIAGNOSTICS: Print first few samples from callback
+                static int cbCount = 0;
+                if (cbCount++ % 50 == 0) {
+                    std::cout << "[CALLBACK] req=" << framesToRender << " got=" << framesRead;
+                    for (int j = 0; j < std::min(5, framesRead); j++) {
+                        std::cout << " [" << j << "]=" << std::fixed << std::setprecision(4) << data[j*2];
+                    }
+                    std::cout << "\n";
+                }
+
                 // Zero-fill any remaining frames
                 if (framesRead < static_cast<int>(framesToRender)) {
                     int silenceFrames = framesToRender - framesRead;
