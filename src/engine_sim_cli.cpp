@@ -799,7 +799,7 @@ struct CommandLineArgs {
     bool playAudio = false;
     bool useDefaultEngine = false;
     bool sineMode = false;  // Generate sine wave test tone instead of engine audio
-    bool syncPull = false;  // Use sync pull model instead of circular buffer
+    bool syncPull = true;  // Use sync pull model by default
 };
 
 void printUsage(const char* progName) {
@@ -816,6 +816,7 @@ void printUsage(const char* progName) {
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
+    std::cout << "  --threaded           Use threaded circular buffer (default: sync-pull)\n";
     std::cout << "  --sync-pull          Use synchronous pull model (bypass circular buffer)\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
@@ -891,6 +892,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         }
         else if (arg == "--sine") {
             args.sineMode = true;
+        }
+        else if (arg == "--threaded") {
+            args.syncPull = false;
         }
         else if (arg == "--sync-pull") {
             args.syncPull = true;
