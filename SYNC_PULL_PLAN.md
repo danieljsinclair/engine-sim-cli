@@ -33,17 +33,17 @@ Both repos now at **origin/master** - verified working.
 
 ### Step 1: engine-sim - Add renderAudioOnDemand()
 
-- [ ] 1.1 Add `renderAudioOnDemand()` declaration to `engine-sim/include/synthesizer.h`
-- [ ] 1.2 Add `renderAudioOnDemand()` implementation to `engine-sim/src/synthesizer.cpp`
-- [ ] 1.3 Commit engine-sim changes
-- [ ] 1.4 **Verify**: Build engine-sim and check no compilation errors
+- [x] 1.1 Add `renderAudioOnDemand()` declaration to `engine-sim/include/synthesizer.h`
+- [x] 1.2 Add `renderAudioOnDemand()` implementation to `engine-sim/src/synthesizer.cpp`
+- [x] 1.3 Commit engine-sim changes
+- [x] 1.4 **Verify**: Build engine-sim and check no compilation errors ✓
 
 ### Step 2: engine-sim-bridge - Add EngineSimRenderOnDemand()
 
-- [ ] 2.1 Add `EngineSimRenderOnDemand()` declaration to `engine-sim-bridge/include/engine_sim_bridge.h`
-- [ ] 2.2 Add `EngineSimRenderOnDemand()` implementation to `engine-sim-bridge/src/engine_sim_bridge.cpp`
+- [x] 2.1 Add `EngineSimRenderOnDemand()` declaration to `engine-sim-bridge/include/engine_sim_bridge.h`
+- [x] 2.2 Add `EngineSimRenderOnDemand()` implementation to `engine-sim-bridge/src/engine_sim_bridge.cpp`
 - [ ] 2.3 Commit bridge changes
-- [ ] 2.4 **Verify**: Build bridge and check no compilation errors
+- [x] 2.4 **Verify**: Build bridge and check no compilation errors ✓
 
 ### Step 3: engine-sim-cli - Add --sync-pull flag
 
@@ -52,11 +52,11 @@ Both repos now at **origin/master** - verified working.
 - [ ] 3.3 Add `--sync-pull` to argument parsing in `src/engine_sim_cli.cpp`
 - [ ] 3.4 Add `engineAPI` field to `AudioUnitContext` struct
 - [ ] 3.5 Modify `AudioPlayer::initialize()` to accept optional handle + api parameters
-- [ ] 3.6 Modify `audioUnitCallback()` to check sync-pull flag and call `RenderOnDemand()` instead of circular buffer
-- [ ] 3.7 Modify `runSimulation()` to skip `StartAudioThread()` when `--sync-pull` is set
-- [ ] 3.8 Modify `runSimulation()` to skip pre-filling circular buffer when `--sync-pull` is set
-- [ ] 3.9 Commit CLI changes
-- [ ] 3.10 **Verify**: Build CLI and check no compilation errors
+- [x] 3.6 Modify `audioUnitCallback()` to check sync-pull flag and call `RenderOnDemand()` instead of circular buffer
+- [x] 3.7 Modify `runSimulation()` to skip `StartAudioThread()` when `--sync-pull` is set
+- [x] 3.8 Modify `runSimulation()` to skip pre-filling circular buffer when `--sync-pull` is set
+- [x] 3.9 Commit CLI changes
+- [x] 3.10 **Verify**: Build CLI and check no compilation errors ✓
 
 ### Step 4: Verify Both Models Work
 

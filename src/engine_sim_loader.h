@@ -38,6 +38,7 @@ typedef const char* (*PFN_EngineSimGetLastError)(EngineSimHandle);
 typedef const char* (*PFN_EngineSimGetVersion)(void);
 typedef EngineSimResult (*PFN_EngineSimValidateConfig)(const EngineSimConfig*);
 typedef EngineSimResult (*PFN_EngineSimLoadImpulseResponse)(EngineSimHandle, int, const int16_t*, int, float);
+typedef EngineSimResult (*PFN_EngineSimRenderOnDemand)(EngineSimHandle, float*, int32_t, int32_t*);
 
 // Global function pointers (loaded at runtime via dlopen)
 struct EngineSimAPI {
@@ -63,6 +64,7 @@ struct EngineSimAPI {
     PFN_EngineSimGetVersion GetVersion;
     PFN_EngineSimValidateConfig ValidateConfig;
     PFN_EngineSimLoadImpulseResponse LoadImpulseResponse;
+    PFN_EngineSimRenderOnDemand RenderOnDemand;
 };
 
 // Helper macro for loading function pointers
@@ -153,6 +155,7 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
     LOAD_FUNC(api, GetVersion);
     LOAD_FUNC(api, ValidateConfig);
     LOAD_FUNC(api, LoadImpulseResponse);
+    LOAD_FUNC(api, RenderOnDemand);
 
     return true;
 }

@@ -83,11 +83,15 @@ struct AudioUnitContext {
     std::atomic<int64_t> totalFramesRead; // Total frames read by callback (for cursor tracking)
     int sampleRate;                       // Sample rate for calculations
 
+    // Sync pull model: direct access to engine API
+    const EngineSimAPI* engineAPI;
+
     AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
                         circularBuffer(nullptr), circularBufferSize(96000),
                         writePointer(0), readPointer(0),
                         underrunCount(0), bufferStatus(0),
-                        totalFramesRead(0), sampleRate(44100) {}
+                        totalFramesRead(0), sampleRate(44100),
+                        engineAPI(nullptr) {}
 };
 
 class AudioPlayer {
@@ -101,12 +105,18 @@ public:
         cleanup();
     }
 
-    bool initialize(int sr) {
+    bool initialize(int sr, bool syncPull = false, EngineSimHandle handle = nullptr, const EngineSimAPI* api = nullptr) {
         sampleRate = sr;
 
         // Create callback context
         context = new AudioUnitContext();
         context->sampleRate = sr;
+
+        // Setup sync pull model if enabled
+        if (syncPull && handle && api) {
+            context->engineHandle = handle;
+            context->engineAPI = api;
+        }
 
         // Set up audio format - PCM float32 stereo
         AudioStreamBasicDescription format = {};
@@ -484,6 +494,28 @@ private:
             return noErr;
         }
 
+        // SYNC PULL MODEL: If engineAPI is set, render directly on callback
+        if (ctx->engineAPI && ctx->engineHandle) {
+            for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                AudioBuffer& buffer = ioData->mBuffers[i];
+                float* data = static_cast<float*>(buffer.mData);
+
+                UInt32 framesToRender = numberFrames;
+                if (framesToRender * 2 * sizeof(float) > buffer.mDataByteSize) {
+                    framesToRender = buffer.mDataByteSize / (2 * sizeof(float));
+                }
+
+                int framesRead = 0;
+                ctx->engineAPI->RenderOnDemand(ctx->engineHandle, data, framesToRender, &framesRead);
+
+                if (framesRead < static_cast<int>(framesToRender)) {
+                    std::memset(data + framesRead * 2, 0, (framesToRender - framesRead) * 2 * sizeof(float));
+                    buffer.mDataByteSize = framesRead * 2 * sizeof(float);
+                }
+            }
+            return noErr;
+        }
+
         // CRITICAL: Read from intermediate circular buffer
         // This buffer is filled by main loop calling addToCircularBuffer()
         // Both sine mode and engine mode use the same circular buffer for consistency
@@ -713,6 +745,7 @@ struct CommandLineArgs {
     bool playAudio = false;
     bool useDefaultEngine = false;
     bool sineMode = false;  // Generate sine wave test tone instead of engine audio
+    bool syncPull = false;  // Use synchronous pull model
 };
 
 void printUsage(const char* progName) {
@@ -728,7 +761,8 @@ void printUsage(const char* progName) {
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
-    std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n\n";
+    std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
+    std::cout << "  --sync-pull          Use synchronous pull model (bypass circular buffer)\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
@@ -803,6 +837,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         }
         else if (arg == "--sine") {
             args.sineMode = true;
+        }
+        else if (arg == "--sync-pull") {
+            args.syncPull = true;
         }
         else if (args.useDefaultEngine && args.outputWav == nullptr) {
             // When using default engine, first positional arg is output file
@@ -1321,14 +1358,16 @@ int runSimulation(const CommandLineArgs& args) {
     }
     std::cout << "[Configuration loaded: " << configPath << "]\n";
 
-    // Start audio thread
-    result = g_engineAPI.StartAudioThread(handle);
-    if (result != ESIM_SUCCESS) {
-        std::cerr << "ERROR: Failed to start audio thread\n";
-        g_engineAPI.Destroy(handle);
-        return 1;
+    // Start audio thread only for circular buffer model (not needed for sync-pull)
+    if (!args.syncPull) {
+        result = g_engineAPI.StartAudioThread(handle);
+        if (result != ESIM_SUCCESS) {
+            std::cerr << "ERROR: Failed to start audio thread\n";
+            g_engineAPI.Destroy(handle);
+            return 1;
+        }
+        std::cout << "[Audio thread started]\n";
     }
-    std::cout << "[Audio thread started]\n";
 
     // Enable ignition
     g_engineAPI.SetIgnition(handle, 1);
@@ -1338,24 +1377,36 @@ int runSimulation(const CommandLineArgs& args) {
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
-        if (!audioPlayer->initialize(sampleRate)) {
-            std::cerr << "ERROR: Audio init failed\n";
-            delete audioPlayer;
-            g_engineAPI.Destroy(handle);
-            return 1;
-        }
+        
+        // Use sync-pull model if flag is set
+        if (args.syncPull) {
+            if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
+                std::cerr << "ERROR: Audio init failed\n";
+                delete audioPlayer;
+                g_engineAPI.Destroy(handle);
+                return 1;
+            }
+        } else {
+            if (!audioPlayer->initialize(sampleRate)) {
+                std::cerr << "ERROR: Audio init failed\n";
+                delete audioPlayer;
+                g_engineAPI.Destroy(handle);
+                return 1;
+            }
 
-        // Pre-fill buffer (common for both modes)
-        BufferOps::preFillCircularBuffer(audioPlayer);
+            // Pre-fill buffer for circular buffer model only
+            BufferOps::preFillCircularBuffer(audioPlayer);
+        }
+        
         audioPlayer->start();
         std::cout << "[Audio playback enabled]\n";
     }
 
-    // Warmup (common for both modes)
+    // Warmup
     WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio);
 
-    // Reset buffer after warmup (common for both modes)
-    if (audioPlayer) {
+    // Reset buffer after warmup (only for circular buffer model)
+    if (audioPlayer && !args.syncPull) {
         BufferOps::resetAndRePrefillBuffer(audioPlayer);
     }
 
