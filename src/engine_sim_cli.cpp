@@ -1,12 +1,42 @@
 // engine-sim CLI: Interactive command-line interface for engine simulation
 //
-// Features:
-// - Load engine configurations from .mr files
-// - RPM control via --rpm or interactive mode
-// - Load control via --load or interactive mode
-// - Interactive keyboard control with --interactive
-// - Real-time audio playback with --play
-// - WAV file export
+// ============================================================================
+// ARCHITECTURE: SYNCHRONOUS PULL MODEL (Default since 2026-02-28)
+// ============================================================================
+//
+// This file implements the SYNCHRONOUS PULL MODEL for audio. The circular
+// buffer model has been REMOVED entirely.
+//
+// HOW IT WORKS:
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │                         MAIN LOOP (60Hz)                           │
+// │  1. api.SetThrottle(handle, throttle)                              │
+// │  2. api.Update(handle, dt) - advances physics, feeds synthesizer   │
+// │  3. api.GetStats(handle, &stats) - reads RPM, etc.               │
+// └─────────────────────────────────────────────────────────────────────┘
+//                                 │
+//                                 ▼ (synthesizer has audio data)
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │                    AUDIO CALLBACK (44.1kHz)                         │
+// │  ctx->engineAPI->RenderOnDemand(handle, buffer, frames, &read)    │
+// │     └─> synthesizer.renderAudioOnDemand()                         │
+// │         └─> reads from input channel, processes, outputs         │
+// └─────────────────────────────────────────────────────────────────────┘
+//
+// KEY DIFFERENCES FROM CIRCULAR BUFFER:
+// - NO circular buffer - audio rendered directly in callback
+// - NO async audio thread - single-threaded, no threading issues
+// - NO condition variable blocking - renderAudioOnDemand() skips CV wait
+// - LOW LATENCY - rendered on-demand, not buffered ahead
+//
+// SINE MODE AS DIAGNOSTIC:
+// - Sine mode uses EXACTLY the same pipeline as engine mode
+// - Both call Update() in main loop
+// - Both use RenderOnDemand() in callback
+// - If sine works but engine has crackles, issue is in engine/synthesizer
+// - If both have issues, issue is in shared audio infrastructure
+//
+// ============================================================================
 
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
@@ -116,6 +146,9 @@ public:
         if (syncPull && handle && api) {
             context->engineHandle = handle;
             context->engineAPI = api;
+            std::cout << "[Audio] Sync pull model enabled\n";
+        } else {
+            std::cout << "[Audio] Cursor-chasing mode: 1s buffer with 100ms target lead\n";
         }
 
         // Set up audio format - PCM float32 stereo
@@ -230,7 +263,9 @@ public:
         }
 
         std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
-        std::cout << "[Audio] Cursor-chasing mode: 1s buffer with 100ms target lead\n";
+        if (syncPull) {
+            std::cout << "[Audio] Sync pull model - direct render on audio callback\n";
+        }
         return true;
     }
 
@@ -260,6 +295,11 @@ public:
         if (context) {
             context->engineHandle = handle;
         }
+    }
+
+    // Check if sync-pull mode is enabled
+    bool isSyncPullMode() const {
+        return context && context->engineAPI != nullptr;
     }
 
   
@@ -495,6 +535,7 @@ private:
         }
 
         // SYNC PULL MODEL: If engineAPI is set, render directly on callback
+        // This bypasses the circular buffer entirely for lower latency
         if (ctx->engineAPI && ctx->engineHandle) {
             for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
                 AudioBuffer& buffer = ioData->mBuffers[i];
@@ -505,18 +546,31 @@ private:
                     framesToRender = buffer.mDataByteSize / (2 * sizeof(float));
                 }
 
+                // Render audio synchronously on-demand
                 int framesRead = 0;
                 ctx->engineAPI->RenderOnDemand(ctx->engineHandle, data, framesToRender, &framesRead);
 
+                // DIAGNOSTICS: Print first few samples from callback
+                static int cbCount = 0;
+                if (cbCount++ % 50 == 0) {
+                    std::cout << "[CALLBACK] req=" << framesToRender << " got=" << framesRead;
+                    for (int j = 0; j < std::min(5, framesRead); j++) {
+                        std::cout << " [" << j << "]=" << std::fixed << std::setprecision(4) << data[j*2];
+                    }
+                    std::cout << "\n";
+                }
+
+                // Tell AudioUnit actual buffer size to avoid playing zeros
                 if (framesRead < static_cast<int>(framesToRender)) {
-                    std::memset(data + framesRead * 2, 0, (framesToRender - framesRead) * 2 * sizeof(float));
-                    buffer.mDataByteSize = framesRead * 2 * sizeof(float);
+                    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                        ioData->mBuffers[i].mDataByteSize = framesRead * 2 * sizeof(float);
+                    }
                 }
             }
             return noErr;
         }
 
-        // CRITICAL: Read from intermediate circular buffer
+        // CIRCULAR BUFFER MODEL: Original approach with intermediate buffer
         // This buffer is filled by main loop calling addToCircularBuffer()
         // Both sine mode and engine mode use the same circular buffer for consistency
         if (!ctx->circularBuffer) {
@@ -745,7 +799,7 @@ struct CommandLineArgs {
     bool playAudio = false;
     bool useDefaultEngine = false;
     bool sineMode = false;  // Generate sine wave test tone instead of engine audio
-    bool syncPull = false;  // Use synchronous pull model
+    bool syncPull = false;  // Use sync pull model instead of circular buffer
 };
 
 void printUsage(const char* progName) {
@@ -982,7 +1036,7 @@ namespace WarmupOps {
 
                 for (int retry = 0; retry <= 3 && warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE; retry++) {
                     int readThisTime = 0;
-                    api.ReadAudioBuffer(handle,
+                    api.RenderOnDemand(handle,
                         discardBuffer.data() + warmupRead * 2,
                         AudioLoopConfig::FRAMES_PER_UPDATE - warmupRead,
                         &readThisTime);
@@ -1031,7 +1085,9 @@ public:
     virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) = 0;
 };
 
-// Sine wave audio source
+// Sine wave audio source - uses ENGINE audio pipeline to demonstrate engine audio issues
+// CRITICAL: Sine uses the SAME code path as engine mode for diagnostics
+// Both sine and engine go through: generateAudio -> circular buffer -> callback
 class SineAudioSource : public IAudioSource {
 private:
     EngineSimHandle handle;
@@ -1043,15 +1099,17 @@ public:
         : handle(h), api(a), currentPhase(0.0) {}
 
     bool generateAudio(std::vector<float>& buffer, int frames) override {
+        // Get engine audio stats for frequency calculation
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
-
+        
         double frequency = (stats.currentRPM / 600.0) * 100.0;
+        double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
 
+        // Generate pure sine wave - goes into buffer just like engine audio would
+        // This is the SAME pipeline as engine: main loop -> buffer -> callback
         for (int i = 0; i < frames; i++) {
-            double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
             currentPhase += phaseIncrement;
-
             float sample = static_cast<float>(std::sin(currentPhase) * 0.9);
             buffer[i * 2] = sample;
             buffer[i * 2 + 1] = sample;
@@ -1091,10 +1149,10 @@ public:
         : handle(h), api(a) {}
 
     bool generateAudio(std::vector<float>& buffer, int frames) override {
-        // Read from synthesizer with retry
+        // Render audio synchronously on-demand
         int totalRead = 0;
 
-        api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
+        api.RenderOnDemand(handle, buffer.data(), frames, &totalRead);
 
 
         return totalRead > 0;
@@ -1232,27 +1290,21 @@ int runUnifiedAudioLoop(
         double throttle = args.interactive ? interactiveLoad :
                          (currentTime < 0.5 ? currentTime / 0.5 : 1.0);
 
-        // Update engine
+        // Set throttle (this always needs to be called to update engine state)
         api.SetThrottle(handle, throttle);
-        api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+        
+        if (args.sineMode) {
+            // Sine mode: Update() runs simulation and generates audio
+            api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+        }
+        // Engine mode in sync-pull: Skip Update() - RenderOnDemand in audio callback runs simulation
 
         // Get current stats after Update for current iteration values
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
 
-        // Generate audio (ONLY DIFFERENCE between modes)
-        if (audioPlayer) {
-            // Use cursor-chasing to determine how many frames to write
-            // This maintains 100ms lead and prevents buffer underruns/overruns
-            int framesToWrite = audioPlayer->calculateCursorChasingSamples(AudioLoopConfig::FRAMES_PER_UPDATE);
-
-            if (framesToWrite > 0) {
-                std::vector<float> audioBuffer(framesToWrite * 2);
-                if (audioSource.generateAudio(audioBuffer, framesToWrite)) {
-                    audioPlayer->addToCircularBuffer(audioBuffer.data(), framesToWrite);
-                }
-            }
-        }
+        // Audio is rendered in callback via RenderOnDemand (sync-pull model)
+        // Both sine and engine use the same path - callback renders from synthesizer
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
@@ -1358,59 +1410,33 @@ int runSimulation(const CommandLineArgs& args) {
     }
     std::cout << "[Configuration loaded: " << configPath << "]\n";
 
-    // Start audio thread only for circular buffer model (not needed for sync-pull)
-    if (!args.syncPull) {
-        result = g_engineAPI.StartAudioThread(handle);
-        if (result != ESIM_SUCCESS) {
-            std::cerr << "ERROR: Failed to start audio thread\n";
-            g_engineAPI.Destroy(handle);
-            return 1;
-        }
-        std::cout << "[Audio thread started]\n";
-    }
-
     // Enable ignition
     g_engineAPI.SetIgnition(handle, 1);
     std::cout << "[Ignition enabled]\n";
 
-    // Initialize audio player
+    // Initialize audio player - ALWAYS use sync-pull model (no circular buffer)
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
-        
-        // Use sync-pull model if flag is set
-        if (args.syncPull) {
-            if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
-                std::cerr << "ERROR: Audio init failed\n";
-                delete audioPlayer;
-                g_engineAPI.Destroy(handle);
-                return 1;
-            }
-        } else {
-            if (!audioPlayer->initialize(sampleRate)) {
-                std::cerr << "ERROR: Audio init failed\n";
-                delete audioPlayer;
-                g_engineAPI.Destroy(handle);
-                return 1;
-            }
-
-            // Pre-fill buffer for circular buffer model only
-            BufferOps::preFillCircularBuffer(audioPlayer);
+        // Always use sync-pull - callback renders audio directly
+        if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
+            std::cerr << "ERROR: Audio init failed\n";
+            delete audioPlayer;
+            g_engineAPI.Destroy(handle);
+            return 1;
         }
-        
+    }
+
+    // Warmup - render audio to prime synthesizer
+    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, false);
+
+    // Start audio playback
+    if (audioPlayer) {
         audioPlayer->start();
         std::cout << "[Audio playback enabled]\n";
     }
 
-    // Warmup
-    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, args.playAudio);
-
-    // Reset buffer after warmup (only for circular buffer model)
-    if (audioPlayer && !args.syncPull) {
-        BufferOps::resetAndRePrefillBuffer(audioPlayer);
-    }
-
-    // Create appropriate audio source - THE ONLY DIFFERENCE
+    // Create appropriate audio source - sine uses same pipeline as engine
     std::unique_ptr<IAudioSource> audioSource;
     if (args.sineMode) {
         std::cout << "Mode: SINE TEST\n";
@@ -1465,6 +1491,11 @@ int main(int argc, char* argv[]) {
     if (!LoadEngineSimLibrary(g_engineAPI, args.sineMode)) {
         std::cerr << "ERROR: Failed to load engine-sim library\n";
         return 1;
+    }
+
+    // Verify build ID
+    if (g_engineAPI.GetVersion) {
+        std::cout << "[Bridge: " << g_engineAPI.GetVersion() << "]\n";
     }
 
     std::cout << "Configuration:\n";

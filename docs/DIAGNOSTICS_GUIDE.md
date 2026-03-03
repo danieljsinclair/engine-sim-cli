@@ -4,6 +4,8 @@
 
 This guide explains how to use the diagnostic tools in engine-sim-cli to identify and resolve issues with engine simulation and audio output.
 
+> **Important:** Sine mode (`--sine`) mirrors the engine audio pipeline exactly. Any audio issues in engine mode will also appear in sine mode. Use sine mode to test audio fixes without running full engine simulation. See [Interface Equivalence Proof](../investigation/phase4-breakthrough/INTERFACE_EQUIVALENCE_PROOF.md) for details.
+
 ## What is diagnostics.cpp?
 
 `diagnostics.cpp` is a comprehensive diagnostic tool that tests each stage of the engine simulation and audio pipeline independently. It helps identify exactly where issues occur in the system.
