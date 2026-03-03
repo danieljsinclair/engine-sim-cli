@@ -1418,12 +1418,12 @@ int runSimulation(const CommandLineArgs& args) {
     g_engineAPI.SetIgnition(handle, 1);
     std::cout << "[Ignition enabled]\n";
 
-    // Initialize audio player - ALWAYS use sync-pull model (no circular buffer)
+    // Initialize audio player - uses syncPull from args
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
-        // Always use sync-pull - callback renders audio directly
-        if (!audioPlayer->initialize(sampleRate, true, handle, &g_engineAPI)) {
+        // Use syncPull setting from args
+        if (!audioPlayer->initialize(sampleRate, args.syncPull, handle, &g_engineAPI)) {
             std::cerr << "ERROR: Audio init failed\n";
             delete audioPlayer;
             g_engineAPI.Destroy(handle);
