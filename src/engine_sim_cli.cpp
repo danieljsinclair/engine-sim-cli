@@ -560,7 +560,12 @@ private:
                     std::cout << "\n";
                 }
 
-                // NOTE: Bridge handles underruns with sample-and-hold - no need to zero-fill here
+                // Tell AudioUnit actual buffer size to avoid playing zeros
+                if (framesRead < static_cast<int>(framesToRender)) {
+                    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+                        ioData->mBuffers[i].mDataByteSize = framesRead * 2 * sizeof(float);
+                    }
+                }
             }
             return noErr;
         }
