@@ -17,6 +17,6 @@ function not_shell_code() {
     fg=#ABCDEF
 
     # master/main branch overrides
-    bg.master=#b29e24
-    fg.master=#000000
+    bg.sync-pull-impl=#46a866
+    fg.sync-pull-impl=#000000
 }

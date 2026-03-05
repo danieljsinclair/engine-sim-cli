@@ -116,12 +116,15 @@ struct AudioUnitContext {
     // Sync pull model: direct access to engine API
     const EngineSimAPI* engineAPI;
 
+    // Silent mode: zero output after processing (mute at callback level)
+    bool silent;
+
     AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
                         circularBuffer(nullptr), circularBufferSize(96000),
                         writePointer(0), readPointer(0),
                         underrunCount(0), bufferStatus(0),
                         totalFramesRead(0), sampleRate(44100),
-                        engineAPI(nullptr) {}
+                        engineAPI(nullptr), silent(false) {}
 };
 
 class AudioPlayer {
@@ -135,12 +138,13 @@ public:
         cleanup();
     }
 
-    bool initialize(int sr, bool syncPull = false, EngineSimHandle handle = nullptr, const EngineSimAPI* api = nullptr) {
+    bool initialize(int sr, bool syncPull = false, EngineSimHandle handle = nullptr, const EngineSimAPI* api = nullptr, bool silent = false) {
         sampleRate = sr;
 
         // Create callback context
         context = new AudioUnitContext();
         context->sampleRate = sr;
+        context->silent = silent;
 
         // Setup sync pull model if enabled
         if (syncPull && handle && api) {
@@ -260,6 +264,10 @@ public:
 
         if (status != noErr) {
             std::cerr << "WARNING: Could not get audio device ID\n";
+        }
+
+        if (silent) {
+            std::cout << "[Audio] Silent mode - output muted in callback\n";
         }
 
         std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
@@ -566,6 +574,11 @@ private:
                         ioData->mBuffers[i].mDataByteSize = framesRead * 2 * sizeof(float);
                     }
                 }
+
+                // Silent mode: zero output after processing so no sound reaches speakers
+                if (ctx->silent) {
+                    std::memset(data, 0, buffer.mDataByteSize);
+                }
             }
             return noErr;
         }
@@ -645,6 +658,11 @@ private:
 
             // Track total frames read for cursor tracking (used by main loop)
             ctx->totalFramesRead.fetch_add(framesToRead);
+
+            // Silent mode: zero output after processing so no sound reaches speakers
+            if (ctx->silent) {
+                std::memset(data, 0, framesToWrite * 2 * sizeof(float));
+            }
         }
 
         return noErr;
@@ -800,6 +818,7 @@ struct CommandLineArgs {
     bool useDefaultEngine = false;
     bool sineMode = false;  // Generate sine wave test tone instead of engine audio
     bool syncPull = true;  // Use sync pull model by default
+    bool silent = false;   // Run full audio pipeline but with zero volume
 };
 
 void printUsage(const char* progName) {
@@ -817,7 +836,8 @@ void printUsage(const char* progName) {
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (default: sync-pull)\n";
-    std::cout << "  --sync-pull          Use synchronous pull model (bypass circular buffer)\n\n";
+    std::cout << "  --sync-pull          Use synchronous pull model (bypass circular buffer)\n";
+    std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
@@ -899,6 +919,15 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         else if (arg == "--sync-pull") {
             args.syncPull = true;
         }
+        else if (arg == "--silent") {
+            args.silent = true;
+            args.playAudio = true;  // --silent implies --play (full audio pipeline)
+        }
+        else if (arg.rfind("--", 0) == 0) {
+            std::cerr << "ERROR: Unknown option: " << arg << "\n";
+            printUsage(argv[0]);
+            return false;
+        }
         else if (args.useDefaultEngine && args.outputWav == nullptr) {
             // When using default engine, first positional arg is output file
             args.outputWav = argv[i];
@@ -910,7 +939,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
             args.outputWav = argv[i];
         }
         else {
-            std::cerr << "ERROR: Unknown argument: " << arg << "\n";
+            std::cerr << "ERROR: Unexpected argument: " << arg << "\n";
             return false;
         }
     }
@@ -952,7 +981,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 // Display Interactive HUD
 // ============================================================================
 
-void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimStats& stats) {
+void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimStats& stats, int underrunCount) {
     std::cout << "\r";
     std::cout << "[" << std::fixed << std::setprecision(0) << std::setw(4) << rpm << " RPM] ";
     std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
@@ -960,6 +989,7 @@ void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimSt
         std::cout << "[Target: " << std::setw(4) << static_cast<int>(targetRPM) << " RPM] ";
     }
     std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
+    std::cout << "[Underruns: " << underrunCount << "] ";
     std::cout << std::flush;
 }
 
@@ -1086,7 +1116,7 @@ class IAudioSource {
 public:
     virtual ~IAudioSource() = default;
     virtual bool generateAudio(std::vector<float>& buffer, int frames) = 0;
-    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) = 0;
+    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) = 0;
 };
 
 // Sine wave audio source - uses ENGINE audio pipeline to demonstrate engine audio issues
@@ -1103,31 +1133,21 @@ public:
         : handle(h), api(a), currentPhase(0.0) {}
 
     bool generateAudio(std::vector<float>& buffer, int frames) override {
-        // Get engine audio stats for frequency calculation
-        EngineSimStats stats = {};
-        api.GetStats(handle, &stats);
-        
-        double frequency = (stats.currentRPM / 600.0) * 100.0;
-        double phaseIncrement = (2.0 * M_PI * frequency) / AudioLoopConfig::SAMPLE_RATE;
-
-        // Generate pure sine wave - goes into buffer just like engine audio would
-        // This is the SAME pipeline as engine: main loop -> buffer -> callback
-        for (int i = 0; i < frames; i++) {
-            currentPhase += phaseIncrement;
-            float sample = static_cast<float>(std::sin(currentPhase) * 0.9);
-            buffer[i * 2] = sample;
-            buffer[i * 2 + 1] = sample;
-        }
-
-        return true;
+        // Read from mock synthesizer - SAME pipeline as engine mode
+        // Mock's audio thread processes sine waves through its synthesizer,
+        // so ReadAudioBuffer returns processed sine audio just like engine audio
+        int totalRead = 0;
+        api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
+        return totalRead > 0;
     }
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) override {
         if (interactive) {
             double frequency = (stats.currentRPM / 600.0) * 100.0;
             std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
             std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
             std::cout << "[Frequency: " << std::setw(4) << static_cast<int>(frequency) << " Hz] ";
+            std::cout << "[Underruns: " << underrunCount << "] ";
             std::cout << std::flush;
         } else {
             static int lastProgress = 0;
@@ -1135,7 +1155,8 @@ public:
             if (progress != lastProgress && progress % 10 == 0) {
                 double frequency = (stats.currentRPM / 600.0) * 100.0;
                 std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
-                          << " | Frequency: " << static_cast<int>(frequency) << " Hz\r" << std::flush;
+                          << " | Frequency: " << static_cast<int>(frequency) << " Hz"
+                          << " | Underruns: " << underrunCount << "\r" << std::flush;
                 lastProgress = progress;
             }
         }
@@ -1153,26 +1174,27 @@ public:
         : handle(h), api(a) {}
 
     bool generateAudio(std::vector<float>& buffer, int frames) override {
-        // Render audio synchronously on-demand
+        // Read from synthesizer - audio thread fills this buffer via StartAudioThread
+        // This is ONLY called in threaded/cursor-chasing mode
         int totalRead = 0;
-
-        api.RenderOnDemand(handle, buffer.data(), frames, &totalRead);
-
-
+        api.ReadAudioBuffer(handle, buffer.data(), frames, &totalRead);
         return totalRead > 0;
     }
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle) override {
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) override {
         if (interactive) {
             std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
             std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
             std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
+            std::cout << "[Underruns: " << underrunCount << "] ";
             std::cout << std::flush;
         } else {
             static int lastProgress = 0;
             int progress = static_cast<int>(currentTime * 100 / duration);
             if (progress != lastProgress && progress % 10 == 0) {
-                std::cout << "  Progress: " << progress << "% (" << static_cast<int>(currentTime * AudioLoopConfig::SAMPLE_RATE) << " frames)\r" << std::flush;
+                std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
+                          << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
+                          << " | Underruns: " << underrunCount << "\r" << std::flush;
                 lastProgress = progress;
             }
         }
@@ -1195,7 +1217,7 @@ int runUnifiedAudioLoop(
 
     // Setup keyboard input if interactive
     KeyboardInput* keyboardInput = nullptr;
-    double interactiveLoad = 0.7;
+    double interactiveLoad = 0.1;
     double baselineLoad = interactiveLoad;
     bool wKeyPressed = false;
 
@@ -1293,27 +1315,56 @@ int runUnifiedAudioLoop(
         // Calculate throttle
         double throttle = args.interactive ? interactiveLoad :
                          (currentTime < 0.5 ? currentTime / 0.5 : 1.0);
-
-        // Set throttle (this always needs to be called to update engine state)
+        // Set throttle and advance simulation
         api.SetThrottle(handle, throttle);
-        
-        if (args.sineMode) {
-            // Sine mode: Update() runs simulation and generates audio
+
+        // Update simulation:
+        // - Threaded mode: Update() advances physics in main loop, audio thread renders separately
+        // - Sync-pull mode: Skip Update() - RenderOnDemand in audio callback runs BOTH
+        //   simulation and audio rendering. Calling Update() here would race with the callback.
+        bool isSyncPull = audioPlayer && audioPlayer->isSyncPullMode();
+        if (!isSyncPull) {
             api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
         }
-        // Engine mode in sync-pull: Skip Update() - RenderOnDemand in audio callback runs simulation
 
-        // Get current stats after Update for current iteration values
+        // Get current stats
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
 
-        // Audio is rendered in callback via RenderOnDemand (sync-pull model)
-        // Both sine and engine use the same path - callback renders from synthesizer
+        // Threaded (cursor-chasing) mode: generate audio and write to circular buffer
+        // Sync-pull mode: audio is rendered in callback via RenderOnDemand
+        if (audioPlayer && !audioPlayer->isSyncPullMode()) {
+            int framesToWrite = audioPlayer->calculateCursorChasingSamples(AudioLoopConfig::FRAMES_PER_UPDATE);
+            if (framesToWrite > 0) {
+                std::vector<float> audioBuffer(framesToWrite * 2);
+                if (audioSource.generateAudio(audioBuffer, framesToWrite)) {
+                    audioPlayer->addToCircularBuffer(audioBuffer.data(), framesToWrite);
+                }
+            }
+        }
+
+        // Get underrun count for display
+        int underrunCount = 0;
+        if (audioPlayer) {
+            underrunCount = audioPlayer->getContext() ?
+                audioPlayer->getContext()->underrunCount.load() : 0;
+        }
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
-        // Display progress - pass throttle for display
-        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats, throttle);
+        // Periodic diagnostics (~every 1s)
+        static auto lastDiagTime = std::chrono::steady_clock::now();
+        auto diagNow = std::chrono::steady_clock::now();
+        if (std::chrono::duration<double>(diagNow - lastDiagTime).count() > 1.0) {
+            lastDiagTime = diagNow;
+            std::cout << "\n[Diag] RPM=" << static_cast<int>(stats.currentRPM)
+                      << " underruns=" << underrunCount
+                      << " mode=" << (audioPlayer && audioPlayer->isSyncPullMode() ? "sync-pull" : "threaded")
+                      << "\n";
+        }
+
+        // Display progress
+        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats, throttle, underrunCount);
 
         // 60Hz timing control
         timer.sleepToMaintain60Hz();
@@ -1422,8 +1473,7 @@ int runSimulation(const CommandLineArgs& args) {
     AudioPlayer* audioPlayer = nullptr;
     if (args.playAudio) {
         audioPlayer = new AudioPlayer();
-        // Use syncPull setting from args
-        if (!audioPlayer->initialize(sampleRate, args.syncPull, handle, &g_engineAPI)) {
+        if (!audioPlayer->initialize(sampleRate, args.syncPull, handle, &g_engineAPI, args.silent)) {
             std::cerr << "ERROR: Audio init failed\n";
             delete audioPlayer;
             g_engineAPI.Destroy(handle);
@@ -1431,11 +1481,37 @@ int runSimulation(const CommandLineArgs& args) {
         }
     }
 
-    // Warmup - render audio to prime synthesizer
-    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, false);
+    // Start audio thread for threaded (cursor-chasing) mode
+    if (audioPlayer && !audioPlayer->isSyncPullMode()) {
+        result = g_engineAPI.StartAudioThread(handle);
+        if (result != ESIM_SUCCESS) {
+            std::cerr << "ERROR: Failed to start audio thread\n";
+            delete audioPlayer;
+            g_engineAPI.Destroy(handle);
+            return 1;
+        }
+        std::cout << "[Audio thread started (threaded mode)]\n";
+    }
 
-    // Start audio playback
-    if (audioPlayer) {
+    // Threaded mode: pre-fill buffer and start playback BEFORE warmup (matches master)
+    if (audioPlayer && !audioPlayer->isSyncPullMode()) {
+        BufferOps::preFillCircularBuffer(audioPlayer);
+        audioPlayer->start();
+        std::cout << "[Audio playback enabled]\n";
+    }
+
+    // Warmup - render audio to prime synthesizer
+    // In sync-pull mode, don't drain audio during warmup - RenderOnDemand handles it
+    bool drainDuringWarmup = args.playAudio && audioPlayer && !audioPlayer->isSyncPullMode();
+    WarmupOps::runWarmup(handle, g_engineAPI, audioPlayer, drainDuringWarmup);
+
+    // Threaded mode: reset buffer after warmup (matches master)
+    if (audioPlayer && !audioPlayer->isSyncPullMode()) {
+        BufferOps::resetAndRePrefillBuffer(audioPlayer);
+    }
+
+    // Sync-pull mode: start playback AFTER warmup (no buffer to pre-fill)
+    if (audioPlayer && audioPlayer->isSyncPullMode()) {
         audioPlayer->start();
         std::cout << "[Audio playback enabled]\n";
     }
@@ -1524,6 +1600,10 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "  Interactive: " << (args.interactive ? "Yes" : "No") << "\n";
     std::cout << "  Audio Playback: " << (args.playAudio ? "Yes" : "No") << "\n";
+    std::cout << "  Audio Mode: " << (args.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)") << "\n";
+    if (args.silent) {
+        std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
+    }
     std::cout << "\n";
 
     // Run simulation
