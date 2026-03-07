@@ -28,6 +28,12 @@ add_library(engine-sim-mock SHARED
 target_include_directories(engine-sim-mock
     PUBLIC
     engine-sim-bridge/include
+    engine-sim-bridge/engine-sim/include
+)
+
+target_link_libraries(engine-sim-mock
+    PRIVATE
+    engine-sim
 )
 
 set_target_properties(engine-sim-mock PROPERTIES

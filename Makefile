@@ -24,7 +24,6 @@ check-cmake:
 		echo "Please run 'git checkout Makefile' and then use 'make' instead."; \
 		exit 1; \
 	fi
-	@cd $(BUILD_DIR) && $(MAKE)
 
 submodules:
 	@if [ ! -f engine-sim-bridge/CMakeLists.txt ]; then \
