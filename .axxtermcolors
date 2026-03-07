@@ -13,10 +13,10 @@
 # shellcheck disable=SC2276,SC2034
 function not_shell_code() {
     # Base colors (for non-branch-specific)
-    bg=#123456anad 
+    bg=#123456
     fg=#ABCDEF
 
     # master/main branch overrides
-    bg.master=#b29e24
-    fg.master=#000000
+    bg!engine-sim-cli.claude=#46a866
+    fg!engine-sim-cli.claude=#000000
 }
