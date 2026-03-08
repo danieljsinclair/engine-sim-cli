@@ -17,6 +17,6 @@ function not_shell_code() {
     fg=#ABCDEF
 
     # master/main branch overrides
-    bg.sync-pull-impl=#46a866
-    fg.sync-pull-impl=#000000
+    bg!engine-sim-cli.claude=#46a866
+    fg!engine-sim-cli.claude=#000000
 }
