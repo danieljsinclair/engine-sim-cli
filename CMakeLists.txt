@@ -1,3 +1,5 @@
+# This file replaces CMakeLists.txt with the refactored version
+
 cmake_minimum_required(VERSION 3.20)
 project(engine-sim-cli VERSION 1.0.0 LANGUAGES C CXX)
 
@@ -49,25 +51,24 @@ if(APPLE)
     )
 endif()
 
-# Sine wave generator library (header-only for simplicity)
-add_library(sine-wave-generator
-    src/sine_wave_generator.cpp
-    src/sine_wave_generator.h
-)
-
-target_include_directories(sine-wave-generator
-    PUBLIC
-    ${CMAKE_SOURCE_DIR}/src
-)
-
-# CLI executable
+# CLI executable - refactored into separate source files for SOLID compliance
+# NEW: Includes CircularBuffer, SyncPullAudio, and SineGenerator for proper separation
 add_executable(engine-sim-cli
-    src/engine_sim_cli.cpp
+    src/AudioConfig.cpp
+    src/AudioPlayer.cpp
+    src/KeyboardInput.cpp
+    src/RPMController.cpp
+    src/AudioSource.cpp
+    src/AudioMode.cpp
+    src/SimulationLoop.cpp
+    src/CLIMain.cpp
+    src/CircularBuffer.cpp      # NEW: Pure ring buffer handling
+    src/SyncPullAudio.cpp       # NEW: Sync-pull audio rendering
+    src/SineGenerator.cpp       # NEW: One place for sine generation
 )
 
 target_link_libraries(engine-sim-cli
     PRIVATE
-    sine-wave-generator
     ${AUDIO_LIBRARY}
     Threads::Threads
     ${CMAKE_DL_LIBS}
@@ -76,6 +77,7 @@ target_link_libraries(engine-sim-cli
 target_include_directories(engine-sim-cli
     PRIVATE
     engine-sim-bridge/include
+    src
 )
 
 # Set rpath for CLI executable to find dylibs in build directory

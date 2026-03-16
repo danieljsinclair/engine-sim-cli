@@ -39,6 +39,8 @@ typedef const char* (*PFN_EngineSimGetVersion)(void);
 typedef EngineSimResult (*PFN_EngineSimValidateConfig)(const EngineSimConfig*);
 typedef EngineSimResult (*PFN_EngineSimLoadImpulseResponse)(EngineSimHandle, int, const int16_t*, int, float);
 typedef EngineSimResult (*PFN_EngineSimRenderOnDemand)(EngineSimHandle, float*, int32_t, int32_t*);
+typedef EngineSimResult (*PFN_EngineSimSetSineMode)(EngineSimHandle, int);
+typedef EngineSimResult (*PFN_EngineSimSetSineFrequency)(EngineSimHandle, double);
 
 // Global function pointers (loaded at runtime via dlopen)
 struct EngineSimAPI {
@@ -65,9 +67,11 @@ struct EngineSimAPI {
     PFN_EngineSimValidateConfig ValidateConfig;
     PFN_EngineSimLoadImpulseResponse LoadImpulseResponse;
     PFN_EngineSimRenderOnDemand RenderOnDemand;
+    PFN_EngineSimSetSineMode SetSineMode;
+    PFN_EngineSimSetSineFrequency SetSineFrequency;
 };
 
-// Helper macro for loading function pointers
+// Helper macro for loading function pointers (required)
 #define LOAD_FUNC(api, name) \
     do { \
         api.name = (PFN_EngineSim##name)dlsym(api.libHandle, "EngineSim" #name); \
@@ -75,6 +79,15 @@ struct EngineSimAPI {
             std::cerr << "ERROR: Failed to load function EngineSim" #name << ": " << dlerror() << "\n"; \
             dlclose(api.libHandle); \
             return false; \
+        } \
+    } while(0)
+
+// Helper macro for loading optional function pointers (won't fail if missing)
+#define LOAD_FUNC_OPTIONAL(api, name) \
+    do { \
+        api.name = (PFN_EngineSim##name)dlsym(api.libHandle, "EngineSim" #name); \
+        if (!api.name) { \
+            std::cout << "[Optional] EngineSim" #name " not available in library\n"; \
         } \
     } while(0)
 
@@ -156,6 +169,9 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
     LOAD_FUNC(api, ValidateConfig);
     LOAD_FUNC(api, LoadImpulseResponse);
     LOAD_FUNC(api, RenderOnDemand);
+    // Sine mode functions are optional - only available in mock library
+    LOAD_FUNC_OPTIONAL(api, SetSineMode);
+    LOAD_FUNC_OPTIONAL(api, SetSineFrequency);
 
     return true;
 }
