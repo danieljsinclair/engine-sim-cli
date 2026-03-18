@@ -13,7 +13,7 @@
 # shellcheck disable=SC2276,SC2034
 function not_shell_code() {
     # Base colors (for non-branch-specific)
-    bg=#123456anad 
+    bg=#123456
     fg=#ABCDEF
 
     # master/main branch overrides
