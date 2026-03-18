@@ -1,5 +1,6 @@
 // AudioMode.h - Strategy pattern for audio mode behavior
-// Refactored to eliminate syncPull branching and comply with OCP/SRP
+// Refactored to eliminate enum, switch statements, and boolean flags
+// Renderer is injected into context by each mode (OCP, SRP, DI)
 
 #ifndef AUDIO_MODE_H
 #define AUDIO_MODE_H
@@ -12,11 +13,16 @@
 #include "engine_sim_loader.h"
 
 class AudioPlayer;
+class AudioUnitContext;
 class IAudioSource;
+class IAudioRenderer;
 
 // ============================================================================
 // IAudioMode Interface - Strategy Pattern
-// Encapsulates mode-specific behavior for audio processing
+// Factory returns this directly - no enum, no switch, no boolean flags
+// OCP: New modes can be added without modifying existing code
+// SRP: Each mode encapsulates its own behavior
+// DI: Each mode creates and injects its own IAudioRenderer into context
 // ============================================================================
 
 class IAudioMode {
@@ -51,6 +57,16 @@ public:
     
     // Check if drain is needed during warmup
     virtual bool shouldDrainDuringWarmup() const = 0;
+    
+    // Factory method: Create the audio context for AudioPlayer
+    // Each mode creates its own context with appropriate audio components
+    // DI: Also creates and injects the appropriate IAudioRenderer into context
+    virtual std::unique_ptr<AudioUnitContext> createContext(
+        int sampleRate,
+        EngineSimHandle engineHandle,
+        const EngineSimAPI* engineAPI,
+        bool silent
+    ) = 0;
 };
 
 // ============================================================================
@@ -79,6 +95,13 @@ public:
     void startPlayback(AudioPlayer* audioPlayer) override;
     
     bool shouldDrainDuringWarmup() const override;
+    
+    std::unique_ptr<AudioUnitContext> createContext(
+        int sampleRate,
+        EngineSimHandle engineHandle,
+        const EngineSimAPI* engineAPI,
+        bool silent
+    ) override;
 };
 
 // ============================================================================
@@ -107,12 +130,20 @@ public:
     void startPlayback(AudioPlayer* audioPlayer) override;
     
     bool shouldDrainDuringWarmup() const override;
+    
+    std::unique_ptr<AudioUnitContext> createContext(
+        int sampleRate,
+        EngineSimHandle engineHandle,
+        const EngineSimAPI* engineAPI,
+        bool silent
+    ) override;
 };
 
 // ============================================================================
-// Factory function to create audio mode based on syncPull flag
+// Factory function - Returns IAudioMode directly based on API capabilities
+// No enum, no switch - factory decides internally
 // ============================================================================
 
-std::unique_ptr<IAudioMode> createAudioMode(bool syncPull);
+std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI);
 
 #endif // AUDIO_MODE_H

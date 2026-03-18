@@ -1,8 +1,11 @@
 // AudioMode.cpp - Strategy pattern implementation for audio modes
+// Renderer is injected into context by each mode (OCP, SRP, DI)
 
 #include "AudioMode.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
+#include "CircularBuffer.h"
+#include "SyncPullAudio.h"
 
 #include <iostream>
 
@@ -18,6 +21,7 @@ namespace AudioLoopConfig {
 
 // ============================================================================
 // SyncPullAudioMode Implementation
+// DI: Creates and injects SyncPullRenderer into context
 // ============================================================================
 
 std::string SyncPullAudioMode::getModeName() const {
@@ -74,8 +78,36 @@ bool SyncPullAudioMode::shouldDrainDuringWarmup() const {
     return false;
 }
 
+std::unique_ptr<AudioUnitContext> SyncPullAudioMode::createContext(
+    int sampleRate,
+    EngineSimHandle engineHandle,
+    const EngineSimAPI* engineAPI,
+    bool silent
+) {
+    auto context = std::make_unique<AudioUnitContext>();
+    context->sampleRate = sampleRate;
+    context->silent = silent;
+    context->engineHandle = engineHandle;
+
+    // Create SyncPullAudio for synchronous on-demand rendering
+    context->syncPullAudio = std::make_unique<SyncPullAudio>();
+    if (!context->syncPullAudio->initialize(engineHandle, engineAPI, sampleRate, silent)) {
+        std::cerr << "ERROR: Failed to initialize SyncPullAudio\n";
+        return nullptr;
+    }
+
+    // DI: Inject SyncPullRenderer into context (mode knows its own renderer)
+    // This eliminates conditional branching in AudioPlayer
+    static SyncPullRenderer syncPullRenderer;
+    context->setRenderer(&syncPullRenderer);
+
+    std::cout << "[Audio] Sync pull mode initialized via factory\n";
+    return context;
+}
+
 // ============================================================================
 // ThreadedAudioMode Implementation
+// DI: Creates and injects CircularBufferRenderer into context
 // ============================================================================
 
 std::string ThreadedAudioMode::getModeName() const {
@@ -150,13 +182,54 @@ bool ThreadedAudioMode::shouldDrainDuringWarmup() const {
     return true;
 }
 
+std::unique_ptr<AudioUnitContext> ThreadedAudioMode::createContext(
+    int sampleRate,
+    EngineSimHandle engineHandle,
+    const EngineSimAPI* engineAPI,
+    bool silent
+) {
+    (void)engineHandle;
+    (void)engineAPI;
+
+    auto context = std::make_unique<AudioUnitContext>();
+    context->sampleRate = sampleRate;
+    context->silent = silent;
+
+    // Create CircularBuffer for cursor-chasing mode
+    context->circularBuffer = std::make_unique<CircularBuffer>();
+    if (!context->circularBuffer->initialize(96000)) {
+        std::cerr << "ERROR: Failed to initialize CircularBuffer\n";
+        return nullptr;
+    }
+
+    // Initialize write pointer with 100ms pre-fill
+    context->writePointer.store(static_cast<int>(sampleRate * 0.1));
+    context->readPointer.store(0);
+    context->totalFramesRead.store(0);
+
+    // DI: Inject CircularBufferRenderer into context (mode knows its own renderer)
+    // This eliminates conditional branching in AudioPlayer
+    static CircularBufferRenderer circularBufferRenderer;
+    context->setRenderer(&circularBufferRenderer);
+
+    std::cout << "[Audio] Threaded/cursor-chasing mode initialized via factory\n";
+    return context;
+}
+
 // ============================================================================
-// Factory Function
+// Factory Function - Factory decides internally based on API capabilities
+// Returns IAudioMode directly - no enum, no switch
 // ============================================================================
 
-std::unique_ptr<IAudioMode> createAudioMode(bool syncPull) {
-    if (syncPull) {
-        return std::make_unique<SyncPullAudioMode>();
+std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI) {
+    // Factory decides internally: check if StartAudioThread is available
+    // If the API supports threading, use threaded mode for better performance
+    // Otherwise, fall back to sync-pull mode
+    if (engineAPI && engineAPI->StartAudioThread) {
+        std::cout << "[Audio] Factory selected Threaded mode (StartAudioThread available)\n";
+        return std::make_unique<ThreadedAudioMode>();
     }
-    return std::make_unique<ThreadedAudioMode>();
+    
+    std::cout << "[Audio] Factory selected SyncPull mode (StartAudioThread not available)\n";
+    return std::make_unique<SyncPullAudioMode>();
 }

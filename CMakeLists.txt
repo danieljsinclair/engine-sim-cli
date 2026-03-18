@@ -52,10 +52,11 @@ if(APPLE)
 endif()
 
 # CLI executable - refactored into separate source files for SOLID compliance
-# NEW: Includes CircularBuffer, SyncPullAudio, and SineGenerator for proper separation
+# NEW: Includes CircularBuffer, SyncPullAudio, SineGenerator, and AudioPlayerFactory for proper separation
 add_executable(engine-sim-cli
     src/AudioConfig.cpp
     src/AudioPlayer.cpp
+    src/AudioPlayerFactory.cpp    # NEW: Factory + DI for AudioPlayer
     src/KeyboardInput.cpp
     src/RPMController.cpp
     src/AudioSource.cpp

@@ -1,5 +1,5 @@
 // AudioPlayer.h - Audio playback class
-// Refactored to use separate CircularBuffer and SyncPullAudio classes
+// Refactored to use injected IAudioRenderer strategy (SOLID: DI, OCP, SRP)
 
 #ifndef AUDIO_PLAYER_H
 #define AUDIO_PLAYER_H
@@ -16,18 +16,96 @@
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
 
-// Include the new classes (needed for unique_ptr with complete type)
 #include "CircularBuffer.h"
 #include "SyncPullAudio.h"
 
+// Forward declarations
+class IAudioMode;
+
+// ============================================================================
+// Strategy Pattern: IAudioRenderer Interface
+// Abstracts the rendering strategy (sync-pull vs cursor-chasing)
+// OCP: New modes can be added without modifying existing code
+// SRP: Each renderer encapsulates its own rendering logic
+// DI: Renderer is injected via constructor - AudioPlayer doesn't create it
+// ============================================================================
+
+class IAudioRenderer {
+public:
+    virtual ~IAudioRenderer() = default;
+    
+    // Render audio to the buffer list - returns true if rendering succeeded
+    virtual bool render(
+        void* context,
+        AudioBufferList* ioData,
+        UInt32 numberFrames
+    ) = 0;
+    
+    // Check if this renderer is active/enabled
+    virtual bool isEnabled() const = 0;
+    
+    // Get the name of this renderer for diagnostics
+    virtual const char* getName() const = 0;
+    
+    // Add frames to the renderer's buffer (for playBuffer compatibility)
+    // Returns true if frames were added successfully
+    virtual bool AddFrames(void* context, float* buffer, int frameCount) = 0;
+};
+
+// ============================================================================
+// Concrete Renderer: SyncPullRenderer
+// Renders audio on-demand synchronously from the engine simulator
+// Used when the caller controls timing and requests frames as needed
+// ============================================================================
+
+class SyncPullRenderer : public IAudioRenderer {
+public:
+    bool render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) override;
+    bool isEnabled() const override;
+    const char* getName() const override { return "SyncPullRenderer"; }
+    bool AddFrames(void* ctx, float* buffer, int frameCount) override;
+};
+
+// ============================================================================
+// Concrete Renderer: CircularBufferRenderer  
+// Renders audio from a cursor-chasing circular buffer
+// Uses hardware feedback to maintain 100ms lead, preventing underruns
+// ============================================================================
+
+class CircularBufferRenderer : public IAudioRenderer {
+public:
+    bool render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) override;
+    bool isEnabled() const override;
+    const char* getName() const override { return "CircularBufferRenderer"; }
+    bool AddFrames(void* ctx, float* buffer, int frameCount) override;
+};
+
+// ============================================================================
+// Null Renderer: Renders silence
+// Used when no valid mode is configured
+// ============================================================================
+
+class SilentRenderer : public IAudioRenderer {
+public:
+    bool render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) override;
+    bool isEnabled() const override;
+    const char* getName() const override { return "SilentRenderer"; }
+    bool AddFrames(void* ctx, float* buffer, int frameCount) override;
+};
+
 // ============================================================================
 // AudioUnit Context - stores engine simulator handle for rendering
+// DI: IAudioRenderer is injected by AudioPlayer
 // ============================================================================
 
 struct AudioUnitContext {
     EngineSimHandle engineHandle;         // Engine simulator handle
-    std::atomic<bool> isPlaying;          // Playback state
+    std::atomic<bool> isPlaying;         // Playback state
 
+    // Strategy pattern: injected rendering mode
+    // OCP: New renderers added without changing this struct
+    IAudioRenderer* audioRenderer;                
+    
     // Cursor-chasing buffer (now uses CircularBuffer class)
     // Uses hardware feedback to maintain 100ms lead, preventing underruns
     std::unique_ptr<CircularBuffer> circularBuffer;  // Managed by CircularBuffer class
@@ -48,29 +126,39 @@ struct AudioUnitContext {
     bool silent;
 
     AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
+                        audioRenderer(nullptr),
                         writePointer(0), readPointer(0),
                         underrunCount(0), bufferStatus(0),
                         totalFramesRead(0), sampleRate(44100),
                         silent(false) {}
+    
+    // Helper to set the rendering mode (Strategy injection point)
+    void setRenderer(IAudioRenderer* renderer) { audioRenderer = renderer; }
 };
 
 // ============================================================================
-// AudioPlayer Class
+// AudioPlayer Class - Uses injected IAudioRenderer (DI pattern)
+// OCP: Uses Strategy pattern for rendering - no boolean flags
+// SRP: Rendering logic is in IAudioRenderer, not AudioPlayer
+// DI: Renderer is injected via constructor, not owned
 // ============================================================================
 
 class AudioPlayer {
 public:
-    AudioPlayer();
+    // Constructor with injected IAudioRenderer (DI pattern)
+    // Caller owns the renderer - AudioPlayer just uses it
+    explicit AudioPlayer(IAudioRenderer* renderer);
     ~AudioPlayer();
 
-    bool initialize(int sr, bool syncPull = false, EngineSimHandle handle = nullptr, const EngineSimAPI* api = nullptr, bool silent = false);
+    // Initialize using IAudioMode (DI pattern)
+    // IAudioMode creates the appropriate AudioUnitContext
+    bool initialize(IAudioMode& audioMode, int sr, EngineSimHandle handle, 
+                    const EngineSimAPI* api, bool silent);
+    
     void cleanup();
 
     // Set the engine simulator handle for audio rendering
     void setEngineHandle(EngineSimHandle handle);
-
-    // Check if sync-pull mode is enabled
-    bool isSyncPullMode() const;
 
     // Start playback - begins real-time streaming
     bool start();
@@ -108,6 +196,9 @@ private:
     int sampleRate;
     AudioUnitContext* context;
 
+    // Injected renderer - not owned by AudioPlayer (DI)
+    IAudioRenderer* renderer;
+
     // Static callback for real-time audio rendering
     static OSStatus audioUnitCallback(
         void* refCon,
@@ -117,6 +208,8 @@ private:
         UInt32 numberFrames,
         AudioBufferList* ioData
     );
+    
+    bool setupAudioUnit();
 };
 
 #endif // AUDIO_PLAYER_H

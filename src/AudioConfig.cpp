@@ -34,7 +34,8 @@ void printUsage(const char* progName) {
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (default: sync-pull)\n";
-    std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n\n";
+    std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
+    std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
@@ -54,6 +55,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " --script v8_engine.mr --interactive --play\n";
     std::cout << "  " << progName << " --script engine-sim-bridge/engine-sim/assets/main.mr --interactive --output recording.wav\n";
     std::cout << "  " << progName << " --default-engine --rpm 2000 --play --output engine.wav\n";
+    std::cout << "  " << progName << " --default-engine --cranking-volume 2.0 --play  # 2x volume during cranking\n";
 }
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
@@ -118,6 +120,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         else if (arg == "--silent") {
             args.silent = true;
             args.playAudio = true;  // --silent implies --play (full audio pipeline)
+        }
+        else if (arg == "--cranking-volume") {
+            if (++i >= argc) {
+                std::cerr << "ERROR: --cranking-volume requires a value\n";
+                return false;
+            }
+            args.crankingVolume = std::atof(argv[i]);
         }
         else if (arg.rfind("--", 0) == 0) {
             std::cerr << "ERROR: Unknown option: " << arg << "\n";

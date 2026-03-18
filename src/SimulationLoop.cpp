@@ -6,6 +6,7 @@
 
 #include "AudioConfig.h"
 #include "AudioPlayer.h"
+#include "AudioPlayerFactory.h"
 #include "KeyboardInput.h"
 #include "AudioSource.h"
 #include "AudioMode.h"
@@ -224,6 +225,8 @@ EngineSimConfig createDefaultConfig(int sampleRate) {
     config.volume = 1.0f;
     config.convolutionLevel = 0.5f;
     config.airNoise = 1.0f;
+    config.starterVolume = 1.0f;       // Default no boost
+    config.starterRPMThreshold = 600.0f; // RPM below which starter volume applies
     return config;
 }
 
@@ -287,7 +290,7 @@ bool resolveConfigPath(const std::string& configPath,
     return true;
 }
 
-bool loadEngineScript(EngineSimHandle handle, EngineSimAPI& engineAPI,
+bool loadEngineScriptInternal(EngineSimHandle handle, EngineSimAPI& engineAPI,
                      const std::string& configPath, const std::string& assetBasePath) {
     EngineSimResult result = engineAPI.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
     if (result != ESIM_SUCCESS) {
@@ -297,17 +300,6 @@ bool loadEngineScript(EngineSimHandle handle, EngineSimAPI& engineAPI,
     }
     std::cout << "[Configuration loaded: " << configPath << "]\n";
     return true;
-}
-
-AudioPlayer* initializeAudioPlayer(int sampleRate, bool syncPull, bool silent,
-                                   EngineSimHandle handle, EngineSimAPI* engineAPI) {
-    auto* audioPlayer = new AudioPlayer();
-    if (!audioPlayer->initialize(sampleRate, syncPull, handle, engineAPI, silent)) {
-        std::cerr << "ERROR: Audio init failed\n";
-        delete audioPlayer;
-        return nullptr;
-    }
-    return audioPlayer;
 }
 
 
@@ -345,7 +337,50 @@ void warnWavExportNotSupported(bool outputWavRequested) {
     }
 }
 
+// Initialize AudioPlayer with the simulator handle using Factory + DI pattern
+// This is done in runSimulation to ensure the simulator is properly set up first
+AudioPlayer* createAndInitializeAudioPlayer(int sampleRate, bool silent,
+                                            EngineSimHandle handle, const EngineSimAPI* engineAPI) {
+    auto* audioPlayer = new AudioPlayer(nullptr);
+    
+    // Use factory to create the appropriate audio mode (DI pattern)
+    auto factory = createAudioModeFactory(engineAPI);
+    bool initSuccess = audioPlayer->initialize(*factory, sampleRate, handle, engineAPI, silent);
+    factory.release();  // AudioPlayer doesn't own the factory, but we created it here
+    
+    if (!initSuccess) {
+        std::cerr << "ERROR: Audio init failed\n";
+        delete audioPlayer;
+        return nullptr;
+    }
+    return audioPlayer;
+}
+
 } // anonymous namespace
+
+// ============================================================================
+// Config Path Loading - Single function (Feedback #3)
+// ============================================================================
+
+EngineLoaderResult loadEngineScript(const CommandLineArgs& args) {
+    EngineLoaderResult result;
+    
+    result.configPath = determineConfigPath(args);
+    
+    if (result.configPath.empty()) {
+        std::cerr << "ERROR: No engine configuration specified\n";
+        std::cerr << "Use --script <config.mr> or --default-engine\n";
+        return result;
+    }
+    
+    if (!resolveConfigPath(result.configPath, result.configPath, result.assetBasePath)) {
+        return result;
+    }
+    
+    result.success = true;
+    return result;
+}
+
 
 // ============================================================================
 // Unified Main Loop Implementation
@@ -355,9 +390,10 @@ int runUnifiedAudioLoop(
     EngineSimHandle handle,
     const EngineSimAPI& api,
     IAudioSource& audioSource,
-    const CommandLineArgs& args,
+    const SimulationConfig& config,
     AudioPlayer* audioPlayer,
-    IAudioMode& audioMode)
+    IAudioMode& audioMode,
+    KeyboardInput* keyboardInput)
 {
     double currentTime = 0.0;
     TimingOps::LoopTimer timer;
@@ -367,8 +403,7 @@ int runUnifiedAudioLoop(
     double baselineLoad = interactiveLoad;
     bool wKeyPressed = false;
     
-    // ONE thing: Initialize keyboard input
-    KeyboardInput* keyboardInput = initializeKeyboardInput(args.interactive);
+    // keyboardInput is injected (Feedback #4)
     
     // ONE thing: Enable starter motor
     enableStarterMotor(handle, api);
@@ -378,7 +413,7 @@ int runUnifiedAudioLoop(
     auto lastDiagTime = std::chrono::steady_clock::now();
     
     // Main loop
-    while (shouldContinueLoop(args.interactive, currentTime, args.duration)) {
+    while (shouldContinueLoop(config.interactive, currentTime, config.duration)) {
         // ONE thing: Check starter motor RPM and disable when running
         checkStarterMotorRPM(handle, api, minSustainedRPM);
         
@@ -386,7 +421,7 @@ int runUnifiedAudioLoop(
         handleKeyboardInput(handle, api, keyboardInput, interactiveLoad, baselineLoad, wKeyPressed);
         
         // ONE thing: Calculate throttle
-        double throttle = calculateThrottle(args.interactive, currentTime, interactiveLoad);
+        double throttle = calculateThrottle(config.interactive, currentTime, interactiveLoad);
         api.SetThrottle(handle, throttle);
         
         // Strategy pattern: Update simulation based on audio mode
@@ -397,7 +432,7 @@ int runUnifiedAudioLoop(
         api.GetStats(handle, &stats);
         
         // ONE thing: Update sine frequency (SRP - moved from audio source)
-        updateSineFrequency(handle, api, stats, args.sineMode);
+        updateSineFrequency(handle, api, stats, config.sineMode);
         
         // Strategy pattern: Generate audio based on audio mode
         audioMode.generateAudio(audioSource, audioPlayer);
@@ -413,7 +448,7 @@ int runUnifiedAudioLoop(
         }
         
         // ONE thing: Display progress
-        audioSource.displayProgress(currentTime, args.duration, args.interactive, stats, throttle, underrunCount);
+        audioSource.displayProgress(currentTime, config.duration, config.interactive, stats, throttle, underrunCount);
         
         // ONE thing: Maintain 60Hz timing
         performTimingControl(timer);
@@ -431,59 +466,67 @@ int runUnifiedAudioLoop(
 // Main Simulation Entry Point - UNIFIED for both modes
 // ============================================================================
 
-int runSimulation(const CommandLineArgs& args, EngineSimAPI& engineAPI) {
+int runSimulation(
+    const CommandLineArgs& args,
+    EngineSimAPI& engineAPI,
+    AudioPlayer* audioPlayer,
+    IAudioMode* audioMode,
+    KeyboardInput* keyboardInput) {
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
     
-    // Strategy pattern: Create audio mode based on syncPull flag
-    std::unique_ptr<IAudioMode> audioMode = createAudioMode(args.syncPull);
+    // audioMode is injected (Feedback #2)
     
-    // ONE thing: Create default configuration
-    EngineSimConfig config = createDefaultConfig(sampleRate);
-    
-    // ONE thing: Create simulator
-    EngineSimHandle handle = createSimulator(config, engineAPI);
+    // Create simulator - single simulator for both audio and main simulation
+    EngineSimConfig simConfig = createDefaultConfig(sampleRate);
+
+    // Apply cranking volume from command line
+    simConfig.starterVolume = args.crankingVolume;
+    EngineSimHandle handle = createSimulator(simConfig, engineAPI);
     if (!handle) {
         return 1;
     }
     
-    // ONE thing: Determine config path
-    std::string configPath = determineConfigPath(args);
-    
-    // ONE thing: Validate config path
-    if (!validateConfigPath(configPath, handle, engineAPI)) {
-        return 1;
-    }
-    
-    // ONE thing: Resolve config path
-    std::string assetBasePath;
-    if (!resolveConfigPath(configPath, configPath, assetBasePath)) {
+    // Load engine script - single function (Feedback #3)
+    EngineLoaderResult loaderResult = loadEngineScript(args);
+    if (!loaderResult.success) {
         engineAPI.Destroy(handle);
         return 1;
     }
     
-    // ONE thing: Load engine script
-    if (!loadEngineScript(handle, engineAPI, configPath, assetBasePath)) {
+    // Load the engine script
+    if (!loadEngineScriptInternal(handle, engineAPI, loaderResult.configPath, loaderResult.assetBasePath)) {
         return 1;
     }
     
-    // ONE thing: Enable ignition
-    engineAPI.SetIgnition(handle, 1);
-    std::cout << "[Ignition enabled]\n";
-    
-    // ONE thing: Initialize audio player
-    AudioPlayer* audioPlayer = nullptr;
-    if (args.playAudio) {
-        audioPlayer = initializeAudioPlayer(sampleRate, args.syncPull, args.silent,
-                                            handle, &engineAPI);
+    // Initialize AudioPlayer if audio playback is requested
+    // This must happen AFTER the simulator is created and configured
+    if (args.playAudio && !audioPlayer) {
+        audioPlayer = createAndInitializeAudioPlayer(sampleRate, args.silent, handle, &engineAPI);
         if (!audioPlayer) {
             engineAPI.Destroy(handle);
             return 1;
         }
     }
     
+    // ONE thing: Enable ignition
+    engineAPI.SetIgnition(handle, 1);
+    std::cout << "[Ignition enabled]\n";
+    
+    // audioMode is injected (Feedback #2)
+    if (!audioMode) {
+        std::cerr << "ERROR: audioMode must be injected\n";
+        if (audioPlayer) {
+            delete audioPlayer;
+        }
+        engineAPI.Destroy(handle);
+        return 1;
+    }
+    
     // Strategy pattern: Start audio thread based on audio mode
     if (!audioMode->startAudioThread(handle, engineAPI, audioPlayer)) {
-        delete audioPlayer;
+        if (audioPlayer) {
+            delete audioPlayer;
+        }
         engineAPI.Destroy(handle);
         return 1;
     }
@@ -509,8 +552,16 @@ int runSimulation(const CommandLineArgs& args, EngineSimAPI& engineAPI) {
     // ONE thing: Create audio source
     std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, args.sineMode, args.syncPull);
     
+    // Create SimulationConfig from args
+    SimulationConfig simRunConfig;
+    simRunConfig.duration = args.duration;
+    simRunConfig.interactive = args.interactive;
+    simRunConfig.playAudio = args.playAudio;
+    simRunConfig.silent = args.silent;
+    simRunConfig.sineMode = args.sineMode;
+    
     // Run unified loop - SAME CODE FOR BOTH MODES (uses strategy internally)
-    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, args, audioPlayer, *audioMode);
+    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, simRunConfig, audioPlayer, *audioMode, keyboardInput);
     
     // ONE thing: Cleanup simulation resources
     cleanupSimulation(audioPlayer, handle, engineAPI, exitCode);

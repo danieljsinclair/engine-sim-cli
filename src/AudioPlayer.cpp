@@ -1,7 +1,9 @@
 // AudioPlayer.cpp - Audio playback implementation
-// Refactored to use separate CircularBuffer and SyncPullAudio classes
+// Refactored to use injected IAudioRenderer (SOLID: DI, OCP, SRP)
+// OCP: Uses renderer strategy, no boolean flags
 
 #include "AudioPlayer.h"
+#include "AudioMode.h"
 #include "CircularBuffer.h"
 #include "SyncPullAudio.h"
 
@@ -11,45 +13,240 @@
 #include <thread>
 #include <algorithm>
 #include <iomanip>
+#include <stdexcept>
 
 // ============================================================================
-// AudioPlayer Class Implementation
+// Strategy Pattern: IAudioRenderer Implementations
 // ============================================================================
 
-AudioPlayer::AudioPlayer() : audioUnit(nullptr), deviceID(0),
-                isPlaying(false), sampleRate(0),
-                context(nullptr) {
+// ----------------------------------------------------------------------------
+// SyncPullRenderer Implementation
+// Renders audio synchronously on-demand from the engine simulator
+// ----------------------------------------------------------------------------
+bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
+    AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
+    
+    if (!context || !context->syncPullAudio) {
+        return false;
+    }
+    
+    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+        AudioBuffer& buffer = ioData->mBuffers[i];
+        float* data = static_cast<float*>(buffer.mData);
+
+        // Clamp frames to buffer capacity
+        UInt32 framesToRender = numberFrames;
+        if (framesToRender * 2 * sizeof(float) > buffer.mDataByteSize) {
+            framesToRender = buffer.mDataByteSize / (2 * sizeof(float));
+        }
+
+        // Request frames from the engine simulator synchronously
+        int framesRead = context->syncPullAudio->renderOnDemand(data, static_cast<int>(framesToRender));
+
+        // Update buffer size if partial read (end of audio)
+        if (framesRead < static_cast<int>(framesToRender)) {
+            for (UInt32 j = 0; j < ioData->mNumberBuffers; j++) {
+                ioData->mBuffers[j].mDataByteSize = framesRead * 2 * sizeof(float);
+            }
+        }
+    }
+    
+    return true;
+}
+
+bool SyncPullRenderer::isEnabled() const {
+    // Will be checked via context in actual use
+    return true;
+}
+
+bool SyncPullRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
+    // Sync-pull renders on-demand in the callback, not via AddFrames
+    // This method is a no-op - return true to indicate success
+    (void)ctx;
+    (void)buffer;
+    (void)frameCount;
+    return true;
+}
+
+// ----------------------------------------------------------------------------
+// CircularBufferRenderer Implementation  
+// Renders audio from cursor-chasing circular buffer using hardware feedback
+// ----------------------------------------------------------------------------
+bool CircularBufferRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
+    AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
+    
+    if (!context->circularBuffer || !context->circularBuffer->isInitialized()) {
+        return false;
+    }
+
+    const int bufferSize = static_cast<int>(context->circularBuffer->capacity());
+
+    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+        AudioBuffer& buffer = ioData->mBuffers[i];
+        float* data = static_cast<float*>(buffer.mData);
+
+        // Clamp frames to buffer capacity
+        UInt32 framesToWrite = numberFrames;
+        if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
+            framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
+        }
+
+        // Calculate available frames using cursor-chasing logic
+        int readPtr = context->readPointer.load();
+        int writePtr = context->writePointer.load();
+
+        int available;
+        if (writePtr >= readPtr) {
+            available = writePtr - readPtr;
+        } else {
+            available = (bufferSize - readPtr) + writePtr;
+        }
+
+        // Determine how many frames we can actually read
+        int framesToRead = std::min(static_cast<int>(framesToWrite), available);
+
+        // Track underruns for diagnostics
+        if (framesToRead < static_cast<int>(framesToWrite)) {
+            context->underrunCount.fetch_add(1);
+            if (context->underrunCount.load() % 10 == 0) {
+                std::cout << "[Audio Diagnostics] Buffer underrun #" << context->underrunCount.load()
+                          << " - requested: " << framesToWrite << ", available: " << available << "\n";
+            }
+        }
+
+        // Read from circular buffer
+        size_t framesRead = context->circularBuffer->read(data, framesToRead);
+        (void)framesRead;
+
+        // Handle underrun: fill remaining with silence
+        if (framesToRead < static_cast<int>(framesToWrite)) {
+            int silenceFrames = framesToWrite - framesToRead;
+            std::memset(data + framesToRead * 2, 0, silenceFrames * 2 * sizeof(float));
+            context->bufferStatus = (available < bufferSize / 8) ? 2 : 1;
+        } else {
+            context->bufferStatus = 0;
+        }
+
+        // Update read cursor (hardware position)
+        int newReadPtr = (readPtr + framesToRead) % bufferSize;
+        context->readPointer.store(newReadPtr);
+        context->totalFramesRead.fetch_add(framesToRead);
+
+        // Apply silent mode if requested
+        if (context->silent) {
+            std::memset(data, 0, framesToWrite * 2 * sizeof(float));
+        }
+    }
+    
+    return true;
+}
+
+bool CircularBufferRenderer::isEnabled() const {
+    // Will be checked via context in actual use
+    return true;
+}
+
+bool CircularBufferRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
+    AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
+    
+    if (!context || !context->circularBuffer || !context->circularBuffer->isInitialized()) {
+        return false;
+    }
+    
+    // Write frames to circular buffer
+    size_t framesWritten = context->circularBuffer->write(buffer, frameCount);
+    
+    // Update write pointer
+    int writePtr = context->writePointer.load();
+    int bufferSize = static_cast<int>(context->circularBuffer->capacity());
+    int newWritePtr = (writePtr + static_cast<int>(framesWritten)) % bufferSize;
+    context->writePointer.store(newWritePtr);
+    
+    return framesWritten > 0;
+}
+
+// ----------------------------------------------------------------------------
+// SilentRenderer Implementation
+// Renders silence - used as fallback when no valid mode is configured
+// ----------------------------------------------------------------------------
+bool SilentRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
+    (void)ctx;
+    (void)numberFrames;
+    
+    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+        AudioBuffer& buffer = ioData->mBuffers[i];
+        float* data = static_cast<float*>(buffer.mData);
+        std::memset(data, 0, buffer.mDataByteSize);
+    }
+    return true;
+}
+
+bool SilentRenderer::isEnabled() const {
+    return true;
+}
+
+bool SilentRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
+    // SilentRenderer discards all frames - return true to indicate success
+    (void)ctx;
+    (void)buffer;
+    (void)frameCount;
+    return true;
+}
+
+// ============================================================================
+// AudioPlayer Class Implementation - Uses injected IAudioRenderer (DI)
+// OCP: Uses Strategy pattern for rendering - no boolean flags
+// SRP: Rendering logic is in IAudioRenderer, not AudioPlayer
+// DI: Renderer is injected via constructor or obtained from context
+// ============================================================================
+
+// Constructor with optional injected IAudioRenderer (DI pattern)
+// If provided, can override the mode's renderer; otherwise context's renderer is used
+AudioPlayer::AudioPlayer(IAudioRenderer* renderer) 
+    : audioUnit(nullptr), deviceID(0),
+      isPlaying(false), sampleRate(0),
+      context(nullptr), renderer(renderer) {
 }
 
 AudioPlayer::~AudioPlayer() {
     cleanup();
 }
 
-bool AudioPlayer::initialize(int sr, bool syncPull, EngineSimHandle handle, const EngineSimAPI* api, bool silent) {
+bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle handle, 
+                              const EngineSimAPI* api, bool silent) {
     sampleRate = sr;
 
-    // Create callback context
-    context = new AudioUnitContext();
-    context->sampleRate = sr;
-    context->silent = silent;
-
-    // Setup sync pull model if enabled
-    if (syncPull && handle && api) {
-        context->engineHandle = handle;
-        // Use SyncPullAudio class for sync-pull rendering
-        context->syncPullAudio = std::make_unique<SyncPullAudio>();
-        if (!context->syncPullAudio->initialize(handle, api, sr, silent)) {
-            std::cerr << "ERROR: Failed to initialize SyncPullAudio\n";
-            delete context;
-            context = nullptr;
-            return false;
-        }
-        std::cout << "[Audio] Sync pull model enabled (using SyncPullAudio)\n";
-    } else {
-        std::cout << "[Audio] Cursor-chasing mode: 1s buffer with 100ms target lead\n";
+    // Use IAudioMode to create the appropriate context
+    // DI: IAudioMode injects its own renderer into the context
+    context = audioMode.createContext(sr, handle, api, silent).release();
+    
+    if (!context) {
+        std::cerr << "ERROR: Failed to create audio context\n";
+        return false;
     }
 
-    // Set up audio format - PCM float32 stereo
+    // OCP: No conditional branching - use injected renderer from constructor
+    // if provided, otherwise use the one already injected by IAudioMode into context
+    if (renderer) {
+        // Constructor-provided renderer takes precedence
+        context->setRenderer(renderer);
+        std::cout << "[Audio] Using constructor-injected renderer: " << renderer->getName() << "\n";
+    } else if (!context->audioRenderer) {
+        // Hard error: no renderer configured - must have a valid renderer
+        throw std::runtime_error("FATAL: No audio renderer injected - IAudioRenderer is required");
+    }
+    
+    if (!setupAudioUnit()) {
+        delete context;
+        context = nullptr;
+        return false;
+    }
+    
+    std::cout << "[Audio] Initialized via factory: " << audioMode.getModeName() << "\n";
+    return true;
+}
+
+bool AudioPlayer::setupAudioUnit() {
     AudioStreamBasicDescription format = {};
     format.mSampleRate = sampleRate;
     format.mFormatID = kAudioFormatLinearPCM;
@@ -57,10 +254,9 @@ bool AudioPlayer::initialize(int sr, bool syncPull, EngineSimHandle handle, cons
     format.mBytesPerPacket = 2 * sizeof(float);  // Stereo
     format.mFramesPerPacket = 1;
     format.mBytesPerFrame = 2 * sizeof(float);   // Stereo float
-    format.mChannelsPerFrame = 2;                // Stereo
+    format.mChannelsPerFrame = 2;                 // Stereo
     format.mBitsPerChannel = 8 * sizeof(float);
 
-    // Create AudioUnit (AUHAL - Audio Unit Hardware Abstraction Layer)
     AudioComponentDescription desc = {};
     desc.componentType = kAudioUnitType_Output;
     desc.componentSubType = kAudioUnitSubType_DefaultOutput;
@@ -71,20 +267,15 @@ bool AudioPlayer::initialize(int sr, bool syncPull, EngineSimHandle handle, cons
     AudioComponent component = AudioComponentFindNext(nullptr, &desc);
     if (!component) {
         std::cerr << "ERROR: Failed to find AudioComponent\n";
-        delete context;
-        context = nullptr;
         return false;
     }
 
     OSStatus status = AudioComponentInstanceNew(component, &audioUnit);
     if (status != noErr) {
         std::cerr << "ERROR: Failed to create AudioUnit: " << status << "\n";
-        delete context;
-        context = nullptr;
         return false;
     }
 
-    // Set format for output
     status = AudioUnitSetProperty(
         audioUnit,
         kAudioUnitProperty_StreamFormat,
@@ -96,11 +287,12 @@ bool AudioPlayer::initialize(int sr, bool syncPull, EngineSimHandle handle, cons
 
     if (status != noErr) {
         std::cerr << "ERROR: Failed to set AudioUnit format: " << status << "\n";
-        cleanup();
+        AudioComponentInstanceDispose(audioUnit);
+        audioUnit = nullptr;
         return false;
     }
 
-    // Set up render callback
+    // Set up callback with context
     AURenderCallbackStruct callbackStruct = {};
     callbackStruct.inputProc = audioUnitCallback;
     callbackStruct.inputProcRefCon = context;
@@ -115,63 +307,20 @@ bool AudioPlayer::initialize(int sr, bool syncPull, EngineSimHandle handle, cons
     );
 
     if (status != noErr) {
-        std::cerr << "ERROR: Failed to set AudioUnit callback: " << status << "\n";
-        cleanup();
+        std::cerr << "ERROR: Failed to set callback: " << status << "\n";
+        AudioComponentInstanceDispose(audioUnit);
+        audioUnit = nullptr;
         return false;
     }
 
-    // Initialize AudioUnit
     status = AudioUnitInitialize(audioUnit);
     if (status != noErr) {
         std::cerr << "ERROR: Failed to initialize AudioUnit: " << status << "\n";
-        cleanup();
+        AudioComponentInstanceDispose(audioUnit);
+        audioUnit = nullptr;
         return false;
     }
 
-    // Cursor-chasing buffer: 2+ seconds capacity (now uses CircularBuffer class)
-    // 96000 samples = 2+ seconds at 44.1kHz
-    context->circularBuffer = std::make_unique<CircularBuffer>();
-    if (!context->circularBuffer->initialize(96000)) {
-        std::cerr << "ERROR: Failed to initialize CircularBuffer\n";
-        cleanup();
-        return false;
-    }
-
-    // Initialize pointers - start with 100ms offset (cursor-chasing approach)
-    // GUI starts writePointer at 4410 (100ms) for initial lead
-    context->writePointer.store(static_cast<int>(sr * 0.1));  // 100ms ahead
-    context->readPointer.store(0);
-    context->totalFramesRead.store(0);
-
-    // Get default output device for diagnostics
-    AudioObjectPropertyAddress propertyAddress = {
-        kAudioHardwarePropertyDefaultOutputDevice,
-        kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMain
-    };
-
-    UInt32 deviceIDSize = sizeof(deviceID);
-    status = AudioObjectGetPropertyData(
-        kAudioObjectSystemObject,
-        &propertyAddress,
-        0,
-        nullptr,
-        &deviceIDSize,
-        &deviceID
-    );
-
-    if (status != noErr) {
-        std::cerr << "WARNING: Could not get audio device ID\n";
-    }
-
-    if (silent) {
-        std::cout << "[Audio] Silent mode - output muted in callback\n";
-    }
-
-    std::cout << "[Audio] AudioUnit initialized at " << sampleRate << " Hz (stereo float32)\n";
-    if (syncPull) {
-        std::cout << "[Audio] Sync pull model - direct render on audio callback\n";
-    }
     return true;
 }
 
@@ -182,16 +331,11 @@ void AudioPlayer::cleanup() {
         AudioComponentInstanceDispose(audioUnit);
         audioUnit = nullptr;
     }
-
+    
     if (context) {
-        // CircularBuffer and SyncPullAudio are cleaned up via unique_ptr
-        context->circularBuffer.reset();
-        context->syncPullAudio.reset();
         delete context;
         context = nullptr;
     }
-
-    isPlaying = false;
 }
 
 void AudioPlayer::setEngineHandle(EngineSimHandle handle) {
@@ -200,96 +344,95 @@ void AudioPlayer::setEngineHandle(EngineSimHandle handle) {
     }
 }
 
-bool AudioPlayer::isSyncPullMode() const {
-    return context && context->syncPullAudio && context->syncPullAudio->isEnabled();
-}
-
 bool AudioPlayer::start() {
-    if (!audioUnit) return false;
-
-    OSStatus status = AudioOutputUnitStart(audioUnit);
-    if (status != noErr) {
-        std::cerr << "ERROR: Failed to start AudioUnit: " << status << "\n";
+    if (!audioUnit || isPlaying) {
         return false;
     }
-
-    isPlaying = true;
+    
     if (context) {
         context->isPlaying.store(true);
     }
+    
+    OSStatus status = AudioOutputUnitStart(audioUnit);
+    if (status != noErr) {
+        std::cerr << "ERROR: Failed to start AudioUnit: " << status << "\n";
+        if (context) {
+            context->isPlaying.store(false);
+        }
+        return false;
+    }
+    
+    isPlaying = true;
     return true;
 }
 
 void AudioPlayer::stop() {
-    if (audioUnit && isPlaying) {
-        AudioOutputUnitStop(audioUnit);
-        isPlaying = false;
-        if (context) {
-            context->isPlaying.store(false);
-        }
+    if (!isPlaying) {
+        return;
     }
+    
+    if (audioUnit) {
+        AudioOutputUnitStop(audioUnit);
+    }
+    
+    if (context) {
+        context->isPlaying.store(false);
+    }
+    
+    isPlaying = false;
 }
 
-bool AudioPlayer::playBuffer(const float* data, int frames, int sampleRate) {
-    // This method is kept for compatibility but does nothing in streaming mode
-    // The AudioUnit callback handles all audio rendering
-    if (!isPlaying) {
-        start();
+bool AudioPlayer::playBuffer(const float* data, int frames, int sr) {
+    // SOLID: No branching - delegate to renderer via AddFrames()
+    // OCP: New renderers can be added without changing this code
+    if (!context || !context->audioRenderer) {
+        std::cerr << "ERROR: No audio context or renderer available\n";
+        return false;
     }
-    return true;
+    
+    // Delegate to the injected renderer
+    return context->audioRenderer->AddFrames(context, const_cast<float*>(data), frames);
 }
 
 void AudioPlayer::waitForCompletion() {
-    // In streaming mode, we just wait a bit for final samples to play
-    if (isPlaying) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
+    // For sync-pull mode, there's no background thread
+    // For threaded mode, would need additional synchronization
 }
 
 void AudioPlayer::addToCircularBuffer(const float* samples, int frameCount) {
-    if (!context || !context->circularBuffer) return;
-
-    // Use CircularBuffer class for writing
-    context->circularBuffer->write(samples, frameCount);
+    if (!context || !context->circularBuffer) {
+        return;
+    }
     
-    // Update write pointer to match CircularBuffer state
-    context->writePointer.store(static_cast<int>(context->circularBuffer->getWritePointer()));
+    size_t framesWritten = context->circularBuffer->write(samples, frameCount);
+    
+    int writePtr = context->writePointer.load();
+    int newWritePtr = (writePtr + static_cast<int>(framesWritten)) % 
+                      static_cast<int>(context->circularBuffer->capacity());
+    context->writePointer.store(newWritePtr);
 }
 
-AudioUnitContext* AudioPlayer::getContext() { 
-    return context; 
+AudioUnitContext* AudioPlayer::getContext() {
+    return context;
 }
 
 void AudioPlayer::getBufferDiagnostics(int& writePtr, int& readPtr, int& available, int& status) {
-    if (context && context->circularBuffer) {
-        writePtr = context->writePointer.load();
-        readPtr = context->readPointer.load();
-
-        // Use CircularBuffer class for available calculation
-        available = static_cast<int>(context->circularBuffer->available());
-
-        // Set status based on cursor-chasing target (100ms = 4410 samples)
-        // Normal: within 50-200ms lead (2205-8820 samples)
-        // Warning: 25-50ms or 200-400ms lead
-        // Critical: <25ms lead (but still has data)
-        // Underrun: no data
-        const int targetLead = static_cast<int>(context->sampleRate * 0.1);  // 4410
-        if (available >= targetLead / 2 && available <= targetLead * 2) {
-            status = 0;  // Normal: 50-200ms lead
-        } else if (available >= targetLead / 4 || available <= targetLead * 4) {
-            status = 1;  // Warning: 25-50ms or 200-400ms lead
-        } else if (available > 0) {
-            status = 2;  // Critical: <25ms but not underrun yet
-        } else {
-            status = 3;  // Underrun
-            context->underrunCount.fetch_add(1);
-        }
-    } else {
-        writePtr = 0;
-        readPtr = 0;
-        available = 0;
-        status = 3;
+    if (!context) {
+        writePtr = readPtr = available = status = 0;
+        return;
     }
+    
+    writePtr = context->writePointer.load();
+    readPtr = context->readPointer.load();
+    
+    int bufferSize = static_cast<int>(context->circularBuffer->capacity());
+    if (writePtr >= readPtr) {
+        available = writePtr - readPtr;
+    } else {
+        available = (bufferSize - readPtr) + writePtr;
+    }
+    
+    status = context->bufferStatus;
 }
 
 void AudioPlayer::resetBufferDiagnostics() {
@@ -301,71 +444,61 @@ void AudioPlayer::resetBufferDiagnostics() {
 
 void AudioPlayer::resetCircularBuffer() {
     if (context && context->circularBuffer) {
-        // Reset with 100ms offset (cursor-chasing initial state)
-        context->writePointer.store(static_cast<int>(context->sampleRate * 0.1));
+        context->circularBuffer->reset();
         context->readPointer.store(0);
-        context->totalFramesRead.store(0);
-        // Clear buffer contents
-        context->circularBuffer->clear();
+        
+        // Pre-fill with 100ms of silence for cursor-chasing warmup
+        int prefillFrames = static_cast<int>(context->sampleRate * 0.1);
+        context->writePointer.store(prefillFrames);
     }
 }
 
 int AudioPlayer::calculateCursorChasingSamples(int defaultFrames) {
-    if (!context || !context->circularBuffer) return defaultFrames;
-
-    const int bufferSize = static_cast<int>(context->circularBuffer->capacity());
-    const int writePtr = context->writePointer.load();
-    const int readPtr = context->readPointer.load();
-
-    // Calculate current lead (distance ahead of playback cursor)
-    int currentLead;
+    if (!context || !context->circularBuffer) {
+        return defaultFrames;
+    }
+    
+    int bufferSize = static_cast<int>(context->circularBuffer->capacity());
+    int writePtr = context->writePointer.load();
+    int readPtr = context->readPointer.load();
+    
+    int available;
     if (writePtr >= readPtr) {
-        currentLead = writePtr - readPtr;
+        available = writePtr - readPtr;
     } else {
-        currentLead = (bufferSize - readPtr) + writePtr;
+        available = (bufferSize - readPtr) + writePtr;
     }
-
-    // Target: 100ms ahead (matches GUI line 257)
-    const int targetLead = static_cast<int>(context->sampleRate * 0.1);  // 4410 samples at 44.1kHz
-
-    // Safety: if too far ahead (>500ms), snap back to 50ms (matches GUI lines 263-267)
-    const int maxLead = static_cast<int>(context->sampleRate * 0.5);  // 22050 samples
-    if (currentLead > maxLead) {
-        // Reset write pointer to 50ms ahead of read pointer
-        int newWritePtr = (readPtr + static_cast<int>(context->sampleRate * 0.05)) % bufferSize;
-        context->writePointer.store(newWritePtr);
-        currentLead = static_cast<int>(context->sampleRate * 0.05);
+    
+    // Target: maintain ~100ms lead
+    int targetLead = static_cast<int>(context->sampleRate * 0.1);
+    
+    if (available < targetLead) {
+        // Behind target - request more frames
+        return std::min(defaultFrames + (targetLead - available), bufferSize);
+    } else if (available > targetLead * 2) {
+        // Too far ahead - reduce frames
+        return std::max(defaultFrames - (available - targetLead), 0);
     }
+    
+    return defaultFrames;
+}
 
-    // Calculate target write position (100ms ahead of current read position)
-    int targetWritePtr = (readPtr + targetLead) % bufferSize;
-
-    // Calculate how many samples to write to reach target
-    int maxWrite;
-    if (targetWritePtr >= writePtr) {
-        maxWrite = targetWritePtr - writePtr;
-    } else {
-        maxWrite = (bufferSize - writePtr) + targetWritePtr;
+// ============================================================================
+// Helper function - DRY
+// ============================================================================
+static OSStatus renderSilence(AudioBufferList* ioData) {
+    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+        AudioBuffer& buffer = ioData->mBuffers[i];
+        float* data = static_cast<float*>(buffer.mData);
+        std::memset(data, 0, buffer.mDataByteSize);
     }
-
-    // Prevent underrun: don't write if it would make buffer smaller (matches GUI line 269-271)
-    int newLead;
-    if (targetWritePtr >= readPtr) {
-        newLead = targetWritePtr - readPtr;
-    } else {
-        newLead = (bufferSize - readPtr) + targetWritePtr;
-    }
-
-    if (currentLead > newLead) {
-        return 0;  // Would reduce buffer - skip this write
-    }
-
-    return std::min(maxWrite, defaultFrames);
+    return noErr;
 }
 
 // ============================================================================
 // Static Callback for real-time audio rendering
-// Uses separate SyncPullAudio and CircularBuffer classes
+// OCP: New rendering modes can be added without modifying this function
+// SRP: Delegates to injected IAudioRenderer strategy
 // ============================================================================
 
 OSStatus AudioPlayer::audioUnitCallback(
@@ -376,120 +509,22 @@ OSStatus AudioPlayer::audioUnitCallback(
     UInt32 numberFrames,
     AudioBufferList* ioData
 ) {
+    // Retrieve the audio context from the referencecon
     AudioUnitContext* ctx = static_cast<AudioUnitContext*>(refCon);
+    
+    // Suppress unused parameter warnings (required by AudioUnit API)
+    (void)actionFlags;
+    (void)timeStamp;
+    (void)busNumber;
 
-    // Check if we should be playing
+    // Early exit: if context is null or playback is stopped, output silence
+    // This prevents audio glitches when the player is stopped
     if (!ctx || !ctx->isPlaying.load()) {
-        // Output silence
-        for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-            AudioBuffer& buffer = ioData->mBuffers[i];
-            float* data = static_cast<float*>(buffer.mData);
-            std::memset(data, 0, buffer.mDataByteSize);
-        }
-        return noErr;
+        return renderSilence(ioData);
     }
 
-    // SYNC PULL MODEL: Use SyncPullAudio class for rendering
-    // This bypasses the circular buffer entirely for lower latency
-    if (ctx->syncPullAudio && ctx->syncPullAudio->isEnabled()) {
-        for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-            AudioBuffer& buffer = ioData->mBuffers[i];
-            float* data = static_cast<float*>(buffer.mData);
-
-            UInt32 framesToRender = numberFrames;
-            if (framesToRender * 2 * sizeof(float) > buffer.mDataByteSize) {
-                framesToRender = buffer.mDataByteSize / (2 * sizeof(float));
-            }
-
-            // Use SyncPullAudio class for rendering
-            int framesRead = ctx->syncPullAudio->renderOnDemand(data, static_cast<int>(framesToRender));
-
-            // Tell AudioUnit actual buffer size to avoid playing zeros
-            if (framesRead < static_cast<int>(framesToRender)) {
-                for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-                    ioData->mBuffers[i].mDataByteSize = framesRead * 2 * sizeof(float);
-                }
-            }
-        }
-        return noErr;
-    }
-
-    // CIRCULAR BUFFER MODEL: Use CircularBuffer class for rendering
-    // This buffer is filled by main loop calling addToCircularBuffer()
-    if (!ctx->circularBuffer || !ctx->circularBuffer->isInitialized()) {
-        // No buffer - output silence
-        for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-            AudioBuffer& buffer = ioData->mBuffers[i];
-            float* data = static_cast<float*>(buffer.mData);
-            std::memset(data, 0, buffer.mDataByteSize);
-        }
-        return noErr;
-    }
-
-    const int bufferSize = static_cast<int>(ctx->circularBuffer->capacity());
-
-    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-        AudioBuffer& buffer = ioData->mBuffers[i];
-        float* data = static_cast<float*>(buffer.mData);
-
-        // Calculate how many frames we can write
-        UInt32 framesToWrite = numberFrames;
-        if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
-            framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
-        }
-
-        // Use CircularBuffer class for reading
-        int readPtr = ctx->readPointer.load();
-        int writePtr = ctx->writePointer.load();
-
-        // Calculate how much data is available in circular buffer
-        int available;
-        if (writePtr >= readPtr) {
-            available = writePtr - readPtr;
-        } else {
-            available = (bufferSize - readPtr) + writePtr;
-        }
-
-        int framesToRead = std::min(static_cast<int>(framesToWrite), available);
-
-        // Diagnostic: Track buffer status
-        if (framesToRead < static_cast<int>(framesToWrite)) {
-            // Underrun detected - increment counter
-            ctx->underrunCount.fetch_add(1);
-            // Log underrun periodically (every 10th underrun to avoid spam)
-            if (ctx->underrunCount.load() % 10 == 0) {
-                std::cout << "[Audio Diagnostics] Buffer underrun #" << ctx->underrunCount.load()
-                          << " - requested: " << framesToWrite << ", available: " << available << "\n";
-            }
-        }
-
-        // Use CircularBuffer class for reading
-        size_t framesRead = ctx->circularBuffer->read(data, framesToRead);
-        (void)framesRead;  // Suppress unused warning
-
-        // Fill rest with silence if underrun
-        if (framesToRead < static_cast<int>(framesToWrite)) {
-            int silenceFrames = framesToWrite - framesToRead;
-            std::memset(data + framesToRead * 2, 0, silenceFrames * 2 * sizeof(float));
-
-            // Set buffer status for diagnostics
-            ctx->bufferStatus = (available < bufferSize / 8) ? 2 : 1;
-        } else {
-            ctx->bufferStatus = 0;  // Normal
-        }
-
-        // Update read pointer (hardware playback cursor position in circular buffer)
-        int newReadPtr = (readPtr + framesToRead) % bufferSize;
-        ctx->readPointer.store(newReadPtr);
-
-        // Track total frames read for cursor tracking (used by main loop)
-        ctx->totalFramesRead.fetch_add(framesToRead);
-
-        // Silent mode: zero output after processing so no sound reaches speakers
-        if (ctx->silent) {
-            std::memset(data, 0, framesToWrite * 2 * sizeof(float));
-        }
-    }
+    // strategy pattern - initialize() throws if null
+    ctx->audioRenderer->render(ctx, ioData, numberFrames);
 
     return noErr;
 }
