@@ -52,7 +52,7 @@ if(APPLE)
 endif()
 
 # CLI executable - refactored into separate source files for SOLID compliance
-# NEW: Includes CircularBuffer, SyncPullAudio, SineGenerator, and AudioPlayerFactory for proper separation
+# NEW: Includes audio/modes and audio/renderers for one-class-per-file structure
 add_executable(engine-sim-cli
     src/AudioConfig.cpp
     src/AudioPlayer.cpp
@@ -60,7 +60,12 @@ add_executable(engine-sim-cli
     src/KeyboardInput.cpp
     src/RPMController.cpp
     src/AudioSource.cpp
-    src/AudioMode.cpp
+    src/audio/modes/ThreadedAudioMode.cpp
+    src/audio/modes/SyncPullAudioMode.cpp
+    src/audio/modes/AudioModeFactory.cpp
+    src/audio/renderers/SyncPullRenderer.cpp      # NEW: Extracted SyncPullRenderer
+    src/audio/renderers/CircularBufferRenderer.cpp # NEW: Extracted CircularBufferRenderer
+    src/audio/renderers/SilentRenderer.cpp        # NEW: Extracted SilentRenderer
     src/SimulationLoop.cpp
     src/CLIMain.cpp
     src/CircularBuffer.cpp      # NEW: Pure ring buffer handling

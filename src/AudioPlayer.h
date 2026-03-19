@@ -18,80 +18,13 @@
 
 #include "CircularBuffer.h"
 #include "SyncPullAudio.h"
+#include "audio/renderers/IAudioRenderer.h"
+#include "audio/renderers/SyncPullRenderer.h"
+#include "audio/renderers/CircularBufferRenderer.h"
+#include "audio/renderers/SilentRenderer.h"
 
 // Forward declarations
 class IAudioMode;
-
-// ============================================================================
-// Strategy Pattern: IAudioRenderer Interface
-// Abstracts the rendering strategy (sync-pull vs cursor-chasing)
-// OCP: New modes can be added without modifying existing code
-// SRP: Each renderer encapsulates its own rendering logic
-// DI: Renderer is injected via constructor - AudioPlayer doesn't create it
-// ============================================================================
-
-class IAudioRenderer {
-public:
-    virtual ~IAudioRenderer() = default;
-    
-    // Render audio to the buffer list - returns true if rendering succeeded
-    virtual bool render(
-        void* context,
-        AudioBufferList* ioData,
-        UInt32 numberFrames
-    ) = 0;
-    
-    // Check if this renderer is active/enabled
-    virtual bool isEnabled() const = 0;
-    
-    // Get the name of this renderer for diagnostics
-    virtual const char* getName() const = 0;
-    
-    // Add frames to the renderer's buffer (for playBuffer compatibility)
-    // Returns true if frames were added successfully
-    virtual bool AddFrames(void* context, float* buffer, int frameCount) = 0;
-};
-
-// ============================================================================
-// Concrete Renderer: SyncPullRenderer
-// Renders audio on-demand synchronously from the engine simulator
-// Used when the caller controls timing and requests frames as needed
-// ============================================================================
-
-class SyncPullRenderer : public IAudioRenderer {
-public:
-    bool render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) override;
-    bool isEnabled() const override;
-    const char* getName() const override { return "SyncPullRenderer"; }
-    bool AddFrames(void* ctx, float* buffer, int frameCount) override;
-};
-
-// ============================================================================
-// Concrete Renderer: CircularBufferRenderer  
-// Renders audio from a cursor-chasing circular buffer
-// Uses hardware feedback to maintain 100ms lead, preventing underruns
-// ============================================================================
-
-class CircularBufferRenderer : public IAudioRenderer {
-public:
-    bool render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) override;
-    bool isEnabled() const override;
-    const char* getName() const override { return "CircularBufferRenderer"; }
-    bool AddFrames(void* ctx, float* buffer, int frameCount) override;
-};
-
-// ============================================================================
-// Null Renderer: Renders silence
-// Used when no valid mode is configured
-// ============================================================================
-
-class SilentRenderer : public IAudioRenderer {
-public:
-    bool render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) override;
-    bool isEnabled() const override;
-    const char* getName() const override { return "SilentRenderer"; }
-    bool AddFrames(void* ctx, float* buffer, int frameCount) override;
-};
 
 // ============================================================================
 // AudioUnit Context - stores engine simulator handle for rendering
@@ -104,7 +37,7 @@ struct AudioUnitContext {
 
     // Strategy pattern: injected rendering mode
     // OCP: New renderers added without changing this struct
-    IAudioRenderer* audioRenderer;                
+    IAudioRenderer* audioRenderer;
     
     // Cursor-chasing buffer (now uses CircularBuffer class)
     // Uses hardware feedback to maintain 100ms lead, preventing underruns

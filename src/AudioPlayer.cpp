@@ -3,9 +3,13 @@
 // OCP: Uses renderer strategy, no boolean flags
 
 #include "AudioPlayer.h"
-#include "AudioMode.h"
+#include "audio/modes/IAudioMode.h"
 #include "CircularBuffer.h"
 #include "SyncPullAudio.h"
+
+#include "audio/renderers/SyncPullRenderer.h"
+#include "audio/renderers/CircularBufferRenderer.h"
+#include "audio/renderers/SilentRenderer.h"
 
 #include <iostream>
 #include <cstring>
@@ -14,184 +18,6 @@
 #include <algorithm>
 #include <iomanip>
 #include <stdexcept>
-
-// ============================================================================
-// Strategy Pattern: IAudioRenderer Implementations
-// ============================================================================
-
-// ----------------------------------------------------------------------------
-// SyncPullRenderer Implementation
-// Renders audio synchronously on-demand from the engine simulator
-// ----------------------------------------------------------------------------
-bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
-    AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
-    
-    if (!context || !context->syncPullAudio) {
-        return false;
-    }
-    
-    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-        AudioBuffer& buffer = ioData->mBuffers[i];
-        float* data = static_cast<float*>(buffer.mData);
-
-        // Clamp frames to buffer capacity
-        UInt32 framesToRender = numberFrames;
-        if (framesToRender * 2 * sizeof(float) > buffer.mDataByteSize) {
-            framesToRender = buffer.mDataByteSize / (2 * sizeof(float));
-        }
-
-        // Request frames from the engine simulator synchronously
-        int framesRead = context->syncPullAudio->renderOnDemand(data, static_cast<int>(framesToRender));
-
-        // Update buffer size if partial read (end of audio)
-        if (framesRead < static_cast<int>(framesToRender)) {
-            for (UInt32 j = 0; j < ioData->mNumberBuffers; j++) {
-                ioData->mBuffers[j].mDataByteSize = framesRead * 2 * sizeof(float);
-            }
-        }
-    }
-    
-    return true;
-}
-
-bool SyncPullRenderer::isEnabled() const {
-    // Will be checked via context in actual use
-    return true;
-}
-
-bool SyncPullRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
-    // Sync-pull renders on-demand in the callback, not via AddFrames
-    // This method is a no-op - return true to indicate success
-    (void)ctx;
-    (void)buffer;
-    (void)frameCount;
-    return true;
-}
-
-// ----------------------------------------------------------------------------
-// CircularBufferRenderer Implementation  
-// Renders audio from cursor-chasing circular buffer using hardware feedback
-// ----------------------------------------------------------------------------
-bool CircularBufferRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
-    AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
-    
-    if (!context->circularBuffer || !context->circularBuffer->isInitialized()) {
-        return false;
-    }
-
-    const int bufferSize = static_cast<int>(context->circularBuffer->capacity());
-
-    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-        AudioBuffer& buffer = ioData->mBuffers[i];
-        float* data = static_cast<float*>(buffer.mData);
-
-        // Clamp frames to buffer capacity
-        UInt32 framesToWrite = numberFrames;
-        if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
-            framesToWrite = buffer.mDataByteSize / (2 * sizeof(float));
-        }
-
-        // Calculate available frames using cursor-chasing logic
-        int readPtr = context->readPointer.load();
-        int writePtr = context->writePointer.load();
-
-        int available;
-        if (writePtr >= readPtr) {
-            available = writePtr - readPtr;
-        } else {
-            available = (bufferSize - readPtr) + writePtr;
-        }
-
-        // Determine how many frames we can actually read
-        int framesToRead = std::min(static_cast<int>(framesToWrite), available);
-
-        // Track underruns for diagnostics
-        if (framesToRead < static_cast<int>(framesToWrite)) {
-            context->underrunCount.fetch_add(1);
-            if (context->underrunCount.load() % 10 == 0) {
-                std::cout << "[Audio Diagnostics] Buffer underrun #" << context->underrunCount.load()
-                          << " - requested: " << framesToWrite << ", available: " << available << "\n";
-            }
-        }
-
-        // Read from circular buffer
-        size_t framesRead = context->circularBuffer->read(data, framesToRead);
-        (void)framesRead;
-
-        // Handle underrun: fill remaining with silence
-        if (framesToRead < static_cast<int>(framesToWrite)) {
-            int silenceFrames = framesToWrite - framesToRead;
-            std::memset(data + framesToRead * 2, 0, silenceFrames * 2 * sizeof(float));
-            context->bufferStatus = (available < bufferSize / 8) ? 2 : 1;
-        } else {
-            context->bufferStatus = 0;
-        }
-
-        // Update read cursor (hardware position)
-        int newReadPtr = (readPtr + framesToRead) % bufferSize;
-        context->readPointer.store(newReadPtr);
-        context->totalFramesRead.fetch_add(framesToRead);
-
-        // Apply silent mode if requested
-        if (context->silent) {
-            std::memset(data, 0, framesToWrite * 2 * sizeof(float));
-        }
-    }
-    
-    return true;
-}
-
-bool CircularBufferRenderer::isEnabled() const {
-    // Will be checked via context in actual use
-    return true;
-}
-
-bool CircularBufferRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
-    AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
-    
-    if (!context || !context->circularBuffer || !context->circularBuffer->isInitialized()) {
-        return false;
-    }
-    
-    // Write frames to circular buffer
-    size_t framesWritten = context->circularBuffer->write(buffer, frameCount);
-    
-    // Update write pointer
-    int writePtr = context->writePointer.load();
-    int bufferSize = static_cast<int>(context->circularBuffer->capacity());
-    int newWritePtr = (writePtr + static_cast<int>(framesWritten)) % bufferSize;
-    context->writePointer.store(newWritePtr);
-    
-    return framesWritten > 0;
-}
-
-// ----------------------------------------------------------------------------
-// SilentRenderer Implementation
-// Renders silence - used as fallback when no valid mode is configured
-// ----------------------------------------------------------------------------
-bool SilentRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
-    (void)ctx;
-    (void)numberFrames;
-    
-    for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-        AudioBuffer& buffer = ioData->mBuffers[i];
-        float* data = static_cast<float*>(buffer.mData);
-        std::memset(data, 0, buffer.mDataByteSize);
-    }
-    return true;
-}
-
-bool SilentRenderer::isEnabled() const {
-    return true;
-}
-
-bool SilentRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
-    // SilentRenderer discards all frames - return true to indicate success
-    (void)ctx;
-    (void)buffer;
-    (void)frameCount;
-    return true;
-}
 
 // ============================================================================
 // AudioPlayer Class Implementation - Uses injected IAudioRenderer (DI)

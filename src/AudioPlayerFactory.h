@@ -7,7 +7,7 @@
 #include <memory>
 
 #include "engine_sim_bridge.h"
-#include "AudioMode.h"
+#include "audio/modes/IAudioMode.h"
 
 // Forward declarations
 class AudioPlayer;

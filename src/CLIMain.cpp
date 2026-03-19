@@ -6,7 +6,7 @@
 #include "AudioConfig.h"
 #include "AudioPlayer.h"
 #include "AudioPlayerFactory.h"
-#include "AudioMode.h"
+#include "audio/modes/IAudioMode.h"
 #include "SimulationLoop.h"
 #include "KeyboardInput.h"
 #include "engine_sim_loader.h"
@@ -29,11 +29,6 @@ void signalHandler(int signal) {
 // ============================================================================
 
 namespace {
-
-IAudioMode* createAudioModeStrategy(const EngineSimAPI* engineAPI) {
-    // Factory decides internally and returns IAudioMode directly
-    return createAudioModeFactory(engineAPI).release();
-}
 
 KeyboardInput* createKeyboardInput(bool interactive) {
     if (!interactive) {
@@ -114,7 +109,7 @@ int main(int argc, char* argv[]) {
     AudioPlayer* audioPlayer = nullptr;
     
     // Inject audioMode - factory decides internally based on API capabilities
-    IAudioMode* audioMode = createAudioModeStrategy(&engineAPI);
+    IAudioMode* audioMode = createAudioModeFactory(&engineAPI).release();
     
     // Inject keyboardInput - constructed before call (Feedback #4)
     KeyboardInput* keyboardInput = createKeyboardInput(args.interactive);

@@ -9,7 +9,7 @@
 #include "AudioPlayerFactory.h"
 #include "KeyboardInput.h"
 #include "AudioSource.h"
-#include "AudioMode.h"
+#include "audio/modes/IAudioMode.h"
 
 #include <iostream>
 #include <fstream>
@@ -225,8 +225,6 @@ EngineSimConfig createDefaultConfig(int sampleRate) {
     config.volume = 1.0f;
     config.convolutionLevel = 0.5f;
     config.airNoise = 1.0f;
-    config.starterVolume = 1.0f;       // Default no boost
-    config.starterRPMThreshold = 600.0f; // RPM below which starter volume applies
     return config;
 }
 
@@ -479,8 +477,6 @@ int runSimulation(
     // Create simulator - single simulator for both audio and main simulation
     EngineSimConfig simConfig = createDefaultConfig(sampleRate);
 
-    // Apply cranking volume from command line
-    simConfig.starterVolume = args.crankingVolume;
     EngineSimHandle handle = createSimulator(simConfig, engineAPI);
     if (!handle) {
         return 1;
