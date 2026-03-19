@@ -6,10 +6,11 @@
 
 #include "AudioConfig.h"
 #include "AudioPlayer.h"
-#include "AudioPlayerFactory.h"
-#include "KeyboardInput.h"
 #include "AudioSource.h"
 #include "audio/modes/IAudioMode.h"
+#include "interfaces/IInputProvider.h"
+#include "interfaces/IPresentation.h"
+#include "EngineConfig.h"
 
 #include <iostream>
 #include <fstream>
@@ -35,15 +36,6 @@ namespace {
 // runUnifiedAudioLoop helpers - ONE thing each
 // ----------------------------------------------------------------------------
 
-KeyboardInput* initializeKeyboardInput(bool interactive) {
-    if (!interactive) {
-        return nullptr;
-    }
-    auto* keyboardInput = new KeyboardInput();
-    std::cout << "\nInteractive mode enabled. Press Q to quit.\n";
-    return keyboardInput;
-}
-
 void enableStarterMotor(EngineSimHandle handle, const EngineSimAPI& api) {
     api.SetStarterMotor(handle, 1);
 }
@@ -56,89 +48,6 @@ bool checkStarterMotorRPM(EngineSimHandle handle, const EngineSimAPI& api, doubl
         return true;
     }
     return false;
-}
-
-void processKeyPress(EngineSimHandle handle, const EngineSimAPI& api, 
-                     int key, int& lastKey, 
-                     double& interactiveLoad, double& baselineLoad,
-                     bool& wKeyPressed) {
-    if (key < 0) {
-        lastKey = -1;
-        wKeyPressed = false;
-        return;
-    }
-    
-    if (key == lastKey) {
-        return;
-    }
-    
-    switch (key) {
-        case 27: case 'q': case 'Q':
-            g_running.store(false);
-            break;
-        case 'w': case 'W':
-            wKeyPressed = true;
-            interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-            baselineLoad = interactiveLoad;
-            break;
-        case ' ':
-            interactiveLoad = 0.0;
-            baselineLoad = 0.0;
-            break;
-        case 'r': case 'R':
-            interactiveLoad = 0.2;
-            baselineLoad = interactiveLoad;
-            break;
-        case 'a': {
-            static bool ignitionState = true;
-            ignitionState = !ignitionState;
-            api.SetIgnition(handle, ignitionState ? 1 : 0);
-            std::cout << "Ignition " << (ignitionState ? "enabled" : "disabled") << "\n";
-            break;
-        }
-        case 's': {
-            static bool starterState = false;
-            starterState = !starterState;
-            api.SetStarterMotor(handle, starterState ? 1 : 0);
-            std::cout << "Starter motor " << (starterState ? "enabled" : "disabled") << "\n";
-            break;
-        }
-        case 65:  // UP arrow (macOS)
-            interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-            baselineLoad = interactiveLoad;
-            break;
-        case 66:  // DOWN arrow (macOS)
-            interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
-            baselineLoad = interactiveLoad;
-            break;
-        case 'k': case 'K':  // Alternative UP key
-            interactiveLoad = std::min(1.0, interactiveLoad + 0.05);
-            baselineLoad = interactiveLoad;
-            break;
-        case 'j': case 'J':  // Alternative DOWN key
-            interactiveLoad = std::max(0.0, interactiveLoad - 0.05);
-            baselineLoad = interactiveLoad;
-            break;
-    }
-    lastKey = key;
-}
-
-void handleKeyboardInput(EngineSimHandle handle, const EngineSimAPI& api,
-                         KeyboardInput* keyboardInput,
-                         double& interactiveLoad, double& baselineLoad,
-                         bool& wKeyPressed) {
-    if (!keyboardInput) {
-        return;
-    }
-    
-    static int lastKey = -1;
-    int key = keyboardInput->getKey();
-    
-    processKeyPress(handle, api, key, lastKey, interactiveLoad, baselineLoad, wKeyPressed);
-    
-    if (!wKeyPressed && interactiveLoad > baselineLoad) {
-        interactiveLoad = std::max(baselineLoad, interactiveLoad * 0.5);
-    }
 }
 
 double calculateThrottle(bool interactive, double currentTime, double interactiveLoad) {
@@ -157,43 +66,66 @@ int getUnderrunCount(AudioPlayer* audioPlayer) {
     return context ? context->underrunCount.load() : 0;
 }
 
-bool shouldDisplayDiagnostics(std::chrono::steady_clock::time_point& lastDiagTime) {
-    auto diagNow = std::chrono::steady_clock::now();
-    if (std::chrono::duration<double>(diagNow - lastDiagTime).count() > 1.0) {
-        lastDiagTime = diagNow;
-        return true;
-    }
-    return false;
-}
-
-// Strategy pattern: Display diagnostics with mode from strategy
-void displayDiagnostics(const EngineSimStats& stats, int underrunCount, 
-                        AudioPlayer* audioPlayer, IAudioMode& audioMode) {
-    std::cout << "\n[Diag] RPM=" << static_cast<int>(stats.currentRPM)
-              << " underruns=" << underrunCount
-              << " mode=" << audioMode.getModeString()
-              << "\n";
-}
-
 void performTimingControl(TimingOps::LoopTimer& timer) {
     timer.sleepToMaintain60Hz();
 }
 
-bool shouldContinueLoop(bool interactive, double currentTime, double duration) {
-    if (interactive) {
-        return g_running.load();
+bool shouldContinueLoop(double currentTime, double duration, input::IInputProvider* inputProvider) {
+    // Check input provider first (knows about keyboard quit, upstream disconnect)
+    if (inputProvider) {
+        return inputProvider->ShouldContinue();
     }
-    return currentTime < duration;
+    // For non-interactive, check duration
+    if (inputProvider != nullptr) {
+        return currentTime < duration;
+    }
+    return g_running.load();
 }
 
-// Update sine frequency in writer thread (SRP - moved from audio source)
-// This ensures thread safety - frequency is updated in main loop, not audio thread
+double getThrottle(input::IInputProvider* inputProvider) {
+    if (inputProvider) {
+        inputProvider->Update(AudioLoopConfig::UPDATE_INTERVAL);
+        return inputProvider->GetThrottle();
+    }
+    return 0.1;
+}
+
+double updateInputAndGetThrottle(input::IInputProvider* inputProvider, double currentTime) {
+    if (inputProvider) {
+        return getThrottle(inputProvider);
+    }
+    return currentTime < 0.5 ? currentTime / 0.5 : 1.0;
+}
+
+
+
+void updatePresentation(presentation::IPresentation* presentation, double currentTime,
+                        const EngineSimStats& stats, double throttle, 
+                        int underrunCount, IAudioMode& audioMode,
+                        input::IInputProvider* inputProvider) {
+    if (presentation) {
+        presentation::EngineState state;
+        state.timestamp = currentTime;
+        state.rpm = stats.currentRPM;
+        state.throttle = throttle;
+        state.load = stats.currentLoad;
+        state.speed = 0;
+        state.underrunCount = underrunCount;
+        state.audioMode = audioMode.getModeString();
+        state.ignition = inputProvider ? inputProvider->GetIgnition() : true;
+        state.starterMotor = false;
+        state.exhaustFlow = stats.exhaustFlow;
+        
+        presentation->ShowEngineState(state);
+    }
+}
+
+// Update sine frequency in writer thread
 void updateSineFrequency(EngineSimHandle handle, const EngineSimAPI& api,
                           const EngineSimStats& stats, bool sineMode) {
     if (!sineMode) {
         return;
     }
-    // Calculate frequency from RPM: (RPM / 600.0) * 100.0
     double frequency = (stats.currentRPM / 600.0) * 100.0;
     if (api.SetSineFrequency) {
         api.SetSineFrequency(handle, frequency);
@@ -208,8 +140,7 @@ EngineSimHandle createSimulator(const EngineSimConfig& config, EngineSimAPI& eng
     EngineSimHandle handle = nullptr;
     EngineSimResult result = engineAPI.Create(&config, &handle);
     if (result != ESIM_SUCCESS || !handle) {
-        std::cerr << "ERROR: Failed to create simulator\n";
-        return nullptr;
+        throw std::runtime_error("ERROR: Failed to create simulator\n");
     }
     return handle;
 }
@@ -228,17 +159,11 @@ EngineSimConfig createDefaultConfig(int sampleRate) {
     return config;
 }
 
-std::string determineConfigPath(const CommandLineArgs& args) {
-    if (args.sineMode) {
+std::string determineConfigPath(const SimulationConfig& config) {
+    if (config.sineMode || config.useDefaultEngine) {
         return "engine-sim-bridge/engine-sim/assets/main.mr";
     }
-    if (args.useDefaultEngine) {
-        return "engine-sim-bridge/engine-sim/assets/main.mr";
-    }
-    if (args.engineConfig) {
-        return args.engineConfig;
-    }
-    return "";
+    return config.configPath;
 }
 
 bool validateConfigPath(const std::string& configPath, EngineSimHandle handle, 
@@ -308,7 +233,7 @@ void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
 
 std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle, 
                                                 EngineSimAPI& engineAPI, 
-                                                bool sineMode, bool syncPull) {
+                                                bool sineMode) {
     if (sineMode) {
         std::cout << "Mode: SINE TEST\n";
         return std::make_unique<SineAudioSource>(handle, engineAPI);
@@ -337,13 +262,12 @@ void warnWavExportNotSupported(bool outputWavRequested) {
 
 // Initialize AudioPlayer with the simulator handle using Factory + DI pattern
 // This is done in runSimulation to ensure the simulator is properly set up first
-AudioPlayer* createAndInitializeAudioPlayer(int sampleRate, bool silent,
-                                            EngineSimHandle handle, const EngineSimAPI* engineAPI) {
+AudioPlayer* createAndInitializeAudioPlayer(int sampleRate, EngineSimHandle handle, const EngineSimAPI* engineAPI, bool syncPull) {
     auto* audioPlayer = new AudioPlayer(nullptr);
     
     // Use factory to create the appropriate audio mode (DI pattern)
-    auto factory = createAudioModeFactory(engineAPI);
-    bool initSuccess = audioPlayer->initialize(*factory, sampleRate, handle, engineAPI, silent);
+    auto factory = createAudioModeFactory(engineAPI, syncPull);
+    bool initSuccess = audioPlayer->initialize(*factory, sampleRate, handle, engineAPI);
     factory.release();  // AudioPlayer doesn't own the factory, but we created it here
     
     if (!initSuccess) {
@@ -360,10 +284,10 @@ AudioPlayer* createAndInitializeAudioPlayer(int sampleRate, bool silent,
 // Config Path Loading - Single function (Feedback #3)
 // ============================================================================
 
-EngineLoaderResult loadEngineScript(const CommandLineArgs& args) {
+EngineLoaderResult loadEngineScript(const SimulationConfig& config) {
     EngineLoaderResult result;
     
-    result.configPath = determineConfigPath(args);
+    result.configPath = determineConfigPath(config);
     
     if (result.configPath.empty()) {
         std::cerr << "ERROR: No engine configuration specified\n";
@@ -382,6 +306,7 @@ EngineLoaderResult loadEngineScript(const CommandLineArgs& args) {
 
 // ============================================================================
 // Unified Main Loop Implementation
+// Now uses IInputProvider and IPresentation for SRP compliance
 // ============================================================================
 
 int runUnifiedAudioLoop(
@@ -391,7 +316,8 @@ int runUnifiedAudioLoop(
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
     IAudioMode& audioMode,
-    KeyboardInput* keyboardInput)
+    input::IInputProvider* inputProvider,
+    presentation::IPresentation* presentation)
 {
     double currentTime = 0.0;
     TimingOps::LoopTimer timer;
@@ -401,169 +327,121 @@ int runUnifiedAudioLoop(
     double baselineLoad = interactiveLoad;
     bool wKeyPressed = false;
     
-    // keyboardInput is injected (Feedback #4)
-    
-    // ONE thing: Enable starter motor
+    // Initialize - enable starter motor (simulator logic)
     enableStarterMotor(handle, api);
+    double throttle = getThrottle(inputProvider);
     
     std::cout << "\nStarting main loop...\n";
     
-    auto lastDiagTime = std::chrono::steady_clock::now();
-    
     // Main loop
-    while (shouldContinueLoop(config.interactive, currentTime, config.duration)) {
-        // ONE thing: Check starter motor RPM and disable when running
+    while (shouldContinueLoop(currentTime, config.duration, inputProvider)) {
         checkStarterMotorRPM(handle, api, minSustainedRPM);
         
-        // ONE thing: Handle keyboard input
-        handleKeyboardInput(handle, api, keyboardInput, interactiveLoad, baselineLoad, wKeyPressed);
-        
-        // ONE thing: Calculate throttle
-        double throttle = calculateThrottle(config.interactive, currentTime, interactiveLoad);
+        throttle = updateInputAndGetThrottle(inputProvider, currentTime);
         api.SetThrottle(handle, throttle);
+
+        bool ignition = inputProvider ? inputProvider->GetIgnition() : true;
+        api.SetIgnition(handle, ignition ? 1 : 0);
         
-        // Strategy pattern: Update simulation based on audio mode
         audioMode.updateSimulation(handle, api, audioPlayer);
         
-        // ONE thing: Get current stats
+
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
-        
-        // ONE thing: Update sine frequency (SRP - moved from audio source)
         updateSineFrequency(handle, api, stats, config.sineMode);
         
-        // Strategy pattern: Generate audio based on audio mode
+        // Update audio source with latest stats (needed for threaded sine mode)
+        audioSource.updateStats(stats);
         audioMode.generateAudio(audioSource, audioPlayer);
         
-        // ONE thing: Get underrun count
         int underrunCount = getUnderrunCount(audioPlayer);
         
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
         
-        // ONE thing: Display diagnostics if needed
-        if (shouldDisplayDiagnostics(lastDiagTime)) {
-            displayDiagnostics(stats, underrunCount, audioPlayer, audioMode);
-        }
-        
-        // ONE thing: Display progress
+        // Show audio source specific output (Frequency for sine, Flow for engine)
         audioSource.displayProgress(currentTime, config.duration, config.interactive, stats, throttle, underrunCount);
         
-        // ONE thing: Maintain 60Hz timing
+        // Maintain 60hz timing with sleeps :(
         performTimingControl(timer);
-    }
-    
-    // ONE thing: Cleanup keyboard input
-    if (keyboardInput) {
-        delete keyboardInput;
     }
     
     return 0;
 }
 
-// ============================================================================
-// Main Simulation Entry Point - UNIFIED for both modes
-// ============================================================================
-
-int runSimulation(
-    const CommandLineArgs& args,
-    EngineSimAPI& engineAPI,
-    AudioPlayer* audioPlayer,
-    IAudioMode* audioMode,
-    KeyboardInput* keyboardInput) {
-    const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
-    
-    // audioMode is injected (Feedback #2)
-    
-    // Create simulator - single simulator for both audio and main simulation
-    EngineSimConfig simConfig = createDefaultConfig(sampleRate);
-
-    EngineSimHandle handle = createSimulator(simConfig, engineAPI);
-    if (!handle) {
-        return 1;
-    }
-    
-    // Load engine script - single function (Feedback #3)
-    EngineLoaderResult loaderResult = loadEngineScript(args);
-    if (!loaderResult.success) {
-        engineAPI.Destroy(handle);
-        return 1;
-    }
-    
-    // Load the engine script
-    if (!loadEngineScriptInternal(handle, engineAPI, loaderResult.configPath, loaderResult.assetBasePath)) {
-        return 1;
-    }
-    
-    // Initialize AudioPlayer if audio playback is requested
+AudioPlayer *InitAudioPlayback(int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, bool syncPull) {
     // This must happen AFTER the simulator is created and configured
-    if (args.playAudio && !audioPlayer) {
-        audioPlayer = createAndInitializeAudioPlayer(sampleRate, args.silent, handle, &engineAPI);
-        if (!audioPlayer) {
-            engineAPI.Destroy(handle);
-            return 1;
-        }
+    AudioPlayer *audioPlayer = createAndInitializeAudioPlayer(sampleRate, handle, &engineAPI, syncPull);
+    if (!audioPlayer) {
+        throw std::runtime_error("Failed to initialize audio player");
     }
-    
-    // ONE thing: Enable ignition
-    engineAPI.SetIgnition(handle, 1);
-    std::cout << "[Ignition enabled]\n";
-    
-    // audioMode is injected (Feedback #2)
+    return audioPlayer;
+}
+
+void StartAudioMode(IAudioMode* audioMode, EngineSimHandle handle, EngineSimAPI& engineAPI, AudioPlayer* audioPlayer) {
     if (!audioMode) {
-        std::cerr << "ERROR: audioMode must be injected\n";
         if (audioPlayer) {
             delete audioPlayer;
         }
         engineAPI.Destroy(handle);
-        return 1;
+        throw std::runtime_error("ERROR: audioMode must be injected\n");
     }
-    
+
     // Strategy pattern: Start audio thread based on audio mode
     if (!audioMode->startAudioThread(handle, engineAPI, audioPlayer)) {
         if (audioPlayer) {
             delete audioPlayer;
         }
         engineAPI.Destroy(handle);
+        throw std::runtime_error("ERROR: Failed to start audio thread\n");
+    }
+}
+
+// ============================================================================
+// Main Simulation Entry Point - UNIFIED for both modes
+// Now uses injectable IInputProvider and IPresentation
+// ============================================================================
+
+int runSimulation(
+    const SimulationConfig& config,
+    EngineSimAPI& engineAPI,
+    IAudioMode* audioMode,
+    input::IInputProvider* inputProvider,
+    presentation::IPresentation* presentation) {
+    const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
+    
+    // Create simulator - single simulator for both audio and main simulation
+    EngineSimConfig engineConfig = createDefaultConfig(sampleRate);
+    EngineSimHandle handle = createSimulator(engineConfig, engineAPI);
+    if (!loadEngineScriptInternal(handle, engineAPI, config.configPath, config.assetBasePath)) {
         return 1;
     }
     
-    // Strategy pattern: Prepare audio buffer based on audio mode
+    // Initialize Audio framework and playback if requested
+    AudioPlayer* audioPlayer = InitAudioPlayback(sampleRate, handle, engineAPI, config.syncPull);
+    audioPlayer->setVolume(config.volume);
+    StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
     audioMode->prepareBuffer(audioPlayer);
     
-    // Strategy pattern: Check if drain is needed during warmup
-    bool drainDuringWarmup = args.playAudio && audioPlayer && audioMode->shouldDrainDuringWarmup();
+    // Check if drain is needed during warmup
+    bool drainDuringWarmup = config.playAudio && audioPlayer && audioMode->shouldDrainDuringWarmup();
     runWarmupPhase(handle, engineAPI, audioPlayer, drainDuringWarmup);
     
-    // Strategy pattern: Reset buffer after warmup based on audio mode
+    // Reset buffer after warmup based on audio mode
     audioMode->resetBufferAfterWarmup(audioPlayer);
     
-    // Strategy pattern: Start playback based on audio mode
+    // Start playback based on audio mode
     audioMode->startPlayback(audioPlayer);
+    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, config.sineMode);
     
-    // Enable sine mode in mock synth if in sine mode
-    if (args.sineMode && engineAPI.SetSineMode) {
-        engineAPI.SetSineMode(handle, 1);
-    }
+    // Run MAIN loop - now uses injectable input provider and presentation
+    // Some input providers enable ignition by default which will allow the engine to fire during the cranking phase otherwise it will crank endlessly huffing and puffing
+    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, config, audioPlayer, *audioMode, inputProvider, presentation);
     
-    // ONE thing: Create audio source
-    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, args.sineMode, args.syncPull);
-    
-    // Create SimulationConfig from args
-    SimulationConfig simRunConfig;
-    simRunConfig.duration = args.duration;
-    simRunConfig.interactive = args.interactive;
-    simRunConfig.playAudio = args.playAudio;
-    simRunConfig.silent = args.silent;
-    simRunConfig.sineMode = args.sineMode;
-    
-    // Run unified loop - SAME CODE FOR BOTH MODES (uses strategy internally)
-    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, simRunConfig, audioPlayer, *audioMode, keyboardInput);
-    
-    // ONE thing: Cleanup simulation resources
+    // EXIT
     cleanupSimulation(audioPlayer, handle, engineAPI, exitCode);
     
-    // ONE thing: Warn about WAV export
-    warnWavExportNotSupported(args.outputWav);
+    // If WAV export was requested, warn that it's not supported in unified mode (since it requires a different audio thread setup)
+    warnWavExportNotSupported(config.outputWav);
     
     return exitCode;
 }

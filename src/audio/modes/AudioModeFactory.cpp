@@ -8,15 +8,12 @@
 
 #include <iostream>
 
-std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI) {
-    // Factory decides internally: check if StartAudioThread is available
-    // If the API supports threading, use threaded mode for better performance
-    // Otherwise, fall back to sync-pull mode
-    if (engineAPI && engineAPI->StartAudioThread) {
+std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI, bool preferSyncPull) {
+    if (!preferSyncPull) {
         std::cout << "[Audio] Factory selected Threaded mode (StartAudioThread available)\n";
         return std::make_unique<ThreadedAudioMode>();
     }
     
-    std::cout << "[Audio] Factory selected SyncPull mode (StartAudioThread not available)\n";
+    std::cout << "[Audio] Factory selected SyncPull mode (default)\n";
     return std::make_unique<SyncPullAudioMode>();
 }

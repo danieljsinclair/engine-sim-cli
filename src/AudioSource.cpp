@@ -39,6 +39,11 @@ bool BaseAudioSource::generateAudio(std::vector<float>& buffer, int frames) {
     return totalRead > 0;
 }
 
+void BaseAudioSource::updateStats(const EngineSimStats& stats) {
+    // Update RPM for sine generation - needed for threaded mode
+    currentRPM_ = stats.currentRPM;
+}
+
 // ============================================================================
 // SineAudioSource Implementation
 // ============================================================================

@@ -1,15 +1,18 @@
 // CLIMain.cpp - Main entry point implementation
-// Refactored with dependency injection (Feedback #2, #4)
+// Refactored with dependency injection
 
 #include "CLIMain.h"
 
 #include "AudioConfig.h"
 #include "AudioPlayer.h"
-#include "AudioPlayerFactory.h"
 #include "audio/modes/IAudioMode.h"
 #include "SimulationLoop.h"
-#include "KeyboardInput.h"
+#include "interfaces/IInputProvider.h"
+#include "interfaces/KeyboardInputProvider.h"
+#include "interfaces/IPresentation.h"
+#include "interfaces/ConsolePresentation.h"
 #include "engine_sim_loader.h"
+#include "EngineConfig.h"
 
 #include <iostream>
 #include <csignal>
@@ -25,19 +28,56 @@ void signalHandler(int signal) {
 }
 
 // ============================================================================
-// Dependency Constructors (Feedback #4 - Helper functions to construct before call)
+// Dependency Constructors - Create injectable providers
 // ============================================================================
 
 namespace {
 
-KeyboardInput* createKeyboardInput(bool interactive) {
-    if (!interactive) {
-        return nullptr;
+input::IInputProvider* createInputProvider(bool interactive) {
+    if (interactive) {
+        auto provider = std::make_unique<input::KeyboardInputProvider>();
+        if (provider->Initialize()) {
+            return provider.release();
+        }
     }
-    return new KeyboardInput();
+    return nullptr;
+}
+
+presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
+    presentation::PresentationConfig config;
+    config.interactive = args.interactive;
+    config.duration = args.duration;
+    config.showDiagnostics = true;
+    
+    auto pres = std::make_unique<presentation::ConsolePresentation>();
+    if (pres->Initialize(config)) {
+        return pres.release();
+    }
+    return nullptr;
 }
 
 } // anonymous namespace
+
+SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
+    SimulationConfig config;
+    
+    EngineConfig::ConfigPaths resolved = EngineConfig::resolveConfigPaths(args.engineConfig);
+    config.configPath = resolved.configPath;
+    config.assetBasePath = resolved.assetBasePath;
+    
+    config.duration = args.duration;
+    config.interactive = args.interactive;
+    config.playAudio = args.playAudio;
+    config.volume = args.silent ? 0.0f : 1.0f;
+    config.sineMode = args.sineMode;
+    config.syncPull = args.syncPull;
+    config.targetRPM = args.targetRPM;
+    config.targetLoad = args.targetLoad;
+    config.useDefaultEngine = args.useDefaultEngine;
+    if (args.outputWav) config.outputWav = args.outputWav;
+    
+    return config;
+}
 
 // ============================================================================
 // Main Entry Point
@@ -64,63 +104,22 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Verify build ID
-    if (engineAPI.GetVersion) {
-        std::cout << "[Bridge: " << engineAPI.GetVersion() << "]\n";
-    }
-
-    std::cout << "Configuration:\n";
-    if (args.sineMode) {
-        std::cout << "  Mode: RPM-Linked Sine Wave Test\n";
-        std::cout << "  Mapping: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz\n";
-        std::cout << "  Engine: Default (Subaru EJ25)\n";
-    } else {
-        std::cout << "  Engine: " << args.engineConfig << "\n";
-    }
-    std::cout << "  Output: " << (args.outputWav ? args.outputWav : "(none - audio not saved)") << "\n";
-    if (args.interactive) {
-        std::cout << "  Duration: (interactive - runs until quit)\n";
-    } else {
-        std::cout << "  Duration: " << args.duration << " seconds\n";
-    }
-    if (args.targetRPM > 0) {
-        std::cout << "  Target RPM: " << args.targetRPM << "\n";
-    }
-    if (args.targetLoad >= 0) {
-        std::cout << "  Target Load: " << static_cast<int>(args.targetLoad * 100) << "%\n";
-    }
-    std::cout << "  Interactive: " << (args.interactive ? "Yes" : "No") << "\n";
-    std::cout << "  Audio Playback: " << (args.playAudio ? "Yes" : "No") << "\n";
-    std::cout << "  Audio Mode: " << (args.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)") << "\n";
-    if (args.crankingVolume != 1.0f) {
-        std::cout << "  Cranking Volume: " << args.crankingVolume << "x\n";
-    }
-    if (args.silent) {
-        std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
-    }
-    std::cout << "\n";
-
-    // Create dependencies BEFORE calling runSimulation (Dependency Injection)
-    // Note: We create AudioPlayer but don't create a simulator here anymore.
-    // The simulator is created in SimulationLoop to avoid issues with the real bridge.
+    ShowConfigHeader(args, engineAPI.GetVersion());
+    
+    // SETUP simulator
     const int sampleRate = 44100;
-    
-    // AudioPlayer - will be created in SimulationLoop after simulator is ready
-    AudioPlayer* audioPlayer = nullptr;
-    
-    // Inject audioMode - factory decides internally based on API capabilities
-    IAudioMode* audioMode = createAudioModeFactory(&engineAPI).release();
-    
-    // Inject keyboardInput - constructed before call (Feedback #4)
-    KeyboardInput* keyboardInput = createKeyboardInput(args.interactive);
+    SimulationConfig config = CreateSimulationConfig(args);
+    IAudioMode* audioMode = createAudioModeFactory(&engineAPI, config.syncPull).release();
+    input::IInputProvider* inputProvider = createInputProvider(args.interactive);
+    presentation::IPresentation* presentation = createPresentation(args);
 
-    // Run simulation - simulator is created inside runSimulation
-    int result = runSimulation(args, engineAPI, audioPlayer, audioMode, keyboardInput);
+    // MAIN LOOP - runs the simulation with injected dependencies
+    int result = runSimulation(config, engineAPI, audioMode, inputProvider, presentation);
 
-    // Cleanup injected dependencies
-    delete audioPlayer;
+    // Cleanup dependencies we injected
     delete audioMode;
-    delete keyboardInput;
+    delete inputProvider;
+    delete presentation;
 
     // Cleanup: unload library
     UnloadEngineSimLibrary(engineAPI);

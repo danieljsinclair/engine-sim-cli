@@ -6,6 +6,7 @@
 
 #include "AudioConfig.h"
 #include "engine_sim_bridge.h"
+#include "EngineConfig.h"
 #include "engine_sim_loader.h"
 
 #include <memory>
@@ -13,7 +14,10 @@
 class AudioPlayer;
 class IAudioSource;
 class IAudioMode;
-class KeyboardInput;
+
+// Forward declarations for injectable interfaces
+namespace input { class IInputProvider; }
+namespace presentation { class IPresentation; }
 
 // ============================================================================
 // SimulationConfig - Minimal config for simulation (OCP compliance)
@@ -21,17 +25,27 @@ class KeyboardInput;
 // ============================================================================
 
 struct SimulationConfig {
+    // From CLI args - extracted for DI
+    std::string configPath;           // Engine config path
+    std::string assetBasePath;        // Asset base path
     double duration = 3.0;
     bool interactive = false;
     bool playAudio = false;
-    bool silent = false;
-    bool sineMode = false;  // Added for runUnifiedAudioLoop
+    float volume = 1.0f;
+    bool sineMode = false;             // Generate sine wave test tone
+    bool syncPull = true;              // Use sync pull audio mode
+    double targetRPM = 0.0;
+    double targetLoad = -1.0;
+    bool useDefaultEngine = false;
+    const char* outputWav = nullptr;
+    
     std::unique_ptr<IAudioMode> audioMode;  // Injected - OCP compliance
 };
 
 // ============================================================================
 // Unified Main Loop - Works for BOTH sine and engine modes
 // Uses Strategy pattern for audio mode behavior
+// Injects IInputProvider and IPresentation for SRP compliance
 // ============================================================================
 
 int runUnifiedAudioLoop(
@@ -41,7 +55,8 @@ int runUnifiedAudioLoop(
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
     IAudioMode& audioMode,
-    KeyboardInput* keyboardInput);
+    input::IInputProvider* inputProvider,
+    presentation::IPresentation* presentation);
 
 // ============================================================================
 // Engine Loader Result - Wraps loaded engine for dependency injection
@@ -54,20 +69,18 @@ struct EngineLoaderResult {
     bool success = false;
 };
 
-// Load engine script - single function to resolve config path and load (Feedback #3)
-EngineLoaderResult loadEngineScript(const CommandLineArgs& args);
 
 // ============================================================================
 // Main Simulation Entry Point - UNIFIED for both modes
-// Dependencies injected: audioPlayer, audioMode, keyboardInput (Feedback #2, #4)
+// Dependencies injected: audioPlayer, audioMode, inputProvider, presentation
 // ============================================================================
 
 int runSimulation(
-    const CommandLineArgs& args,
+    const SimulationConfig& config,
     EngineSimAPI& engineAPI,
-    AudioPlayer* audioPlayer,
     IAudioMode* audioMode,
-    KeyboardInput* keyboardInput
+    input::IInputProvider* inputProvider,
+    presentation::IPresentation* presentation
 );
 
 #endif // SIMULATION_LOOP_H

@@ -22,7 +22,7 @@ public:
     ~SyncPullAudio();
 
     // Initialize with engine handle and API
-    bool initialize(EngineSimHandle handle, const EngineSimAPI* api, int sampleRate, bool silent);
+    bool initialize(EngineSimHandle handle, const EngineSimAPI* api, int sampleRate);
 
     // Cleanup resources
     void cleanup();
@@ -40,9 +40,6 @@ public:
     // Get engine API
     const EngineSimAPI* getEngineAPI() const { return engineAPI_; }
 
-    // Check if silent mode
-    bool isSilent() const { return silent_; }
-
     // Get sample rate
     int getSampleRate() const { return sampleRate_; }
 
@@ -50,7 +47,6 @@ private:
     EngineSimHandle engineHandle_;
     const EngineSimAPI* engineAPI_;
     int sampleRate_;
-    bool silent_;
 };
 
 #endif // SYNC_PULL_AUDIO_H

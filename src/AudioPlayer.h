@@ -55,15 +55,15 @@ struct AudioUnitContext {
     // Sync pull model: now uses SyncPullAudio class
     std::unique_ptr<SyncPullAudio> syncPullAudio;  // Managed by SyncPullAudio class
 
-    // Silent mode: zero output after processing (mute at callback level)
-    bool silent;
+    // Master volume
+    float volume;
 
     AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
                         audioRenderer(nullptr),
                         writePointer(0), readPointer(0),
                         underrunCount(0), bufferStatus(0),
                         totalFramesRead(0), sampleRate(44100),
-                        silent(false) {}
+                        volume(1.0f) {}
     
     // Helper to set the rendering mode (Strategy injection point)
     void setRenderer(IAudioRenderer* renderer) { audioRenderer = renderer; }
@@ -86,7 +86,7 @@ public:
     // Initialize using IAudioMode (DI pattern)
     // IAudioMode creates the appropriate AudioUnitContext
     bool initialize(IAudioMode& audioMode, int sr, EngineSimHandle handle, 
-                    const EngineSimAPI* api, bool silent);
+                    const EngineSimAPI* api);
     
     void cleanup();
 
@@ -98,6 +98,9 @@ public:
 
     // Stop playback
     void stop();
+
+    // Set output volume (0.0 to 1.0)
+    void setVolume(float volume);
 
     // Play buffer (for compatibility with streaming mode)
     bool playBuffer(const float* data, int frames, int sampleRate);

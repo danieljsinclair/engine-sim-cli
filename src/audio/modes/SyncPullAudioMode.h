@@ -40,8 +40,7 @@ public:
     std::unique_ptr<AudioUnitContext> createContext(
         int sampleRate,
         EngineSimHandle engineHandle,
-        const EngineSimAPI* engineAPI,
-        bool silent
+        const EngineSimAPI* engineAPI
     ) override;
 };
 

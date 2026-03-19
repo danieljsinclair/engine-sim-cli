@@ -68,11 +68,6 @@ bool CircularBufferRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 n
         int newReadPtr = (readPtr + framesToRead) % bufferSize;
         context->readPointer.store(newReadPtr);
         context->totalFramesRead.fetch_add(framesToRead);
-
-        // Apply silent mode if requested
-        if (context->silent) {
-            std::memset(data, 0, framesToWrite * 2 * sizeof(float));
-        }
     }
     
     return true;

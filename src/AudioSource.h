@@ -21,6 +21,7 @@ class IAudioSource {
 public:
     virtual ~IAudioSource() = default;
     virtual bool generateAudio(std::vector<float>& buffer, int frames) = 0;
+    virtual void updateStats(const EngineSimStats& stats) = 0;
     virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) = 0;
 };
 
@@ -40,6 +41,9 @@ public:
 
     // Common implementation using SineGenerator - DRY between modes
     bool generateAudio(std::vector<float>& buffer, int frames) override;
+
+    // Update stats - needed for threaded mode to get RPM
+    void updateStats(const EngineSimStats& stats) override;
 
     // Allow subclasses to update RPM for sine generation
     void setCurrentRPM(double rpm) { currentRPM_ = rpm; }

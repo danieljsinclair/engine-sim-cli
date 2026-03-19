@@ -59,11 +59,10 @@ public:
     virtual std::unique_ptr<AudioUnitContext> createContext(
         int sampleRate,
         EngineSimHandle engineHandle,
-        const EngineSimAPI* engineAPI,
-        bool silent
+        const EngineSimAPI* engineAPI
     ) = 0;
 };
 
-std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI);
+std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI, bool preferSyncPull = true);
 
 #endif // IAUDIO_MODE_H

@@ -69,17 +69,15 @@ bool SyncPullAudioMode::shouldDrainDuringWarmup() const {
 std::unique_ptr<AudioUnitContext> SyncPullAudioMode::createContext(
     int sampleRate,
     EngineSimHandle engineHandle,
-    const EngineSimAPI* engineAPI,
-    bool silent
+    const EngineSimAPI* engineAPI
 ) {
     auto context = std::make_unique<AudioUnitContext>();
     context->sampleRate = sampleRate;
-    context->silent = silent;
     context->engineHandle = engineHandle;
 
     // Create SyncPullAudio for synchronous on-demand rendering
     context->syncPullAudio = std::make_unique<SyncPullAudio>();
-    if (!context->syncPullAudio->initialize(engineHandle, engineAPI, sampleRate, silent)) {
+    if (!context->syncPullAudio->initialize(engineHandle, engineAPI, sampleRate)) {
         std::cerr << "ERROR: Failed to initialize SyncPullAudio\n";
         return nullptr;
     }

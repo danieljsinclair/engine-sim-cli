@@ -11,20 +11,19 @@
 // ============================================================================
 
 SyncPullAudio::SyncPullAudio()
-    : engineHandle_(nullptr), engineAPI_(nullptr), sampleRate_(44100), silent_(false) {
+    : engineHandle_(nullptr), engineAPI_(nullptr), sampleRate_(44100) {
 }
 
 SyncPullAudio::~SyncPullAudio() {
     cleanup();
 }
 
-bool SyncPullAudio::initialize(EngineSimHandle handle, const EngineSimAPI* api, int sampleRate, bool silent) {
+bool SyncPullAudio::initialize(EngineSimHandle handle, const EngineSimAPI* api, int sampleRate) {
     cleanup();
 
     engineHandle_ = handle;
     engineAPI_ = api;
     sampleRate_ = sampleRate;
-    silent_ = silent;
 
     if (engineHandle_ && engineAPI_) {
         std::cout << "[SyncPullAudio] Initialized - direct render on callback\n";
@@ -39,7 +38,6 @@ void SyncPullAudio::cleanup() {
     engineHandle_ = nullptr;
     engineAPI_ = nullptr;
     sampleRate_ = 44100;
-    silent_ = false;
 }
 
 int SyncPullAudio::renderOnDemand(float* outputBuffer, int framesToRender) {
@@ -50,21 +48,6 @@ int SyncPullAudio::renderOnDemand(float* outputBuffer, int framesToRender) {
     // Render audio synchronously on-demand
     int framesRead = 0;
     engineAPI_->RenderOnDemand(engineHandle_, outputBuffer, framesToRender, &framesRead);
-
-    // DIAGNOSTICS: Print first few samples periodically
-    static int cbCount = 0;
-    if (cbCount++ % 50 == 0) {
-        std::cout << "[SYNC-PULL] req=" << framesToRender << " got=" << framesRead;
-        for (int j = 0; j < std::min(5, framesRead); j++) {
-            std::cout << " [" << j << "]=" << std::fixed << std::setprecision(4) << outputBuffer[j*2];
-        }
-        std::cout << "\n";
-    }
-
-    // Silent mode: zero output after processing
-    if (silent_) {
-        std::memset(outputBuffer, 0, framesToRender * 2 * sizeof(float));
-    }
 
     return framesRead;
 }

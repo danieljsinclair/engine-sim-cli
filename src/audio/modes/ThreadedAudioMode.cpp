@@ -103,15 +103,13 @@ bool ThreadedAudioMode::shouldDrainDuringWarmup() const {
 std::unique_ptr<AudioUnitContext> ThreadedAudioMode::createContext(
     int sampleRate,
     EngineSimHandle engineHandle,
-    const EngineSimAPI* engineAPI,
-    bool silent
+    const EngineSimAPI* engineAPI
 ) {
     (void)engineHandle;
     (void)engineAPI;
 
     auto context = std::make_unique<AudioUnitContext>();
     context->sampleRate = sampleRate;
-    context->silent = silent;
 
     // Create CircularBuffer for cursor-chasing mode
     context->circularBuffer = std::make_unique<CircularBuffer>();

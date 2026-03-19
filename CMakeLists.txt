@@ -56,7 +56,6 @@ endif()
 add_executable(engine-sim-cli
     src/AudioConfig.cpp
     src/AudioPlayer.cpp
-    src/AudioPlayerFactory.cpp    # NEW: Factory + DI for AudioPlayer
     src/KeyboardInput.cpp
     src/RPMController.cpp
     src/AudioSource.cpp
@@ -71,6 +70,9 @@ add_executable(engine-sim-cli
     src/CircularBuffer.cpp      # NEW: Pure ring buffer handling
     src/SyncPullAudio.cpp       # NEW: Sync-pull audio rendering
     src/SineGenerator.cpp       # NEW: One place for sine generation
+    src/EngineConfig.cpp          # NEW: Engine config and script loading
+    src/interfaces/KeyboardInputProvider.cpp    # NEW: Input provider interface
+    src/interfaces/ConsolePresentation.cpp     # NEW: Presentation interface
 )
 
 target_link_libraries(engine-sim-cli

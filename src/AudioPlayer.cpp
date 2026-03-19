@@ -38,13 +38,12 @@ AudioPlayer::~AudioPlayer() {
     cleanup();
 }
 
-bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle handle, 
-                              const EngineSimAPI* api, bool silent) {
+bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle handle, const EngineSimAPI* api) {
     sampleRate = sr;
 
     // Use IAudioMode to create the appropriate context
     // DI: IAudioMode injects its own renderer into the context
-    context = audioMode.createContext(sr, handle, api, silent).release();
+    context = audioMode.createContext(sr, handle, api).release();
     
     if (!context) {
         std::cerr << "ERROR: Failed to create audio context\n";
@@ -206,6 +205,25 @@ void AudioPlayer::stop() {
     }
     
     isPlaying = false;
+}
+
+void AudioPlayer::setVolume(float volume) {
+    if (!audioUnit) {
+        return;
+    }
+    // Clamp to valid range
+    volume = std::max(0.0f, std::min(1.0f, volume));
+    OSStatus status = AudioUnitSetParameter(
+        audioUnit,
+        kHALOutputParam_Volume,
+        kAudioUnitScope_Global,
+        0,      // element (0 = main output)
+        volume,
+        0       // bufferOffset (ignored for global param)
+    );
+    if (status != noErr) {
+        std::cerr << "WARNING: Failed to set volume: " << status << "\n";
+    }
 }
 
 bool AudioPlayer::playBuffer(const float* data, int frames, int sr) {
