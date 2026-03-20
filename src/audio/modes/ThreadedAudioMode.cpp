@@ -70,7 +70,7 @@ bool ThreadedAudioMode::startAudioThread(EngineSimHandle handle, const EngineSim
         std::cerr << "ERROR: Failed to start audio thread\n";
         return false;
     }
-    std::cout << "[Audio thread started (threaded mode)]\n";
+    std::cout << ANSIColors::colorMode("threaded") << " " << ANSIColors::colorPreFill("audio thread started") << "\n";
     return true;
 }
 

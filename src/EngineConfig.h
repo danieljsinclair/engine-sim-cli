@@ -7,7 +7,7 @@
 #include <string>
 #include <memory>
 
-#include "AudioConfig.h"
+#include "CLIConfig.h"
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
 

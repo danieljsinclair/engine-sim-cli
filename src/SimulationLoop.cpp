@@ -4,13 +4,14 @@
 
 #include "SimulationLoop.h"
 
-#include "AudioConfig.h"
+#include "CLIConfig.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
 #include "audio/modes/IAudioMode.h"
 #include "interfaces/IInputProvider.h"
 #include "interfaces/IPresentation.h"
 #include "EngineConfig.h"
+#include "ConsoleColors.h"
 
 #include <iostream>
 #include <fstream>
@@ -238,8 +239,10 @@ std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle,
         std::cout << "Engine: " << ANSIColors::colorEngineType("SINE") << " (simple bypass)\n";
         return std::make_unique<SineAudioSource>(handle, engineAPI);
     }
-    std::cout << "Mode: REAL ENGINE\n";
-    return std::make_unique<EngineAudioSource>(handle, engineAPI);
+    std::cout << "Engine: " << ANSIColors::colorEngineType("REAL ENGINE") << "\n";
+    auto source = std::make_unique<EngineAudioSource>(handle, engineAPI);
+    source->setSyncPullMode(syncPull);
+    return source;
 }
 
 void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle, 

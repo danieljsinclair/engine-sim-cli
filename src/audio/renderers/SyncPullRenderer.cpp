@@ -13,6 +13,8 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
         return false;
     }
     
+    auto callbackStart = std::chrono::high_resolution_clock::now();
+    
     for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
         AudioBuffer& buffer = ioData->mBuffers[i];
         float* data = static_cast<float*>(buffer.mData);
@@ -29,14 +31,28 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
         auto end = std::chrono::high_resolution_clock::now();
         double renderMs = std::chrono::duration<double, std::milli>(end - start).count();
 
-        // Debug: show timing every ~2 seconds
-        static int cbCount = 0; if (++cbCount % 100 == 0) {
-            std::cout << "[SYNC-PULL] req=" << framesToRender << " got=" << framesRead 
-                      << " time=" << std::fixed << std::setprecision(1) << renderMs << "ms\n";
-        }
-
         // Report actual frames written to THIS buffer
         buffer.mDataByteSize = framesRead * 2 * sizeof(float);
+    }
+    
+    auto callbackEnd = std::chrono::high_resolution_clock::now();
+    double callbackMs = std::chrono::duration<double, std::milli>(callbackEnd - callbackStart).count();
+    
+    // Estimate budget: at 44100Hz, callback interval depends on buffer size
+    // Typical is 1024 frames at 44100Hz = ~23.2ms
+    // Latency: lead time - how much buffer margin we have before the audio callback deadline.
+    // Positive = we finished with time to spare, Negative = we exceeded the budget (audio glitch risk)
+    double budgetMs = (numberFrames * 1000.0) / 44100.0;
+    double latency = callbackMs - budgetMs;
+
+    // Debug: show timing every ~2 seconds
+    static int cbCount = 0; if (++cbCount % 100 == 0) {
+        double budgetPct = callbackMs / budgetMs * 100;
+        const char* colorCode = (budgetPct < 90) ? "32" : (budgetPct <= 100) ? "33" : "31";
+        std::cout << "[SYNC-PULL] req=" << numberFrames << " got=" << (ioData->mBuffers[0].mDataByteSize / (2 * sizeof(float)))
+                  << " render=" << std::fixed << std::setprecision(1) << callbackMs << "ms"
+                  << " latency=" << std::showpos << std::setprecision(1) << latency << std::noshowpos << "ms"
+                  << " (\x1b[" << colorCode << "m" << std::setprecision(0) << budgetPct << "%\x1b[0m of budget)\n";
     }
     
     return true;

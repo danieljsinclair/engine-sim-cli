@@ -2,7 +2,8 @@
 // DRY: BaseAudioSource contains common generateAudio() using SineGenerator
 
 #include "AudioSource.h"
-#include "AudioConfig.h"
+#include "CLIConfig.h"
+#include "ConsoleColors.h"
 #include "AudioPlayer.h"
 
 #include <iostream>
@@ -56,26 +57,18 @@ void SineAudioSource::displayProgress(double currentTime, double duration, bool 
     // Update RPM for sine generation
     setCurrentRPM(stats.currentRPM);
     
-    if (interactive) {
-        double frequency = (stats.currentRPM / 600.0) * 100.0;
-        std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
-        std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
-        std::cout << "[Frequency: " << std::setw(4) << static_cast<int>(frequency) << " Hz] ";
-        std::cout << "[Underruns: " << underrunCount << "] ";
-        std::cout << "[Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms] ";
-        std::cout << std::flush;
-    } else {
-        static int lastProgress = 0;
-        int progress = static_cast<int>(currentTime * 100 / duration);
-        if (progress != lastProgress && progress % 10 == 0) {
-            double frequency = (stats.currentRPM / 600.0) * 100.0;
-            std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
-                      << " | Frequency: " << static_cast<int>(frequency) << " Hz"
-                      << " | Underruns: " << underrunCount
-                      << " | Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms\r" << std::flush;
-            lastProgress = progress;
-        }
-    }
+    int progress = static_cast<int>(currentTime * 100 / duration);
+    double frequency = (stats.currentRPM / 600.0) * 100.0;
+    
+    std::ostringstream prefix;
+    prefix << ANSIColors::CYAN << "[Frequency: " << static_cast<int>(frequency) << " Hz] " << ANSIColors::RESET;
+    int rpm = static_cast<int>(stats.currentRPM);
+    if (rpm < 10 && stats.currentRPM > 0) rpm = 0;
+    prefix << "[" << std::setw(5) << rpm << " RPM] ";
+    prefix << "[Throttle: " << std::setw(4) << static_cast<int>(throttle * 100) << "%] ";
+    prefix << "[Underruns: " << underrunCount << "] ";
+    
+    DisplayHelper::outputProgress(interactive, prefix.str(), currentTime, duration, progress, stats, throttle, underrunCount);
 }
 
 // ============================================================================
@@ -87,25 +80,16 @@ EngineAudioSource::EngineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
 }
 
 void EngineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) {
-    if (interactive) {
-        std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
-        std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
-        // Force sign + fixed width so the field does not jitter when crossing zero.
-        std::cout << "[Flow: " << std::showpos << std::setw(8) << std::setprecision(4) << stats.exhaustFlow << std::noshowpos << " m3/s] ";
-        std::cout << "[Underruns: " << underrunCount << "] ";
-        std::cout << "[Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms] ";
-        std::cout << std::flush;
-    } else {
-        static int lastProgress = 0;
-        int progress = static_cast<int>(currentTime * 100 / duration);
-        if (progress != lastProgress && progress % 10 == 0) {
-            std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
-                      << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
-                      << " | Underruns: " << underrunCount
-                      << " | Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms\r" << std::flush;
-            lastProgress = progress;
-        }
-    }
+    int progress = static_cast<int>(currentTime * 100 / duration);
+    std::ostringstream prefix;
+    int rpm = static_cast<int>(stats.currentRPM);
+    if (rpm < 10 && stats.currentRPM > 0) rpm = 0;
+    prefix << "[" << std::setw(5) << rpm << " RPM] ";
+    prefix << "[Throttle: " << std::setw(4) << static_cast<int>(throttle * 100) << "%] ";
+    prefix << "[Underruns: " << underrunCount << "] ";
+    prefix << "[Flow: " << std::fixed << std::showpos << std::setw(8) << std::setprecision(5) << stats.exhaustFlow << std::noshowpos << " m3/s] ";
+    
+    DisplayHelper::outputProgress(interactive, prefix.str(), currentTime, duration, progress, stats, throttle, underrunCount);
 }
 
 // ============================================================================
@@ -116,14 +100,14 @@ namespace BufferOps {
     void preFillCircularBuffer(AudioPlayer* player) {
         if (!player) return;
 
-        std::cout << "Pre-filling audio buffer...\n";
+        std::cout << ANSIColors::colorPreFill("Pre-filling audio buffer...") << "\n";
         std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
 
         for (int i = 0; i < AudioLoopConfig::PRE_FILL_ITERATIONS; i++) {
             player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
         }
 
-        std::cout << "Buffer pre-filled: " << (AudioLoopConfig::PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
+        std::cout << ANSIColors::colorPreFill("Buffer pre-filled:") << " " << (AudioLoopConfig::PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
                   << " frames (" << (AudioLoopConfig::PRE_FILL_ITERATIONS / 60.0) << "s)\n";
     }
 
@@ -131,7 +115,7 @@ namespace BufferOps {
         if (!player) return;
 
         player->resetCircularBuffer();
-        std::cout << "Circular buffer reset after warmup\n";
+        std::cout << ANSIColors::colorPreFill("Circular buffer reset after warmup") << "\n";
 
         // Re-pre-fill only if configured (0 iterations = no re-pre-fill)
         if (AudioLoopConfig::RE_PRE_FILL_ITERATIONS > 0) {
@@ -139,7 +123,7 @@ namespace BufferOps {
             for (int i = 0; i < AudioLoopConfig::RE_PRE_FILL_ITERATIONS; i++) {
                 player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
             }
-            std::cout << "Re-pre-filled: " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
+            std::cout << ANSIColors::colorPreFill("Re-pre-filled:") << " " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
                       << " frames (" << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS / 60.0) << "s)\n";
         }
     }
@@ -151,7 +135,7 @@ namespace BufferOps {
 
 namespace WarmupOps {
     void runWarmup(EngineSimHandle handle, const EngineSimAPI& api, AudioPlayer* audioPlayer, bool playAudio) {
-        std::cout << "Priming synthesizer pipeline (" << AudioLoopConfig::WARMUP_ITERATIONS << " iterations)...\n";
+        std::cout << ANSIColors::colorPreFill("Priming synthesizer pipeline (" + std::to_string(AudioLoopConfig::WARMUP_ITERATIONS) + " iterations)...") << "\n";
 
         double smoothedThrottle = 0.6;
         double currentTime = 0.0;
@@ -165,7 +149,7 @@ namespace WarmupOps {
 
             currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
-            std::cout << "  Priming: " << stats.currentRPM << " RPM\n";
+            std::cout << "  Priming: " << static_cast<int>(stats.currentRPM) << " RPM\n";
 
             // Drain audio if in play mode - DISCARD to prevent crackles
             // Warmup audio contains starter motor noise and transients

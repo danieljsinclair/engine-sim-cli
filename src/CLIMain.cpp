@@ -3,7 +3,7 @@
 
 #include "CLIMain.h"
 
-#include "AudioConfig.h"
+#include "CLIConfig.h"
 #include "AudioPlayer.h"
 #include "audio/modes/IAudioMode.h"
 #include "SimulationLoop.h"
