@@ -54,7 +54,7 @@ endif()
 # CLI executable - refactored into separate source files for SOLID compliance
 # NEW: Includes audio/modes and audio/renderers for one-class-per-file structure
 add_executable(engine-sim-cli
-    src/AudioConfig.cpp
+    src/CLIConfig.cpp
     src/AudioPlayer.cpp
     src/KeyboardInput.cpp
     src/RPMController.cpp
