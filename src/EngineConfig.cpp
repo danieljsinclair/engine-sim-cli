@@ -8,12 +8,12 @@
 EngineConfig::EngineConfig() {}
 EngineConfig::~EngineConfig() {}
 
-EngineSimConfig EngineConfig::createDefault(int sampleRate) {
+EngineSimConfig EngineConfig::createDefault(int sampleRate, int simulationFrequency) {
     EngineSimConfig config = {};
     config.sampleRate = sampleRate;
     config.inputBufferSize = 1024;
     config.audioBufferSize = 96000;
-    config.simulationFrequency = 10000;
+    config.simulationFrequency = simulationFrequency > 0 ? simulationFrequency : EngineConstants::DEFAULT_SIMULATION_FREQUENCY;
     config.fluidSimulationSteps = 8;
     config.targetSynthesizerLatency = 0.02;
     config.volume = 1.0f;

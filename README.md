@@ -148,13 +148,18 @@ engine-sim-cli --config assets/engines/chevrolet/engine_03_for_e1.mr output.wav 
 | `--play` | Enable real-time audio playback | false |
 | `--output <file>` | Output WAV file path | - |
 | `--duration <seconds>` | Simulation duration | 3.0 |
+| `--threaded` | Use threaded circular buffer mode (recommended) | sync-pull |
+| `--sim-freq <Hz>` | Physics simulation frequency (1000-100000) | 10000 |
+| `--silent` | Run full audio pipeline at zero volume | - |
+| `--cranking-volume <x>` | Volume boost during cranking | 1.0 |
+| `--interactive` | Enable keyboard control | - |
 | `--help` | Show help message | - |
 
 ### Examples
 
 ```bash
-# Real-time playback of default engine
-./build/engine-sim-cli --default-engine --rpm 2000 --play
+# Real-time playback of default engine (threaded mode - recommended)
+./build/engine-sim-cli --default-engine --rpm 2000 --play --threaded
 
 # Real-time playback with sine wave test
 ./build/engine-sim-cli --sine --rpm 1000 --play --duration 20
@@ -164,6 +169,9 @@ engine-sim-cli --config assets/engines/chevrolet/engine_03_for_e1.mr output.wav 
 
 # Use custom engine configuration
 ./build/engine-sim-cli --config my_engine.mr --rpm 1500 --output my_engine.wav --duration 5
+
+# Lower physics frequency for faster processing (reduces CPU load)
+./build/engine-sim-cli --default-engine --rpm 3000 --play --sim-freq 5000
 ```
 
 ## How it Works
@@ -179,8 +187,22 @@ The CLI tool uses the engine-sim library with a sophisticated audio pipeline:
 
 **macOS (Real-time):**
 - AudioUnit callback-based streaming (pull model)
-- Circular buffer for smooth audio delivery
-- 44.1 kHz sample rate with 100ms buffer lead
+- Two modes: threaded (recommended) or sync-pull
+- 44.1 kHz sample rate with 100ms buffer lead (threaded mode)
+
+**Audio Modes:**
+
+| Mode | Description | Pros/Cons |
+|------|-------------|-----------|
+| `--threaded` (default) | Pre-fills buffer, runs physics in separate thread | ✅ Reliable, no crackles |
+| `--sync-pull` | Renders on-demand in audio callback | ⚠️ Timing-sensitive, may crackle |
+
+**Physics Frequency (`--sim-freq`):**
+- Default: 10000 Hz (10k simulation steps per second)
+- Lower values (e.g., 5000, 2000) reduce CPU load
+- Useful for sync-pull mode to reduce crackles
+- Lower values may slightly reduce audio quality
+- Recommended: 8000-10000 for balance of quality and performance
 
 **All platforms (WAV Export):**
 - Direct rendering to WAV file

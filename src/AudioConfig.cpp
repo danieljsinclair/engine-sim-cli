@@ -35,13 +35,16 @@ void printUsage(const char* progName) {
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (default: sync-pull)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
-    std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n\n";
+    std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
+    std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineConstants::DEFAULT_SIMULATION_FREQUENCY 
+              << ", range: " << EngineConstants::MIN_SIMULATION_FREQUENCY << "-" << EngineConstants::MAX_SIMULATION_FREQUENCY << ")\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
     std::cout << "  Use --rpm for RPM control mode (throttle auto-adjusts)\n";
     std::cout << "  Default mode is sync-pull (synchronous render in audio callback)\n";
-    std::cout << "  Use --threaded for cursor-chasing circular buffer mode\n\n";
+    std::cout << "  Use --threaded for cursor-chasing circular buffer mode (recommended)\n";
+    std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n\n";
     std::cout << "Interactive Controls:\n";
     std::cout << "  A                      Toggle ignition on/off (starts ON)\n";
     std::cout << "  S                      Toggle starter motor on/off\n";
@@ -128,6 +131,17 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
             }
             args.crankingVolume = std::atof(argv[i]);
         }
+        else if (arg == "--sim-freq") {
+            if (++i >= argc) {
+                std::cerr << "ERROR: --sim-freq requires a value (" << EngineConstants::MIN_SIMULATION_FREQUENCY << "-" << EngineConstants::MAX_SIMULATION_FREQUENCY << " Hz)\n";
+                return false;
+            }
+            args.simulationFrequency = std::atoi(argv[i]);
+            if (args.simulationFrequency < EngineConstants::MIN_SIMULATION_FREQUENCY || args.simulationFrequency > EngineConstants::MAX_SIMULATION_FREQUENCY) {
+                std::cerr << "ERROR: --sim-freq must be between " << EngineConstants::MIN_SIMULATION_FREQUENCY << " and " << EngineConstants::MAX_SIMULATION_FREQUENCY << "\n";
+                return false;
+            }
+        }
         else if (arg.rfind("--", 0) == 0) {
             std::cerr << "ERROR: Unknown option: " << arg << "\n";
             printUsage(argv[0]);
@@ -193,7 +207,7 @@ void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimSt
     if (targetRPM > 0) {
         std::cout << "[Target: " << std::setw(4) << static_cast<int>(targetRPM) << " RPM] ";
     }
-    std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
+    std::cout << "[Flow: " << std::showpos << std::setw(8) << std::setprecision(4) << stats.exhaustFlow << std::noshowpos << " m3/s] ";
     std::cout << "[Underruns: " << underrunCount << "] ";
     std::cout << std::flush;
 }

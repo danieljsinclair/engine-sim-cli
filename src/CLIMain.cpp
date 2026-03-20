@@ -74,6 +74,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.targetRPM = args.targetRPM;
     config.targetLoad = args.targetLoad;
     config.useDefaultEngine = args.useDefaultEngine;
+    config.simulationFrequency = args.simulationFrequency;
     if (args.outputWav) config.outputWav = args.outputWav;
     
     return config;

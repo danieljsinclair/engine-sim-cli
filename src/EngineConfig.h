@@ -7,6 +7,7 @@
 #include <string>
 #include <memory>
 
+#include "AudioConfig.h"
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
 
@@ -23,7 +24,7 @@ public:
     ~EngineConfig();
     
     // Create default engine configuration
-    static EngineSimConfig createDefault(int sampleRate);
+    static EngineSimConfig createDefault(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY);
     
     // Load engine from config path
     // Returns handle on success, nullptr on failure

@@ -25,6 +25,12 @@ struct AudioLoopConfig {
     static constexpr int RE_PRE_FILL_ITERATIONS = 0;  // No re-pre-fill (matches working commit)
 };
 
+struct EngineConstants {
+    static constexpr int DEFAULT_SIMULATION_FREQUENCY = 10000;
+    static constexpr int MIN_SIMULATION_FREQUENCY = 1000;
+    static constexpr int MAX_SIMULATION_FREQUENCY = 100000;
+};
+
 // ============================================================================
 // Command Line Arguments
 // ============================================================================
@@ -42,6 +48,7 @@ struct CommandLineArgs {
     bool syncPull = true;  // Use sync pull model by default
     bool silent = false;   // Run full audio pipeline but with zero volume
     float crankingVolume = 1.0f;  // Cranking volume boost (applied when ignition ON, RPM < threshold, no exhaust flow)
+    int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY;  // Physics Hz - lower for faster sync-pull
 };
 
 // ============================================================================

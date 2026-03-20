@@ -38,6 +38,7 @@ struct SimulationConfig {
     double targetLoad = -1.0;
     bool useDefaultEngine = false;
     const char* outputWav = nullptr;
+    int simulationFrequency = 10000;  // Physics Hz - lower for faster sync-pull
     
     std::unique_ptr<IAudioMode> audioMode;  // Injected - OCP compliance
 };

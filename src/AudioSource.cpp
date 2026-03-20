@@ -62,6 +62,7 @@ void SineAudioSource::displayProgress(double currentTime, double duration, bool 
         std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
         std::cout << "[Frequency: " << std::setw(4) << static_cast<int>(frequency) << " Hz] ";
         std::cout << "[Underruns: " << underrunCount << "] ";
+        std::cout << "[Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms] ";
         std::cout << std::flush;
     } else {
         static int lastProgress = 0;
@@ -70,7 +71,8 @@ void SineAudioSource::displayProgress(double currentTime, double duration, bool 
             double frequency = (stats.currentRPM / 600.0) * 100.0;
             std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
                       << " | Frequency: " << static_cast<int>(frequency) << " Hz"
-                      << " | Underruns: " << underrunCount << "\r" << std::flush;
+                      << " | Underruns: " << underrunCount
+                      << " | Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms\r" << std::flush;
             lastProgress = progress;
         }
     }
@@ -88,8 +90,10 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
     if (interactive) {
         std::cout << "\r[" << std::fixed << std::setprecision(0) << std::setw(4) << stats.currentRPM << " RPM] ";
         std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
-        std::cout << "[Flow: " << std::setprecision(2) << stats.exhaustFlow << " m3/s] ";
+        // Force sign + fixed width so the field does not jitter when crossing zero.
+        std::cout << "[Flow: " << std::showpos << std::setw(8) << std::setprecision(4) << stats.exhaustFlow << std::noshowpos << " m3/s] ";
         std::cout << "[Underruns: " << underrunCount << "] ";
+        std::cout << "[Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms] ";
         std::cout << std::flush;
     } else {
         static int lastProgress = 0;
@@ -97,7 +101,8 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
         if (progress != lastProgress && progress % 10 == 0) {
             std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
                       << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
-                      << " | Underruns: " << underrunCount << "\r" << std::flush;
+                      << " | Underruns: " << underrunCount
+                      << " | Physics: " << std::fixed << std::setprecision(1) << stats.processingTimeMs << "ms\r" << std::flush;
             lastProgress = progress;
         }
     }

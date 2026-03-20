@@ -364,6 +364,7 @@ OSStatus AudioPlayer::audioUnitCallback(
     // Early exit: if context is null or playback is stopped, output silence
     // This prevents audio glitches when the player is stopped
     if (!ctx || !ctx->isPlaying.load()) {
+        std::cout << "Audio callback: context is null or playback stopped, rendering silence\n";
         return renderSilence(ioData);
     }
 

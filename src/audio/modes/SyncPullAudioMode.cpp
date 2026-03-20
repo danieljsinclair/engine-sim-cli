@@ -45,7 +45,7 @@ bool SyncPullAudioMode::startAudioThread(EngineSimHandle handle, const EngineSim
 }
 
 void SyncPullAudioMode::prepareBuffer(AudioPlayer* audioPlayer) {
-    // Sync-pull mode: no buffer preparation needed
+    // Sync-pull mode: no buffer preparation needed (done in resetBufferAfterWarmup)
     (void)audioPlayer;
 }
 

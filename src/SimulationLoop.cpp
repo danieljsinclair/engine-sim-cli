@@ -145,12 +145,12 @@ EngineSimHandle createSimulator(const EngineSimConfig& config, EngineSimAPI& eng
     return handle;
 }
 
-EngineSimConfig createDefaultConfig(int sampleRate) {
+EngineSimConfig createDefaultConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
     EngineSimConfig config = {};
     config.sampleRate = sampleRate;
     config.inputBufferSize = 1024;
     config.audioBufferSize = 96000;
-    config.simulationFrequency = 10000;
+    config.simulationFrequency = simulationFrequency;
     config.fluidSimulationSteps = 8;
     config.targetSynthesizerLatency = 0.02;
     config.volume = 1.0f;
@@ -235,7 +235,7 @@ std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle,
                                                 EngineSimAPI& engineAPI, 
                                                 bool sineMode) {
     if (sineMode) {
-        std::cout << "Mode: SINE TEST\n";
+        std::cout << "Engine: " << ANSIColors::colorEngineType("SINE") << " (simple bypass)\n";
         return std::make_unique<SineAudioSource>(handle, engineAPI);
     }
     std::cout << "Mode: REAL ENGINE\n";
@@ -255,7 +255,7 @@ void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle,
 
 void warnWavExportNotSupported(bool outputWavRequested) {
     if (outputWavRequested) {
-        std::cout << "\nWARNING: WAV export not supported in unified mode\n";
+        std::cout << "\n" << ANSIColors::colorWarning("WARNING:") << " WAV export not supported in unified mode\n";
         std::cout << "Use the old engine mode code path for WAV export.\n";
     }
 }
@@ -410,14 +410,14 @@ int runSimulation(
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
     
     // Create simulator - single simulator for both audio and main simulation
-    EngineSimConfig engineConfig = createDefaultConfig(sampleRate);
+    EngineSimConfig engineConfig = createDefaultConfig(sampleRate, config.simulationFrequency);
     EngineSimHandle handle = createSimulator(engineConfig, engineAPI);
     if (!loadEngineScriptInternal(handle, engineAPI, config.configPath, config.assetBasePath)) {
         return 1;
     }
     
     // Initialize Audio framework and playback if requested
-    AudioPlayer* audioPlayer = InitAudioPlayback(sampleRate, handle, engineAPI, config.syncPull);
+    AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI);
     audioPlayer->setVolume(config.volume);
     StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
     audioMode->prepareBuffer(audioPlayer);

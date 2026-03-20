@@ -2,6 +2,8 @@
 // Renders audio synchronously on-demand from the engine simulator
 
 #include "audio/renderers/SyncPullRenderer.h"
+#include <iomanip>
+#include <chrono>
 #include "AudioPlayer.h"
 
 bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
@@ -21,15 +23,20 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
             framesToRender = buffer.mDataByteSize / (2 * sizeof(float));
         }
 
-        // Request frames from the engine simulator synchronously
+        // Request frames from the engine simulator synchronously (with timing)
+        auto start = std::chrono::high_resolution_clock::now();
         int framesRead = context->syncPullAudio->renderOnDemand(data, static_cast<int>(framesToRender));
+        auto end = std::chrono::high_resolution_clock::now();
+        double renderMs = std::chrono::duration<double, std::milli>(end - start).count();
 
-        // Update buffer size if partial read (end of audio)
-        if (framesRead < static_cast<int>(framesToRender)) {
-            for (UInt32 j = 0; j < ioData->mNumberBuffers; j++) {
-                ioData->mBuffers[j].mDataByteSize = framesRead * 2 * sizeof(float);
-            }
+        // Debug: show timing every ~2 seconds
+        static int cbCount = 0; if (++cbCount % 100 == 0) {
+            std::cout << "[SYNC-PULL] req=" << framesToRender << " got=" << framesRead 
+                      << " time=" << std::fixed << std::setprecision(1) << renderMs << "ms\n";
         }
+
+        // Report actual frames written to THIS buffer
+        buffer.mDataByteSize = framesRead * 2 * sizeof(float);
     }
     
     return true;
