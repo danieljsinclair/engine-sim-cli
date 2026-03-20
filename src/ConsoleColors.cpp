@@ -33,7 +33,7 @@ namespace ANSIColors {
 }
 
 namespace DisplayHelper {
-    inline void outputProgress(bool interactive, const std::string& prefix, 
+    void outputProgress(bool interactive, const std::string& prefix, 
         double currentTime, double duration, int progress, 
         const EngineSimStats& stats, double throttle, int underrunCount) {
         (void)stats;

@@ -59,6 +59,7 @@ add_executable(engine-sim-cli
     src/KeyboardInput.cpp
     src/RPMController.cpp
     src/AudioSource.cpp
+    src/ConsoleColors.cpp
     src/audio/modes/ThreadedAudioMode.cpp
     src/audio/modes/SyncPullAudioMode.cpp
     src/audio/modes/AudioModeFactory.cpp

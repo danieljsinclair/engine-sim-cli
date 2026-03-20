@@ -240,9 +240,7 @@ std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle,
         return std::make_unique<SineAudioSource>(handle, engineAPI);
     }
     std::cout << "Engine: " << ANSIColors::colorEngineType("REAL ENGINE") << "\n";
-    auto source = std::make_unique<EngineAudioSource>(handle, engineAPI);
-    source->setSyncPullMode(syncPull);
-    return source;
+    return std::make_unique<EngineAudioSource>(handle, engineAPI);
 }
 
 void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle, 
@@ -420,7 +418,7 @@ int runSimulation(
     }
     
     // Initialize Audio framework and playback if requested
-    AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI);
+    AudioPlayer* audioPlayer = InitAudioPlayback(sampleRate, handle, engineAPI, config.syncPull);
     audioPlayer->setVolume(config.volume);
     StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
     audioMode->prepareBuffer(audioPlayer);

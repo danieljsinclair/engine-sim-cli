@@ -6,6 +6,7 @@
 #include "audio/modes/ThreadedAudioMode.h"
 #include "audio/modes/SyncPullAudioMode.h"
 #include "AudioSource.h"
+#include "ConsoleColors.h"
 
 #include <iostream>
 
