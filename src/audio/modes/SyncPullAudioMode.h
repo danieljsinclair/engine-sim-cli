@@ -14,6 +14,7 @@ class AudioPlayer;
 class AudioUnitContext;
 class IAudioSource;
 class SyncPullAudio;
+class AudioPlayer;
 struct SimulationConfig;
 
 class SyncPullAudioMode : public IAudioMode {
@@ -37,6 +38,15 @@ public:
     void startPlayback(AudioPlayer* audioPlayer) override;
     
     bool shouldDrainDuringWarmup() const override;
+    
+private:
+    SyncPullAudio* syncPullAudio_ = nullptr;  // Raw pointer to avoid cycles
+    int preFillMs_ = 50;  // Pre-fill buffer duration in ms
+    
+public:
+    void setSyncPullAudio(SyncPullAudio* audio) { syncPullAudio_ = audio; }
+    
+    void configure(const SimulationConfig& config) override;
     
     std::unique_ptr<AudioUnitContext> createContext(
         int sampleRate,

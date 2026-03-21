@@ -3,6 +3,7 @@
 
 #include "audio/modes/SyncPullAudioMode.h"
 #include "audio/modes/IAudioMode.h"
+#include "SimulationLoop.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
 #include "CircularBuffer.h"
@@ -11,6 +12,10 @@
 #include "audio/renderers/SyncPullRenderer.h"
 
 #include <iostream>
+
+void SyncPullAudioMode::configure(const SimulationConfig& config) {
+    preFillMs_ = config.preFillMs;
+}
 
 std::string SyncPullAudioMode::getModeName() const {
     return "SyncPull";
@@ -46,6 +51,9 @@ bool SyncPullAudioMode::startAudioThread(EngineSimHandle handle, const EngineSim
 
 void SyncPullAudioMode::prepareBuffer(AudioPlayer* audioPlayer) {
     // Sync-pull mode: no buffer preparation needed (done in resetBufferAfterWarmup)
+    if (syncPullAudio_) {
+        syncPullAudio_->preFillBuffer(preFillMs_);
+    }
     (void)audioPlayer;
 }
 
@@ -81,6 +89,7 @@ std::unique_ptr<AudioUnitContext> SyncPullAudioMode::createContext(
         std::cerr << "ERROR: Failed to initialize SyncPullAudio\n";
         return nullptr;
     }
+    syncPullAudio_ = context->syncPullAudio.get();  // Store raw pointer for prepareBuffer
 
     // DI: Inject SyncPullRenderer into context (mode knows its own renderer)
     // This eliminates conditional branching in AudioPlayer

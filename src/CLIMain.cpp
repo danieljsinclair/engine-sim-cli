@@ -75,6 +75,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.targetLoad = args.targetLoad;
     config.useDefaultEngine = args.useDefaultEngine;
     config.simulationFrequency = args.simulationFrequency;
+    config.preFillMs = args.preFillMs;
     if (args.outputWav) config.outputWav = args.outputWav;
     
     return config;

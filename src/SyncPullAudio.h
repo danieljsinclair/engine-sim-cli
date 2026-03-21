@@ -5,6 +5,7 @@
 #define SYNC_PULL_AUDIO_H
 
 #include <atomic>
+#include <vector>
 #include <cstdint>
 
 // Include engine types (needed for EngineSimHandle and EngineSimAPI)
@@ -47,6 +48,13 @@ private:
     EngineSimHandle engineHandle_;
     const EngineSimAPI* engineAPI_;
     int sampleRate_;
+    std::vector<float> preBuffer_;  // Pre-buffered audio for crackle prevention
+    size_t preBufferReadPos_ = 0;   // Read position in pre-buffer
+
+public:
+    // Pre-fill buffer with audio before playback starts
+    void preFillBuffer(int targetMs = 100);  // Default 100ms
+
 };
 
 #endif // SYNC_PULL_AUDIO_H
