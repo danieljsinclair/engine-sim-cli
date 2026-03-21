@@ -250,25 +250,6 @@ void warnWavExportNotSupported(bool outputWavRequested) {
         std::cout << "Use the old engine mode code path for WAV export.\n";
     }
 }
-
-// Initialize AudioPlayer with the simulator handle using Factory + DI pattern
-// This is done in runSimulation to ensure the simulator is properly set up first
-AudioPlayer* createAndInitializeAudioPlayer(int sampleRate, EngineSimHandle handle, const EngineSimAPI* engineAPI, bool syncPull) {
-    auto* audioPlayer = new AudioPlayer(nullptr);
-    
-    // Use factory to create the appropriate audio mode (DI pattern)
-    auto factory = createAudioModeFactory(engineAPI, syncPull);
-    bool initSuccess = audioPlayer->initialize(*factory, sampleRate, handle, engineAPI);
-    factory.release();  // AudioPlayer doesn't own the factory, but we created it here
-    
-    if (!initSuccess) {
-        std::cerr << "ERROR: Audio init failed\n";
-        delete audioPlayer;
-        return nullptr;
-    }
-    return audioPlayer;
-}
-
 } // anonymous namespace
 
 // ============================================================================
@@ -359,11 +340,17 @@ int runUnifiedAudioLoop(
     return 0;
 }
 
-AudioPlayer *InitAudioPlayback(int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, bool syncPull) {
+AudioPlayer *InitAudioPlayback(IAudioMode* audioMode, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI) {
     // This must happen AFTER the simulator is created and configured
-    AudioPlayer *audioPlayer = createAndInitializeAudioPlayer(sampleRate, handle, &engineAPI, syncPull);
-    if (!audioPlayer) {
-        throw std::runtime_error("Failed to initialize audio player");
+    auto* audioPlayer = new AudioPlayer(nullptr);
+    
+    // Use the provided audioMode (DI - don't create a new one!)
+    bool initSuccess = audioPlayer->initialize(*audioMode, sampleRate, handle, &engineAPI);
+    
+    if (!initSuccess) {
+        std::cerr << "ERROR: Audio init failed\n";
+        delete audioPlayer;
+        return nullptr;
     }
     return audioPlayer;
 }
@@ -408,9 +395,10 @@ int runSimulation(
     }
     
     // Initialize Audio framework and playback if requested
-    AudioPlayer* audioPlayer = InitAudioPlayback(sampleRate, handle, engineAPI, config.syncPull);
+    AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI);
     audioPlayer->setVolume(config.volume);
     StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
+    audioMode->configure(config);
     audioMode->prepareBuffer(audioPlayer);
     
     // Check if drain is needed during warmup
@@ -422,7 +410,7 @@ int runSimulation(
     
     // Start playback based on audio mode
     audioMode->startPlayback(audioPlayer);
-    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, config.sineMode);
+    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, config.sineMode, config.sineMockMode, config.syncPull);
     
     // Run MAIN loop - now uses injectable input provider and presentation
     // Some input providers enable ignition by default which will allow the engine to fire during the cranking phase otherwise it will crank endlessly huffing and puffing
