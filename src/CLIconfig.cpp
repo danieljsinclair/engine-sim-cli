@@ -1,7 +1,7 @@
 // CLIConfig.cpp - Audio loop configuration implementation
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
 
-#include "CLIConfig.h"
+#include "CLIconfig.h"
 
 #include <iostream>
 #include <string>

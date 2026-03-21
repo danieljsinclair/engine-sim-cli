@@ -1,4 +1,4 @@
-// CLIConfig.h - Audio loop configuration structs
+// CLIconfig.h - Audio loop configuration structs
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
 
 #ifndef CLI_CONFIG_H

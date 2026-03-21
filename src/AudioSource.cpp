@@ -2,7 +2,7 @@
 // DRY: BaseAudioSource contains common generateAudio() using SineGenerator
 
 #include "AudioSource.h"
-#include "CLIConfig.h"
+#include "CLIconfig.h"
 #include "ConsoleColors.h"
 #include "AudioPlayer.h"
 

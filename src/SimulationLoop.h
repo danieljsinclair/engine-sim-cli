@@ -4,7 +4,7 @@
 #ifndef SIMULATION_LOOP_H
 #define SIMULATION_LOOP_H
 
-#include "CLIConfig.h"
+#include "CLIconfig.h"
 #include "engine_sim_bridge.h"
 #include "EngineConfig.h"
 #include "engine_sim_loader.h"

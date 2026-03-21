@@ -4,7 +4,7 @@
 
 #include "SimulationLoop.h"
 
-#include "CLIConfig.h"
+#include "CLIconfig.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
 #include "audio/modes/IAudioMode.h"

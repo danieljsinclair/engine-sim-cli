@@ -7,7 +7,7 @@
 #include <string>
 #include <memory>
 
-#include "CLIConfig.h"
+#include "CLIconfig.h"
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
 
