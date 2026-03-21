@@ -1,8 +1,8 @@
-// AudioConfig.h - Audio loop configuration structs
+// CLIConfig.h - Audio loop configuration structs
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
 
-#ifndef AUDIO_CONFIG_H
-#define AUDIO_CONFIG_H
+#ifndef CLI_CONFIG_H
+#define CLI_CONFIG_H
 
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
@@ -45,10 +45,12 @@ struct CommandLineArgs {
     bool playAudio = false;
     bool useDefaultEngine = false;
     bool sineMode = false;  // Generate sine wave test tone instead of engine audio
+    bool sineMockMode = false;  // Use mock engine's internal SineGenerator
     bool syncPull = true;  // Use sync pull model by default
     bool silent = false;   // Run full audio pipeline but with zero volume
     float crankingVolume = 1.0f;  // Cranking volume boost (applied when ignition ON, RPM < threshold, no exhaust flow)
     int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY;  // Physics Hz - lower for faster sync-pull
+    int preFillMs = 50;  // Pre-fill buffer duration in ms for sync-pull mode
 };
 
 // ============================================================================
@@ -67,4 +69,4 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
 void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimStats& stats, int underrunCount);
 void ShowConfigHeader(CommandLineArgs& config, const char* engineAPIVersion);
 
-#endif // AUDIO_CONFIG_H
+#endif // CLI_CONFIG_H

@@ -266,14 +266,136 @@ The system receives input from upstream systems:
 
 ---
 
+## 9. Engine Provider Architecture (Future)
+
+> **Note**: This is a **REFACTORING** (internal architecture change), NOT a feature change. The external CLI behavior remains identical.
+
+### 9.1 Why We Need IEngineProvider
+
+#### Current Problem: Dynamic Loading with dlopen
+
+Currently the CLI uses dlopen() to load either:
+- `libenginesim.dylib` - real engine-sim
+- `libenginesim-mock.dylib` - mock implementation
+
+This approach has significant problems:
+
+1. **No compile-time type checking** - Linker errors only appear at runtime
+2. **Fragile path resolution** - Requires correct DYLD_LIBRARY_PATH
+3. **No single source of truth** - Engine behavior is split across two implementations
+4. **Testing difficulty** - Cannot easily swap implementations in unit tests
+5. **Code duplication** - Two separate SineGenerator implementations exist
+
+#### Solution: IEngineProvider Interface + Dependency Injection
+
+Replace dynamic loading with **static linking** and **dependency injection**:
+
+```cpp
+// src/interfaces/IEngineProvider.h (planned)
+class IEngineProvider {
+public:
+    virtual ~IEngineProvider() = default;
+    virtual void Initialize(const EngineConfig& config) = 0;
+    virtual void SetThrottle(double position) = 0;
+    virtual void SetIgnition(bool enabled) = 0;
+    virtual void Update(double deltaTime) = 0;
+    virtual void Render(float* buffer, int frames) = 0;
+    virtual EngineStats GetStats() const = 0;
+    // ... etc
+};
+
+// Implementations:
+class RealEngineProvider : public IEngineProvider { /* wraps engine-sim */ };
+class MockEngineProvider : public IEngineProvider { /* sine wave generation */ };
+```
+
+Benefits:
+- **Compile-time type safety** - All errors caught at compile time
+- **Easy testing** - Swap providers in tests via DI
+- **Single source of truth** - One implementation path
+- **No runtime loading** - Simpler deployment
+
+---
+
+### 9.2 SineGenerator Consolidation: PRIMARY GOAL
+
+> **This is the PRIMARY refactoring goal.** Before implementing IEngineProvider, we must consolidate the two existing SineGenerator implementations.
+
+#### The Problem: Two Separate Implementations
+
+There are currently **TWO** independent SineGenerator implementations:
+
+| Aspect | `src/SineGenerator.cpp` | `mock_engine_sim.cpp` Internal Class |
+|--------|-------------------------|--------------------------------------|
+| **Location** | `src/SineGenerator.cpp` | `engine-sim-bridge/src/mock_engine_sim.cpp` |
+| **Purpose** | CLI `--sine` mode standalone | Used by mock bridge internally |
+| **Threading** | None - synchronous only | Full cursor-chasing, std::thread |
+| **Ring Buffer** | None | `MockRingBuffer<T>` (matches engine-sim) |
+| **Audio Thread** | No | Yes - exact replica of `Synthesizer::audioRenderingThread()` |
+| **Phase Continuity** | Basic phase tracking | Advanced phase in simulation context |
+| **Stereo Output** | Yes (float*) | Yes (float* and int16_t*) |
+| **RPM Linking** | Yes (`generateRPMLinked`) | Yes (via `writeToSynthesizer`) |
+| **Controls** | Frequency, amplitude, phase | Frequency, enabled state |
+
+#### Why mock_engine_sim.cpp is a Hack
+
+The current `mock_engine_sim.cpp` contains:
+- **~1400 lines** of complex mock code
+- An internal `SineGenerator` class that should be shared
+- A `MockRingBuffer` that duplicates engine-sim's `RingBuffer<T>`
+- A `MockSynthesizer` that replicates engine-sim's threading model
+
+This is a **temporary hack** to allow development without the real engine-sim library. Once SineGenerator is consolidated, this complexity should be dramatically reduced.
+
+#### Consolidation Approach
+
+We need **ONE** implementation that:
+1. Does cursor-chasing/threading like real engine-sim
+2. Best mimics real engine behavior
+3. Can be used by both CLI `--sine` mode and mock bridge
+
+The choice should be based on which implementation **best mimics real engine behavior**:
+- **Option A**: Extend `src/SineGenerator.cpp` with threading support (less invasive)
+- **Option B**: Move internal class from mock_engine_sim.cpp to shared location (more accurate)
+
+Recommendation: **Option A** - Extend the simpler `src/SineGenerator.cpp` to support threading, since it has the cleaner API.
+
+---
+
+### 9.3 Implementation Plan
+
+| Phase | Task | Notes |
+|-------|------|-------|
+| 1 | **Consolidate SineGenerator** | PRIMARY GOAL - merge two implementations |
+| 2 | Create IEngineProvider interface | `src/interfaces/IEngineProvider.h` |
+| 3 | Create RealEngineProvider | Wraps real engine-sim (static link) |
+| 4 | Create MockEngineProvider | Uses consolidated SineGenerator |
+| 5 | Refactor CLI to use IEngineProvider via DI | Remove dlopen |
+| 6 | Update CMakeLists.txt | Remove mock dylib build |
+| 7 | Delete/preserve mock_engine_sim.cpp | Archive or remove hack |
+
+---
+
+### 9.4 Risks and Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Regression in audio behavior | Test both --sine mode and mock bridge after consolidation |
+| Threading complexity | Start with synchronous mode, add threading incrementally |
+| Breaking existing CLI users | Keep `--sine` flag working identically |
+
+---
+
 ## Appendix: File Locations
 
 | File | Path |
 |------|------|
 | IInputProvider | `src/interfaces/IInputProvider.h` |
 | IPresentation | `src/interfaces/IPresentation.h` |
+| IEngineProvider | `src/interfaces/IEngineProvider.h` (future) |
 | KeyboardInputProvider | `src/interfaces/KeyboardInputProvider.cpp` |
 | ConsolePresentation | `src/interfaces/ConsolePresentation.cpp` |
+| SineGenerator | `src/SineGenerator.cpp` |
 | SimulationLoop | `src/SimulationLoop.cpp` |
 | CLIMain | `src/CLIMain.cpp` |
 

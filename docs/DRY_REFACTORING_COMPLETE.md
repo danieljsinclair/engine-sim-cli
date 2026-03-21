@@ -142,7 +142,7 @@ Audio Sources (70 lines total):
 ### What Changed
 
 1. **Extracted shared constants**
-   - `UnifiedAudioConfig` struct with all timing/buffer constants
+   - `UnifiedCLIConfig` struct with all timing/buffer constants
    - No more magic numbers scattered across modes
 
 2. **Extracted buffer operations**

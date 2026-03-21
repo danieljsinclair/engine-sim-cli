@@ -14,6 +14,7 @@ class AudioPlayer;
 class AudioUnitContext;
 class IAudioSource;
 class SyncPullAudio;
+struct SimulationConfig;
 
 class SyncPullAudioMode : public IAudioMode {
 public:

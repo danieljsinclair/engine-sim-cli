@@ -33,12 +33,14 @@ void printUsage(const char* progName) {
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
+    std::cout << "  --sine-mock          Use mock engine's internal SineGenerator (threaded, buffered)\n";
     std::cout << "  --threaded           Use threaded circular buffer (default: sync-pull)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineConstants::DEFAULT_SIMULATION_FREQUENCY 
               << ", range: " << EngineConstants::MIN_SIMULATION_FREQUENCY << "-" << EngineConstants::MAX_SIMULATION_FREQUENCY << ")\n";
-   std::cout << "NOTES:\n";
+    std::cout << "  --pre-fill-ms <ms>  Pre-fill buffer ms for sync-pull mode (default: 50)\n\n";
+    std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
     std::cout << "  Use --rpm for RPM control mode (throttle auto-adjusts)\n";
@@ -117,6 +119,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         else if (arg == "--sine") {
             args.sineMode = true;
         }
+        else if (arg == "--sine-mock") {
+            args.sineMockMode = true;
+        }
         else if (arg == "--threaded") {
             args.syncPull = false;
         }
@@ -139,6 +144,17 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
             args.simulationFrequency = std::atoi(argv[i]);
             if (args.simulationFrequency < EngineConstants::MIN_SIMULATION_FREQUENCY || args.simulationFrequency > EngineConstants::MAX_SIMULATION_FREQUENCY) {
                 std::cerr << "ERROR: --sim-freq must be between " << EngineConstants::MIN_SIMULATION_FREQUENCY << " and " << EngineConstants::MAX_SIMULATION_FREQUENCY << "\n";
+                return false;
+            }
+        }
+        else if (arg == "--pre-fill-ms") {
+            if (++i >= argc) {
+                std::cerr << "ERROR: --pre-fill-ms requires a value (10-500 ms)\n";
+                return false;
+            }
+            args.preFillMs = std::atoi(argv[i]);
+            if (args.preFillMs < 10 || args.preFillMs > 500) {
+                std::cerr << "ERROR: --pre-fill-ms must be between 10 and 500\n";
                 return false;
             }
         }
@@ -170,9 +186,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     }
 
     // Engine config is required unless in sine mode
-    if (args.engineConfig == nullptr && !args.sineMode) {
+    if (args.engineConfig == nullptr && !args.sineMode && !args.sineMockMode) {
         std::cerr << "ERROR: Engine configuration file is required\n";
-        std::cerr << "       Use --script <path>, --sine, or provide positional argument\n\n";
+        std::cerr << "       Use --script <path>, --sine, --sine-mock, or provide positional argument\n\n";
         printUsage(argv[0]);
         return false;
     }
@@ -222,7 +238,11 @@ void ShowConfigHeader(CommandLineArgs& args, const char* engineAPIVersion = "unk
     }
 
     std::cout << "Configuration:\n";
-    if (args.sineMode) {
+    if (args.sineMockMode) {
+        std::cout << "  Mode: Mock Sine Generator (threaded, buffered)\n";
+        std::cout << "  Mapping: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz\n";
+        std::cout << "  Engine: Mock (internal SineGenerator)\n";
+    } else if (args.sineMode) {
         std::cout << "  Mode: RPM-Linked Sine Wave Test\n";
         std::cout << "  Mapping: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz\n";
         std::cout << "  Engine: Default (Subaru EJ25)\n";
@@ -250,5 +270,6 @@ void ShowConfigHeader(CommandLineArgs& args, const char* engineAPIVersion = "unk
     if (args.silent) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
     }
+    std::cout << "  Sim Freq: \x1b[32m" << args.simulationFrequency << " Hz\x1b[0m\n";
     std::cout << "\n";
 }

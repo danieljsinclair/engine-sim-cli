@@ -149,11 +149,11 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 |------|----------|--------|
 | AudioSource.cpp | SineAudioSource::displayProgress | ✅ Frequency |
 | AudioSource.cpp | EngineAudioSource::displayProgress | ✅ Flow |
-| AudioConfig.cpp | displayHUD() | Legacy - TODO remove |
+| CLIConfig.cpp | displayHUD() | Legacy - TODO remove |
 | ConsolePresentation.cpp | ShowEngineState() | Needs consolidating |
 
 ### Fix Required:
-- Remove displayHUD() from AudioConfig.cpp
+- Remove displayHUD() from CLIConfig.cpp
 - Move all engine state output to ConsolePresentation
 - audioSource.displayProgress() already handles both modes correctly
 

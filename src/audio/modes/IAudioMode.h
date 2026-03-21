@@ -18,6 +18,7 @@ class AudioPlayer;
 class AudioUnitContext;
 class IAudioSource;
 class IAudioRenderer;
+struct SimulationConfig;
 
 
 class IAudioMode {
@@ -52,6 +53,9 @@ public:
     
     // Check if drain is needed during warmup
     virtual bool shouldDrainDuringWarmup() const = 0;
+    
+    // Configure mode with simulation config
+    virtual void configure(const SimulationConfig& config) {}
     
     // Factory method: Create the audio context for AudioPlayer
     // Each mode creates its own context with appropriate audio components

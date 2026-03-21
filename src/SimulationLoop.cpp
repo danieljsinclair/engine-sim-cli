@@ -147,17 +147,7 @@ EngineSimHandle createSimulator(const EngineSimConfig& config, EngineSimAPI& eng
 }
 
 EngineSimConfig createDefaultConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
-    EngineSimConfig config = {};
-    config.sampleRate = sampleRate;
-    config.inputBufferSize = 1024;
-    config.audioBufferSize = 96000;
-    config.simulationFrequency = simulationFrequency;
-    config.fluidSimulationSteps = 8;
-    config.targetSynthesizerLatency = 0.02;
-    config.volume = 1.0f;
-    config.convolutionLevel = 0.5f;
-    config.airNoise = 1.0f;
-    return config;
+    return EngineConfig::createDefault(sampleRate, simulationFrequency);
 }
 
 std::string determineConfigPath(const SimulationConfig& config) {
@@ -349,7 +339,7 @@ int runUnifiedAudioLoop(
 
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
-        updateSineFrequency(handle, api, stats, config.sineMode);
+        updateSineFrequency(handle, api, stats, config.sineMode, config.sineMockMode);
         
         // Update audio source with latest stats (needed for threaded sine mode)
         audioSource.updateStats(stats);
