@@ -123,8 +123,8 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
 
 // Update sine frequency in writer thread
 void updateSineFrequency(EngineSimHandle handle, const EngineSimAPI& api,
-                          const EngineSimStats& stats, bool sineMode) {
-    if (!sineMode) {
+                          const EngineSimStats& stats, bool sineMode, bool sineMockMode) {
+    if (!sineMode && !sineMockMode) {
         return;
     }
     double frequency = (stats.currentRPM / 600.0) * 100.0;
@@ -224,11 +224,17 @@ void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
 
 std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle, 
                                                 EngineSimAPI& engineAPI, 
-                                                bool sineMode) {
+                                                bool sineMode,
+                                                bool sineMockMode) {
     if (sineMode) {
-        std::cout << "Engine: " << ANSIColors::colorEngineType("SINE") << " (simple bypass)\n";
+        std::cout << "Engine: " << ANSIColors::colorEngineType("SINE GENERATOR") << " (simple bypass)\n";
         return std::make_unique<SineAudioSource>(handle, engineAPI);
     }
+    if (sineMockMode) {
+        std::cout << "Engine: " << ANSIColors::colorEngineType("MOCK ENGINE SINE") << " (threaded, buffered)\n";
+        engineAPI.SetSineMode(handle, 1);
+    }
+    else
     std::cout << "Engine: " << ANSIColors::colorEngineType("REAL ENGINE") << "\n";
     return std::make_unique<EngineAudioSource>(handle, engineAPI);
 }
@@ -410,7 +416,7 @@ int runSimulation(
     
     // Start playback based on audio mode
     audioMode->startPlayback(audioPlayer);
-    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, config.sineMode, config.sineMockMode, config.syncPull);
+    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, config.sineMode, config.sineMockMode);
     
     // Run MAIN loop - now uses injectable input provider and presentation
     // Some input providers enable ignition by default which will allow the engine to fire during the cranking phase otherwise it will crank endlessly huffing and puffing

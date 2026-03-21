@@ -70,6 +70,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.playAudio = args.playAudio;
     config.volume = args.silent ? 0.0f : 1.0f;
     config.sineMode = args.sineMode;
+    config.sineMockMode = args.sineMockMode;
     config.syncPull = args.syncPull;
     config.targetRPM = args.targetRPM;
     config.targetLoad = args.targetLoad;
@@ -101,7 +102,8 @@ int main(int argc, char* argv[]) {
 
     // Load engine-sim library dynamically based on mode
     EngineSimAPI engineAPI = {};
-    if (!LoadEngineSimLibrary(engineAPI, args.sineMode)) {
+    bool useMock = args.sineMode || args.sineMockMode;
+    if (!LoadEngineSimLibrary(engineAPI, useMock)) {
         std::cerr << "ERROR: Failed to load engine-sim library\n";
         return 1;
     }
