@@ -7,6 +7,7 @@
 namespace ANSIColors {
     const std::string GREEN = "\x1b[32m";
     const std::string YELLOW = "\x1b[33m";
+    const std::string RED = "\x1b[31m";
     const std::string CYAN = "\x1b[36m";
     const std::string RESET = "\x1b[0m";
     

@@ -2,9 +2,39 @@
 // Renders audio synchronously on-demand from the engine simulator
 
 #include "audio/renderers/SyncPullRenderer.h"
+#include "ConsoleColors.h"
 #include <iomanip>
 #include <chrono>
 #include "AudioPlayer.h"
+
+namespace {
+    void logSyncPullTiming(UInt32 numberFrames, AudioBufferList* ioData, double callbackMs, double budgetMs, double latency) {
+        double budgetPct = callbackMs / budgetMs * 100;
+
+        std::string budgetColor;
+        if (budgetPct < 80) {
+            budgetColor = ANSIColors::GREEN;
+        } else if (budgetPct <= 100) {
+            budgetColor = ANSIColors::YELLOW;
+        } else {
+            budgetColor = ANSIColors::RED;
+        }
+
+        std::string headroomColor;
+        if (latency < -1.0) {
+            headroomColor = ANSIColors::GREEN;
+        } else if (latency <= 0.0) {
+            headroomColor = ANSIColors::YELLOW;
+        } else {
+            headroomColor = ANSIColors::RED;
+        }
+
+        std::cout << "[SYNC-PULL] req=" << numberFrames << " got=" << (ioData->mBuffers[0].mDataByteSize / (2 * sizeof(float)))
+                  << " render=" << std::fixed << std::setprecision(1) << callbackMs << "ms"
+                  << " headroom=" << headroomColor << std::showpos << std::setprecision(1) << latency << std::noshowpos << "ms" << ANSIColors::RESET
+                  << " (" << budgetColor << std::setprecision(0) << budgetPct << "%" << ANSIColors::RESET << " of budget)\n";
+    }
+}
 
 bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
     AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
@@ -47,12 +77,7 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
 
     // Debug: show timing every ~2 seconds
     static int cbCount = 0; if (++cbCount % 100 == 0) {
-        double budgetPct = callbackMs / budgetMs * 100;
-        const char* colorCode = (budgetPct < 90) ? "32" : (budgetPct <= 100) ? "33" : "31";
-        std::cout << "[SYNC-PULL] req=" << numberFrames << " got=" << (ioData->mBuffers[0].mDataByteSize / (2 * sizeof(float)))
-                  << " render=" << std::fixed << std::setprecision(1) << callbackMs << "ms"
-                  << " latency=" << std::showpos << std::setprecision(1) << latency << std::noshowpos << "ms"
-                  << " (\x1b[" << colorCode << "m" << std::setprecision(0) << budgetPct << "%\x1b[0m of budget)\n";
+        logSyncPullTiming(numberFrames, ioData, callbackMs, budgetMs, latency);
     }
     
     return true;
