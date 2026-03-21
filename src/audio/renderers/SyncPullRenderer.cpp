@@ -1,10 +1,10 @@
 // SyncPullRenderer.cpp - Sync-pull renderer implementation
 // Renders audio synchronously on-demand from the engine simulator
+#include <iomanip>
+#include <chrono>
 
 #include "audio/renderers/SyncPullRenderer.h"
 #include "ConsoleColors.h"
-#include <iomanip>
-#include <chrono>
 #include "AudioPlayer.h"
 
 namespace {
@@ -29,10 +29,14 @@ namespace {
             headroomColor = ANSIColors::RED;
         }
 
-        std::cout << "[SYNC-PULL] req=" << numberFrames << " got=" << (ioData->mBuffers[0].mDataByteSize / (2 * sizeof(float)))
-                  << " render=" << std::fixed << std::setprecision(1) << callbackMs << "ms"
-                  << " headroom=" << headroomColor << std::showpos << std::setprecision(1) << latency << std::noshowpos << "ms" << ANSIColors::RESET
-                  << " (" << budgetColor << std::setprecision(0) << budgetPct << "%" << ANSIColors::RESET << " of budget)\n";
+        static int cbCount = 0;
+        if (++cbCount % 100 == 0 || headroomColor == ANSIColors::RED || budgetColor == ANSIColors::RED) {  // Log every 100 callbacks or on critical latency
+
+            std::cout << "[SYNC-PULL] req=" << numberFrames << " got=" << (ioData->mBuffers[0].mDataByteSize / (2 * sizeof(float)))
+                    << " render=" << std::fixed << std::setprecision(1) << callbackMs << "ms"
+                    << " headroom=" << headroomColor << std::showpos << std::setprecision(1) << latency << std::noshowpos << "ms" << ANSIColors::RESET
+                    << " (" << budgetColor << std::setprecision(0) << budgetPct << "%" << ANSIColors::RESET << " of budget)\n";
+        }
     }
 }
 
@@ -75,10 +79,7 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
     double budgetMs = (numberFrames * 1000.0) / 44100.0;
     double latency = callbackMs - budgetMs;
 
-    // Debug: show timing every ~2 seconds
-    static int cbCount = 0; if (++cbCount % 100 == 0) {
-        logSyncPullTiming(numberFrames, ioData, callbackMs, budgetMs, latency);
-    }
+    logSyncPullTiming(numberFrames, ioData, callbackMs, budgetMs, latency);
     
     return true;
 }
