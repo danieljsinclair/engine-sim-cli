@@ -6,16 +6,48 @@
 
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
+SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
-.PHONY: all clean scrub test submodules check-cmake
+.PHONY: all clean scrub test submodules check-cmake remove-orphans force-rebuild
 
-all: check-cmake submodules $(BUILD_DIR)/Makefile
+all: check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE)
 
+# Check if submodule changed - if so, force rebuild
+check-submodule:
+	@CURRENT_SUBMODULE=$$(git submodule status engine-sim-bridge | awk '{print $$1}'); \
+	STAMPED_SUBMODULE=$$(cat $(SUBMODULE_STAMP) 2>/dev/null); \
+	if [ "$$CURRENT_SUBMODULE" != "$$STAMPED_SUBMODULE" ]; then \
+		echo "Submodule changed, forcing rebuild..."; \
+		rm -f $(BUILD_DIR)/engine-sim-bridge/libenginesim*.dylib; \
+		rm -f $(BUILD_DIR)/libenginesim*.dylib; \
+		mkdir -p $(BUILD_DIR); \
+		echo "$$CURRENT_SUBMODULE" > $(SUBMODULE_STAMP); \
+	fi
+
+# Remove orphaned binaries and symlinks from root and other unexpected locations
+remove-orphans:
+	@rm -f *.dylib libenginesim*.dylib
+	@find . -name "*.dylib*" -type l -delete 2>/dev/null || true
+	@find . -name "CMakeCache.txt" -not -path "./$(BUILD_DIR)/*" -delete 2>/dev/null || true
+	@rm -f $(SUBMODULE_STAMP)
+
+# Clean build artifacts (keeps CMakeCache.txt for fast rebuild)
+clean: remove-orphans
+	@if [ -d $(BUILD_DIR) ]; then \
+		$(MAKE) -C $(BUILD_DIR) clean 2>/dev/null || true; \
+	fi
+	@if [ -d $(BUILD_DIR)/engine-sim-bridge ]; then \
+		$(MAKE) -C $(BUILD_DIR)/engine-sim-bridge clean 2>/dev/null || true; \
+	fi
+	@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
+
+# Full clean - removes everything including build directories (superset of clean)
 scrub: clean
 	@echo "Scrubbing all build artifacts..."
-	@rm -f engine-sim-bridge/*.dylib
-	@rm -f engine-sim-bridge/engine-sim/*.dylib
+	@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
+	@rm -rf $(BUILD_DIR)
+	@$(MAKE) remove-orphans
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
 
 check-cmake:
@@ -34,9 +66,6 @@ submodules:
 $(BUILD_DIR)/Makefile: submodules
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
-
-clean:
-	@rm -rf $(BUILD_DIR)
 
 test: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE) test
