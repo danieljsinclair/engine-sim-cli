@@ -2,6 +2,7 @@
 #define ENGINE_SIM_LOADER_H
 
 #include "engine_sim_bridge.h"
+#include "ILogging.h"
 #include <dlfcn.h>
 #include <iostream>
 #include <cstring>
@@ -18,7 +19,9 @@
 #endif
 
 // Function pointer types for all engine-sim API functions
-typedef EngineSimResult (*PFN_EngineSimCreate)(const EngineSimConfig*, const char*, const char*, EngineSimHandle*);
+typedef EngineSimResult (*PFN_EngineSimCreate)(const EngineSimConfig*, EngineSimHandle*);
+typedef EngineSimResult (*PFN_EngineSimLoadScript)(EngineSimHandle, const char*, const char*);
+typedef EngineSimResult (*PFN_EngineSimSetLogging)(EngineSimHandle, ILogging*);
 typedef EngineSimResult (*PFN_EngineSimStartAudioThread)(EngineSimHandle);
 typedef EngineSimResult (*PFN_EngineSimDestroy)(EngineSimHandle);
 typedef EngineSimResult (*PFN_EngineSimSetThrottle)(EngineSimHandle, double);
@@ -46,6 +49,8 @@ struct EngineSimAPI {
     void* libHandle;
 
     PFN_EngineSimCreate Create;
+    PFN_EngineSimLoadScript LoadScript;
+    PFN_EngineSimSetLogging SetLogging;
     PFN_EngineSimStartAudioThread StartAudioThread;
     PFN_EngineSimDestroy Destroy;
     PFN_EngineSimSetThrottle SetThrottle;
@@ -147,6 +152,8 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
 
     // Load all function pointers
     LOAD_FUNC(api, Create);
+    LOAD_FUNC(api, LoadScript);
+    LOAD_FUNC(api, SetLogging);
     LOAD_FUNC_OPTIONAL(api, StartAudioThread);  // Optional: Not used in sync-pull mode
     LOAD_FUNC(api, Destroy);
     LOAD_FUNC(api, SetThrottle);

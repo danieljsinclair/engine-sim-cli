@@ -30,9 +30,21 @@ EngineSimHandle EngineConfig::createAndLoad(
     std::string& error)
 {
     EngineSimHandle handle = nullptr;
-    EngineSimResult result = api.Create(&config, configPath.c_str(), assetBasePath.c_str(), &handle);
+    EngineSimResult result = api.Create(&config, &handle);
     if (result != ESIM_SUCCESS || !handle) {
         error = "Failed to create simulator";
+        return nullptr;
+    }
+
+    result = api.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
+    if (result != ESIM_SUCCESS) {
+        error = "Failed to load script: ";
+        if (handle) {
+            error += api.GetLastError(handle);
+        } else {
+            error += "Unknown error";
+        }
+        api.Destroy(handle);
         return nullptr;
     }
 

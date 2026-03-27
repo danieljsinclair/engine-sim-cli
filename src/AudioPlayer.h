@@ -59,8 +59,14 @@ struct AudioUnitContext {
     std::atomic<int> lastReqFrames;       // Last frame count requested by callback
     std::atomic<int> lastGotFrames;       // Last frame count actually rendered
     std::atomic<double> lastRenderMs;     // Last render time in milliseconds
-    std::atomic<double> lastHeadroomMs;   // Last headroom (budget - render) in milliseconds
+    std::atomic<double> lastHeadroomMs;   // Last headroom (16ms - renderTime) in milliseconds
+    std::atomic<double> lastBudgetPct;    // Last time budget percentage used (renderTime / 16ms)
+    std::atomic<double> lastFrameBudgetPct; // Last frame budget percentage (framesInWindow / framesNeeded)
     std::atomic<bool> preBufferDepleted;  // Whether pre-buffer was depleted
+
+    // 16ms budget tracking (SRP: tracks budget state, not presentation)
+    std::atomic<double> windowStartTimeMs; // Start time of current 16ms window (0 = not started)
+    std::atomic<int> framesServedInWindow;  // Cumulative frames in current window
 
     // Master volume
     float volume;
@@ -72,7 +78,10 @@ struct AudioUnitContext {
                         totalFramesRead(0), sampleRate(44100),
                         lastReqFrames(0), lastGotFrames(0),
                         lastRenderMs(0.0), lastHeadroomMs(0.0),
+                        lastBudgetPct(0.0), lastFrameBudgetPct(0.0),
                         preBufferDepleted(false),
+                        windowStartTimeMs(0.0),
+                        framesServedInWindow(0),
                         volume(1.0f) {}
     
     // Helper to set the rendering mode (Strategy injection point)

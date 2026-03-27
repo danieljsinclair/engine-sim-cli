@@ -33,18 +33,18 @@ namespace ANSIColors {
 }
 
 namespace DisplayHelper {
-    void outputProgress(bool interactive, const std::string& prefix, 
-        double currentTime, double duration, int progress, 
+    void outputProgress(bool interactive, const std::string& prefix,
+        double currentTime, double duration, int progress,
         const EngineSimStats& stats, double throttle, int underrunCount) {
-        (void)stats;
-        (void)throttle;
-        (void)underrunCount;
+        (void)currentTime;
+        (void)duration;
         if (interactive) {
             std::cout << prefix << "\n" << std::flush;
         } else {
             static int lastProgress = 0;
             if (progress != lastProgress && progress % 10 == 0) {
-                std::cout << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
+                // Include prefix (which may contain SYNC-PULL timing data) in non-interactive mode
+                std::cout << prefix << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
                           << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
                           << " | Underruns: " << underrunCount << "\r" << std::flush;
                 lastProgress = progress;

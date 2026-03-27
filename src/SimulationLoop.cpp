@@ -78,11 +78,8 @@ bool shouldContinueLoop(double currentTime, double duration, input::IInputProvid
     if (inputProvider) {
         return inputProvider->ShouldContinue();
     }
-    // For non-interactive, check duration
-    if (inputProvider != nullptr) {
-        return currentTime < duration;
-    }
-    return g_running.load();
+    // For non-interactive (no inputProvider), check duration
+    return currentTime < duration;
 }
 
 double getThrottle(input::IInputProvider* inputProvider) {
@@ -378,18 +375,55 @@ int runSimulation(
     presentation::IPresentation* presentation) {
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
 
-    // Create simulator - script is now loaded during Create
+    // Determine script path - handle both sine mode and default engine
+    // TODO: Make bridge support sine mode internally without CLI knowing
+    std::string scriptPath;
+    std::string assetBasePath;
+
+    if (config.sineMode || config.useDefaultEngine) {
+        // For sine mode or default engine, use the main.mr from engine-sim
+        scriptPath = "engine-sim-bridge/engine-sim/assets/main.mr";
+    } else {
+        scriptPath = config.configPath;
+    }
+
+    // Resolve config paths to absolute paths
+    if (!resolveConfigPath(scriptPath, scriptPath, assetBasePath)) {
+        return 1;
+    }
+
+    // Create simulator
     EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
     EngineSimHandle handle = nullptr;
 
-    EngineSimResult result = engineAPI.Create(&engineConfig, config.configPath.c_str(), config.assetBasePath.c_str(), &handle);
+    EngineSimResult result = engineAPI.Create(&engineConfig, &handle);
     if (result != ESIM_SUCCESS || !handle) {
         std::cerr << ANSIColors::RED << "ERROR: Failed to create simulator: " << (handle ? engineAPI.GetLastError(handle) : "Unknown error") << ANSIColors::RESET << "\n";
         return 1;
     }
-    
+
+    // Load script with appropriate path
+    result = engineAPI.LoadScript(handle, scriptPath.c_str(), assetBasePath.c_str());
+    if (result != ESIM_SUCCESS) {
+        std::cerr << ANSIColors::RED << "ERROR: Failed to load script: " << engineAPI.GetLastError(handle) << ANSIColors::RESET << "\n";
+        engineAPI.Destroy(handle);
+        return 1;
+    }
+
+    // DI: Inject logging interface into bridge
+    static StdErrLogging logger;
+    logger.setMinLevel(LogLevel::Info);  // Show Info and above by default
+    EngineSimResult logResult = engineAPI.SetLogging(handle, &logger);
+    if (logResult != ESIM_SUCCESS) {
+        std::cerr << "WARNING: Failed to set logging: result=" << logResult << "\n";
+    }
+
     // Initialize Audio framework and playback if requested
     AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI);
+    if (!audioPlayer) {
+        std::cerr << "ERROR: Failed to initialize audio player\n";
+        return 1;
+    }
     audioPlayer->setVolume(config.volume);
     StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
     audioMode->configure(config);

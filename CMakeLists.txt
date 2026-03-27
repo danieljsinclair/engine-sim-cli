@@ -43,6 +43,7 @@ add_executable(engine-sim-cli
     src/SyncPullAudio.cpp       # NEW: Sync-pull audio rendering
     src/SineGenerator.cpp       # NEW: One place for sine generation
     src/EngineConfig.cpp          # NEW: Engine config and script loading
+    src/ILogging.cpp             # NEW: Logging interface implementation
     src/interfaces/KeyboardInputProvider.cpp    # NEW: Input provider interface
     src/interfaces/ConsolePresentation.cpp     # NEW: Presentation interface
 )

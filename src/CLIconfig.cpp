@@ -247,7 +247,7 @@ void ShowConfigHeader(CommandLineArgs& args, const char* engineAPIVersion = "unk
         std::cout << "  Mapping: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz\n";
         std::cout << "  Engine: Default (Subaru EJ25)\n";
     } else {
-        std::cout << "  Engine: " << args.engineConfig << "\n";
+        std::cout << "  Engine: " << (args.engineConfig ? args.engineConfig : "(none)") << "\n";
     }
     std::cout << "  Output: " << (args.outputWav ? args.outputWav : "(none - audio not saved)") << "\n";
     if (args.interactive) {

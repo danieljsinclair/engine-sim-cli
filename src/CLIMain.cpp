@@ -62,9 +62,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     SimulationConfig config;
 
     // SRP: CLI just passes raw script path - Bridge handles path resolution
-    config.configPath = args.engineConfig;
+    config.configPath = args.engineConfig ? args.engineConfig : "";
     config.assetBasePath = "";  // Empty - Bridge will derive from configPath
-    
+
     config.duration = args.duration;
     config.interactive = args.interactive;
     config.playAudio = args.playAudio;
@@ -78,7 +78,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.simulationFrequency = args.simulationFrequency;
     config.preFillMs = args.preFillMs;
     if (args.outputWav) config.outputWav = args.outputWav;
-    
+
     return config;
 }
 
@@ -102,14 +102,15 @@ int main(int argc, char* argv[]) {
 
     // Load engine-sim library dynamically based on mode
     EngineSimAPI engineAPI = {};
-    bool useMock = args.sineMode || args.sineMockMode;
+    // TODO: Make bridge handle sine mode internally so we don't need special casing
+    bool useMock = args.sineMockMode;  // Only use mock for --sine-mock, not --sine
     if (!LoadEngineSimLibrary(engineAPI, useMock)) {
         std::cerr << "ERROR: Failed to load engine-sim library\n";
         return 1;
     }
 
     ShowConfigHeader(args, engineAPI.GetVersion());
-    
+
     // SETUP simulator
     const int sampleRate = 44100;
     SimulationConfig config = CreateSimulationConfig(args);

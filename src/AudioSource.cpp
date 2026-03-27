@@ -106,12 +106,12 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
             int gotFrames = ctx->lastGotFrames.load();
             double renderMs = ctx->lastRenderMs.load();
             double headroomMs = ctx->lastHeadroomMs.load();
-            double budgetMs = (reqFrames * 1000.0) / 44100.0;
-            double budgetPct = (renderMs / budgetMs) * 100.0;
+            double timeBudgetPct = ctx->lastBudgetPct.load();
+            double frameBudgetPct = ctx->lastFrameBudgetPct.load();
 
             // Color code based on performance
             std::string headroomColor;
-            if (headroomMs > 1.0) {
+            if (headroomMs > 5.0) {
                 headroomColor = ANSIColors::GREEN;
             } else if (headroomMs >= 0.0) {
                 headroomColor = ANSIColors::YELLOW;
@@ -120,9 +120,9 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
             }
 
             std::string budgetColor;
-            if (budgetPct < 80) {
+            if (timeBudgetPct < 80) {
                 budgetColor = ANSIColors::GREEN;
-            } else if (budgetPct <= 100) {
+            } else if (timeBudgetPct <= 100) {
                 budgetColor = ANSIColors::YELLOW;
             } else {
                 budgetColor = ANSIColors::RED;
@@ -131,7 +131,8 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
             prefix << "[SYNC-PULL] req=" << reqFrames << " got=" << gotFrames
                     << " render=" << std::fixed << std::setprecision(1) << renderMs << "ms"
                     << " headroom=" << headroomColor << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms" << ANSIColors::RESET
-                    << " (" << budgetColor << std::setprecision(0) << budgetPct << "%" << ANSIColors::RESET << " of budget)";
+                    << " (" << budgetColor << std::setprecision(0) << timeBudgetPct << "% time" << ANSIColors::RESET
+                    << ", " << std::setprecision(0) << frameBudgetPct << "% frames in window)";
         }
     }
 
