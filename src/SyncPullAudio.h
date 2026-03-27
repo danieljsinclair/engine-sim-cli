@@ -12,6 +12,9 @@
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
 
+// Forward declaration
+struct AudioUnitContext;
+
 // ============================================================================
 // SyncPullAudio - Handles sync-pull mode audio rendering
 // Renders audio directly in callback for lowest latency
@@ -27,6 +30,9 @@ public:
 
     // Cleanup resources
     void cleanup();
+
+    // Set context pointer for tracking pre-buffer depletion
+    void setContext(AudioUnitContext* context) { context_ = context; }
 
     // Render audio on-demand (called from audio callback)
     // Returns number of frames actually rendered
@@ -48,6 +54,7 @@ private:
     EngineSimHandle engineHandle_;
     const EngineSimAPI* engineAPI_;
     int sampleRate_;
+    AudioUnitContext* context_;  // For tracking pre-buffer depletion
     std::vector<float> preBuffer_;  // Pre-buffered audio for crackle prevention
     size_t preBufferReadPos_ = 0;   // Read position in pre-buffer
 

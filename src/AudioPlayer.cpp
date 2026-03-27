@@ -260,6 +260,10 @@ AudioUnitContext* AudioPlayer::getContext() {
     return context;
 }
 
+const AudioUnitContext* AudioPlayer::getContext() const {
+    return context;
+}
+
 void AudioPlayer::getBufferDiagnostics(int& writePtr, int& readPtr, int& available, int& status) {
     if (!context) {
         writePtr = readPtr = available = status = 0;
@@ -364,7 +368,7 @@ OSStatus AudioPlayer::audioUnitCallback(
     // Early exit: if context is null or playback is stopped, output silence
     // This prevents audio glitches when the player is stopped
     if (!ctx || !ctx->isPlaying.load()) {
-        std::cout << "Audio callback: context is null or playback stopped, rendering silence\n";
+        std::cout << "[SYNC-PULL] Audio callback: context is null or playback stopped, rendering silence\n";
         return renderSilence(ioData);
     }
 

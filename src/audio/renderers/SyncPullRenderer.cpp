@@ -1,42 +1,24 @@
 // SyncPullRenderer.cpp - Sync-pull renderer implementation
 // Renders audio synchronously on-demand from the engine simulator
-#include <iomanip>
 #include <chrono>
+#include <iomanip>
 
 #include "audio/renderers/SyncPullRenderer.h"
 #include "ConsoleColors.h"
 #include "AudioPlayer.h"
 
 namespace {
-    void logSyncPullTiming(UInt32 numberFrames, AudioBufferList* ioData, double callbackMs, double budgetMs, double latency) {
-        double budgetPct = callbackMs / budgetMs * 100;
+    void collectSyncPullTiming(AudioUnitContext* context, UInt32 numberFrames, int framesRead,
+                               double callbackMs, double budgetMs) {
+        if (!context) return;
 
-        std::string budgetColor;
-        if (budgetPct < 80) {
-            budgetColor = ANSIColors::GREEN;
-        } else if (budgetPct <= 100) {
-            budgetColor = ANSIColors::YELLOW;
-        } else {
-            budgetColor = ANSIColors::RED;
-        }
+        double headroom = budgetMs - callbackMs;
 
-        std::string headroomColor;
-        if (latency < -1.0) {
-            headroomColor = ANSIColors::GREEN;
-        } else if (latency <= 0.0) {
-            headroomColor = ANSIColors::YELLOW;
-        } else {
-            headroomColor = ANSIColors::RED;
-        }
-
-        static int cbCount = 0;
-        if (++cbCount % 100 == 0 || headroomColor == ANSIColors::RED || budgetColor == ANSIColors::RED) {  // Log every 100 callbacks or on critical latency
-
-            std::cout << "[SYNC-PULL] req=" << numberFrames << " got=" << (ioData->mBuffers[0].mDataByteSize / (2 * sizeof(float)))
-                    << " render=" << std::fixed << std::setprecision(1) << callbackMs << "ms"
-                    << " headroom=" << headroomColor << std::showpos << std::setprecision(1) << latency << std::noshowpos << "ms" << ANSIColors::RESET
-                    << " (" << budgetColor << std::setprecision(0) << budgetPct << "%" << ANSIColors::RESET << " of budget)\n";
-        }
+        // Store timing data for main simulation loop to read
+        context->lastReqFrames.store(static_cast<int>(numberFrames));
+        context->lastGotFrames.store(framesRead);
+        context->lastRenderMs.store(callbackMs);
+        context->lastHeadroomMs.store(headroom);
     }
 }
 
@@ -48,7 +30,8 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
     }
     
     auto callbackStart = std::chrono::high_resolution_clock::now();
-    
+
+    int totalFramesRead = 0;
     for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
         AudioBuffer& buffer = ioData->mBuffers[i];
         float* data = static_cast<float*>(buffer.mData);
@@ -67,20 +50,18 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
 
         // Report actual frames written to THIS buffer
         buffer.mDataByteSize = framesRead * 2 * sizeof(float);
+        totalFramesRead += framesRead;
     }
     
     auto callbackEnd = std::chrono::high_resolution_clock::now();
     double callbackMs = std::chrono::duration<double, std::milli>(callbackEnd - callbackStart).count();
     
     // Estimate budget: at 44100Hz, callback interval depends on buffer size
-    // Typical is 1024 frames at 44100Hz = ~23.2ms
-    // Latency: lead time - how much buffer margin we have before the audio callback deadline.
-    // Positive = we finished with time to spare, Negative = we exceeded the budget (audio glitch risk)
     double budgetMs = (numberFrames * 1000.0) / 44100.0;
-    double latency = callbackMs - budgetMs;
 
-    logSyncPullTiming(numberFrames, ioData, callbackMs, budgetMs, latency);
-    
+    // Collect timing data for main simulation loop to display
+    collectSyncPullTiming(context, numberFrames, totalFramesRead, callbackMs, budgetMs);
+
     return true;
 }
 

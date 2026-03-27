@@ -22,7 +22,7 @@ public:
     virtual ~IAudioSource() = default;
     virtual bool generateAudio(std::vector<float>& buffer, int frames) = 0;
     virtual void updateStats(const EngineSimStats& stats) = 0;
-    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) = 0;
+    virtual void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer = nullptr) = 0;
 };
 
 // Base audio source - DRY: contains common generateAudio() implementation using SineGenerator
@@ -59,7 +59,7 @@ class SineAudioSource : public BaseAudioSource {
 public:
     SineAudioSource(EngineSimHandle h, const EngineSimAPI& a);
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) override;
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer = nullptr) override;
 };
 
 // Engine audio source - uses engine API for audio generation
@@ -67,7 +67,7 @@ class EngineAudioSource : public BaseAudioSource {
 public:
     EngineAudioSource(EngineSimHandle h, const EngineSimAPI& a);
 
-    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) override;
+    void displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer = nullptr) override;
 };
 
 // ============================================================================

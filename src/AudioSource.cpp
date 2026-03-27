@@ -53,7 +53,9 @@ SineAudioSource::SineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
     : BaseAudioSource(h, a, true) {  // true = use SineGenerator
 }
 
-void SineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) {
+void SineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer) {
+    (void)audioPlayer;  // Not used for sine mode
+
     // Update RPM for sine generation
     setCurrentRPM(stats.currentRPM);
     
@@ -79,7 +81,7 @@ EngineAudioSource::EngineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
     : BaseAudioSource(h, a, false) {  // false = use engine API
 }
 
-void EngineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount) {
+void EngineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer) {
     int progress = static_cast<int>(currentTime * 100 / duration);
     std::ostringstream prefix;
     int rpm = static_cast<int>(stats.currentRPM);
@@ -87,8 +89,52 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
     prefix << "[" << std::setw(5) << rpm << " RPM] ";
     prefix << "[Throttle: " << std::setw(4) << static_cast<int>(throttle * 100) << "%] ";
     prefix << "[Underruns: " << underrunCount << "] ";
-    prefix << "[Flow: " << std::fixed << std::showpos << std::setw(8) << std::setprecision(5) << stats.exhaustFlow << std::noshowpos << " m3/s] ";
-    
+    prefix << ANSIColors::CYAN << "[Flow: " << std::fixed << std::showpos << std::setw(8) << std::setprecision(5) << stats.exhaustFlow << std::noshowpos << " m3/s]" << ANSIColors::RESET << " ";
+
+    // Append SYNC-PULL timing data if available
+    if (audioPlayer && audioPlayer->getContext()) {
+        const AudioUnitContext* ctx = audioPlayer->getContext();
+
+        // Check if pre-buffer was depleted
+        if (ctx->preBufferDepleted.load()) {
+            prefix << " [SYNC-PULL] Pre-buffer depleted - ";
+        }
+
+        // Get timing data
+        int reqFrames = ctx->lastReqFrames.load();
+        if (reqFrames > 0) {
+            int gotFrames = ctx->lastGotFrames.load();
+            double renderMs = ctx->lastRenderMs.load();
+            double headroomMs = ctx->lastHeadroomMs.load();
+            double budgetMs = (reqFrames * 1000.0) / 44100.0;
+            double budgetPct = (renderMs / budgetMs) * 100.0;
+
+            // Color code based on performance
+            std::string headroomColor;
+            if (headroomMs > 1.0) {
+                headroomColor = ANSIColors::GREEN;
+            } else if (headroomMs >= 0.0) {
+                headroomColor = ANSIColors::YELLOW;
+            } else {
+                headroomColor = ANSIColors::RED;
+            }
+
+            std::string budgetColor;
+            if (budgetPct < 80) {
+                budgetColor = ANSIColors::GREEN;
+            } else if (budgetPct <= 100) {
+                budgetColor = ANSIColors::YELLOW;
+            } else {
+                budgetColor = ANSIColors::RED;
+            }
+
+            prefix << "[SYNC-PULL] req=" << reqFrames << " got=" << gotFrames
+                    << " render=" << std::fixed << std::setprecision(1) << renderMs << "ms"
+                    << " headroom=" << headroomColor << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms" << ANSIColors::RESET
+                    << " (" << budgetColor << std::setprecision(0) << budgetPct << "%" << ANSIColors::RESET << " of budget)";
+        }
+    }
+
     DisplayHelper::outputProgress(interactive, prefix.str(), currentTime, duration, progress, stats, throttle, underrunCount);
 }
 

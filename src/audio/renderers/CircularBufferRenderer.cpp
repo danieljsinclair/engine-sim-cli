@@ -46,8 +46,8 @@ bool CircularBufferRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 n
         if (framesToRead < static_cast<int>(framesToWrite)) {
             context->underrunCount.fetch_add(1);
             if (context->underrunCount.load() % 10 == 0) {
-                std::cout << "[Audio Diagnostics] Buffer underrun #" << context->underrunCount.load()
-                          << " - requested: " << framesToWrite << ", available: " << available << "\n";
+                std::cout << "[SYNC-PULL] UNDERFLOW (x" << context->underrunCount.load()
+                          << "): requested " << framesToWrite << ", got " << framesToRead << "\n";
             }
         }
 

@@ -89,6 +89,7 @@ std::unique_ptr<AudioUnitContext> SyncPullAudioMode::createContext(
         std::cerr << "ERROR: Failed to initialize SyncPullAudio\n";
         return nullptr;
     }
+    context->syncPullAudio->setContext(context.get());  // Set context for pre-buffer tracking
     syncPullAudio_ = context->syncPullAudio.get();  // Store raw pointer for prepareBuffer
 
     // DI: Inject SyncPullRenderer into context (mode knows its own renderer)

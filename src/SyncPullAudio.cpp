@@ -1,8 +1,7 @@
 // SyncPullAudio.cpp - Sync-pull audio rendering implementation
 
 #include "SyncPullAudio.h"
-#include "AudioSource.h"
-#include "ConsoleColors.h"
+#include "AudioPlayer.h"
 
 #include <iostream>
 
@@ -11,7 +10,7 @@
 // ============================================================================
 
 SyncPullAudio::SyncPullAudio()
-    : engineHandle_(nullptr), engineAPI_(nullptr), sampleRate_(44100) {
+    : engineHandle_(nullptr), engineAPI_(nullptr), sampleRate_(44100), context_(nullptr) {
 }
 
 SyncPullAudio::~SyncPullAudio() {
@@ -26,11 +25,11 @@ bool SyncPullAudio::initialize(EngineSimHandle handle, const EngineSimAPI* api, 
     sampleRate_ = sampleRate;
 
     if (engineHandle_ && engineAPI_) {
-        std::cout << "[SyncPullAudio] Initialized - direct render on callback\n";
+        std::cout << "[SYNC-PULL] Initialized - direct render on callback\n";
         return true;
     }
 
-    std::cerr << "[SyncPullAudio] ERROR: Invalid handle or API\n";
+    std::cerr << "[SYNC-PULL] ERROR: Invalid handle or API\n";
     return false;
 }
 
@@ -55,13 +54,17 @@ void SyncPullAudio::preFillBuffer(int targetMs) {
     preBuffer_.resize(framesRead * 2);
     preBufferReadPos_ = 0;
     
-    std::cout << ANSIColors::colorPreFill("[SyncPullAudio] Pre-filled ") 
-              << "\x1b[35m" << (framesRead * 1000 / sampleRate_) << "ms\x1b[0m buffer\n";
+    std::cout << "[SYNC-PULL] Pre-filled " << (framesRead * 1000 / sampleRate_) << "ms buffer\n";
 }
 
 int SyncPullAudio::renderOnDemand(float* outputBuffer, int framesToRender) {
     if (!isEnabled() || !outputBuffer || framesToRender <= 0) {
         return 0;
+    }
+
+    // Reset pre-buffer depleted flag at start of callback
+    if (context_) {
+        context_->preBufferDepleted.store(false);
     }
 
     int framesRead = 0;
@@ -80,10 +83,10 @@ int SyncPullAudio::renderOnDemand(float* outputBuffer, int framesToRender) {
         outputBuffer += framesToCopy * 2;
         framesRead = framesToCopy;
         framesToRender -= framesToCopy;
-        
-        // Debug: show pre-buffer depletion
-        if (preBufferReadPos_ >= preBuffer_.size()) {
-            std::cout << "[SyncPullAudio] Pre-buffer depleted after copying " << framesToCopy << " frames\n";
+
+        // Check if pre-buffer will be depleted after this read
+        if (preBufferReadPos_ >= preBuffer_.size() && context_) {
+            context_->preBufferDepleted.store(true);
         }
     }
     
@@ -92,15 +95,6 @@ int SyncPullAudio::renderOnDemand(float* outputBuffer, int framesToRender) {
         int newFrames = 0;
         engineAPI_->RenderOnDemand(engineHandle_, outputBuffer, framesToRender, &newFrames);
         framesRead += newFrames;
-        
-        // Debug: warn if on-demand returned fewer frames than requested
-        // Only print every 10th underflow to reduce verbosity
-        static int underflowCount = 0;
-        if (newFrames < framesToRender) {
-            if (++underflowCount % 10 == 0) {
-                std::cout << "[SyncPullAudio] UNDERFLOW (x" << underflowCount << "): requested " << framesToRender << ", got " << newFrames << "\n";
-            }
-        }
     }
 
     return framesRead;

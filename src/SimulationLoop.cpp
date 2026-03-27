@@ -25,6 +25,8 @@
 #include <algorithm>
 #include <iomanip>
 #include <filesystem>
+#include "ConsoleColors.h"
+
 
 // ============================================================================
 // Private Helper Functions - SRP Compliance
@@ -137,15 +139,6 @@ void updateSineFrequency(EngineSimHandle handle, const EngineSimAPI& api,
 // runSimulation helpers - ONE thing each
 // ----------------------------------------------------------------------------
 
-EngineSimHandle createSimulator(const EngineSimConfig& config, EngineSimAPI& engineAPI) {
-    EngineSimHandle handle = nullptr;
-    EngineSimResult result = engineAPI.Create(&config, &handle);
-    if (result != ESIM_SUCCESS || !handle) {
-        throw std::runtime_error("ERROR: Failed to create simulator\n");
-    }
-    return handle;
-}
-
 EngineSimConfig createDefaultConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
     return EngineConfig::createDefault(sampleRate, simulationFrequency);
 }
@@ -185,6 +178,8 @@ bool resolveConfigPath(const std::string& configPath,
             std::filesystem::path parentPath = scriptPath.parent_path();
             if (parentPath.filename() == "assets") {
                 assetBasePath = parentPath.parent_path().string();
+            } else if (parentPath.filename() == "es") {
+                assetBasePath = parentPath.parent_path().string();
             } else {
                 assetBasePath = parentPath.string();
             }
@@ -204,17 +199,7 @@ bool resolveConfigPath(const std::string& configPath,
     return true;
 }
 
-bool loadEngineScriptInternal(EngineSimHandle handle, EngineSimAPI& engineAPI,
-                     const std::string& configPath, const std::string& assetBasePath) {
-    EngineSimResult result = engineAPI.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
-    if (result != ESIM_SUCCESS) {
-        std::cerr << "ERROR: Failed to load config: " << engineAPI.GetLastError(handle) << "\n";
-        engineAPI.Destroy(handle);
-        return false;
-    }
-    std::cout << "[Configuration loaded: " << configPath << "]\n";
-    return true;
-}
+
 
 
 void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
@@ -337,7 +322,7 @@ int runUnifiedAudioLoop(
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
         
         // Show audio source specific output (Frequency for sine, Flow for engine)
-        audioSource.displayProgress(currentTime, config.duration, config.interactive, stats, throttle, underrunCount);
+        audioSource.displayProgress(currentTime, config.duration, config.interactive, stats, throttle, underrunCount, audioPlayer);
         
         // Maintain 60hz timing with sleeps :(
         performTimingControl(timer);
@@ -354,7 +339,7 @@ AudioPlayer *InitAudioPlayback(IAudioMode* audioMode, int sampleRate, EngineSimH
     bool initSuccess = audioPlayer->initialize(*audioMode, sampleRate, handle, &engineAPI);
     
     if (!initSuccess) {
-        std::cerr << "ERROR: Audio init failed\n";
+        std::cerr << ANSIColors::RED << "ERROR: Audio init failed" << ANSIColors::RESET << "\n";
         delete audioPlayer;
         return nullptr;
     }
@@ -367,7 +352,7 @@ void StartAudioMode(IAudioMode* audioMode, EngineSimHandle handle, EngineSimAPI&
             delete audioPlayer;
         }
         engineAPI.Destroy(handle);
-        throw std::runtime_error("ERROR: audioMode must be injected\n");
+        throw std::runtime_error(std::string(ANSIColors::RED) + "ERROR: audioMode must be injected" + ANSIColors::RESET + "\n");
     }
 
     // Strategy pattern: Start audio thread based on audio mode
@@ -392,11 +377,14 @@ int runSimulation(
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation) {
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
-    
-    // Create simulator - single simulator for both audio and main simulation
-    EngineSimConfig engineConfig = createDefaultConfig(sampleRate, config.simulationFrequency);
-    EngineSimHandle handle = createSimulator(engineConfig, engineAPI);
-    if (!loadEngineScriptInternal(handle, engineAPI, config.configPath, config.assetBasePath)) {
+
+    // Create simulator - script is now loaded during Create
+    EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
+    EngineSimHandle handle = nullptr;
+
+    EngineSimResult result = engineAPI.Create(&engineConfig, config.configPath.c_str(), config.assetBasePath.c_str(), &handle);
+    if (result != ESIM_SUCCESS || !handle) {
+        std::cerr << ANSIColors::RED << "ERROR: Failed to create simulator: " << (handle ? engineAPI.GetLastError(handle) : "Unknown error") << ANSIColors::RESET << "\n";
         return 1;
     }
     
@@ -405,12 +393,16 @@ int runSimulation(
     audioPlayer->setVolume(config.volume);
     StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
     audioMode->configure(config);
-    audioMode->prepareBuffer(audioPlayer);
-    
+
+    // REORDER: Warmup FIRST, then pre-fill buffer
+    // This ensures engine is warm when RenderOnDemand is called during pre-fill
     // Check if drain is needed during warmup
     bool drainDuringWarmup = config.playAudio && audioPlayer && audioMode->shouldDrainDuringWarmup();
     runWarmupPhase(handle, engineAPI, audioPlayer, drainDuringWarmup);
-    
+
+    // Now pre-fill buffer with WARM engine
+    audioMode->prepareBuffer(audioPlayer);
+
     // Reset buffer after warmup based on audio mode
     audioMode->resetBufferAfterWarmup(audioPlayer);
     

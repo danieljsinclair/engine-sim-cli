@@ -55,6 +55,13 @@ struct AudioUnitContext {
     // Sync pull model: now uses SyncPullAudio class
     std::unique_ptr<SyncPullAudio> syncPullAudio;  // Managed by SyncPullAudio class
 
+    // Sync-pull timing diagnostics (collected in audio callback, read by main loop)
+    std::atomic<int> lastReqFrames;       // Last frame count requested by callback
+    std::atomic<int> lastGotFrames;       // Last frame count actually rendered
+    std::atomic<double> lastRenderMs;     // Last render time in milliseconds
+    std::atomic<double> lastHeadroomMs;   // Last headroom (budget - render) in milliseconds
+    std::atomic<bool> preBufferDepleted;  // Whether pre-buffer was depleted
+
     // Master volume
     float volume;
 
@@ -63,6 +70,9 @@ struct AudioUnitContext {
                         writePointer(0), readPointer(0),
                         underrunCount(0), bufferStatus(0),
                         totalFramesRead(0), sampleRate(44100),
+                        lastReqFrames(0), lastGotFrames(0),
+                        lastRenderMs(0.0), lastHeadroomMs(0.0),
+                        preBufferDepleted(false),
                         volume(1.0f) {}
     
     // Helper to set the rendering mode (Strategy injection point)
@@ -112,6 +122,7 @@ public:
 
     // Expose context for main loop access
     AudioUnitContext* getContext();
+    const AudioUnitContext* getContext() const;
 
     // Get buffer diagnostics for monitoring synchronization issues
     void getBufferDiagnostics(int& writePtr, int& readPtr, int& available, int& status);

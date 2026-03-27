@@ -60,10 +60,10 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
 
 SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     SimulationConfig config;
-    
-    EngineConfig::ConfigPaths resolved = EngineConfig::resolveConfigPaths(args.engineConfig);
-    config.configPath = resolved.configPath;
-    config.assetBasePath = resolved.assetBasePath;
+
+    // SRP: CLI just passes raw script path - Bridge handles path resolution
+    config.configPath = args.engineConfig;
+    config.assetBasePath = "";  // Empty - Bridge will derive from configPath
     
     config.duration = args.duration;
     config.interactive = args.interactive;

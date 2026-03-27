@@ -40,7 +40,7 @@ namespace DisplayHelper {
         (void)throttle;
         (void)underrunCount;
         if (interactive) {
-            std::cout << "\r" << prefix << std::flush;
+            std::cout << prefix << "\n" << std::flush;
         } else {
             static int lastProgress = 0;
             if (progress != lastProgress && progress % 10 == 0) {
