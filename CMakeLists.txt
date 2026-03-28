@@ -61,6 +61,8 @@ target_include_directories(engine-sim-cli
     src
 )
 
+target_compile_options(engine-sim-cli PRIVATE -g)
+
 # Set rpath for CLI executable to find dylibs in build directory
 if(APPLE)
     set_target_properties(engine-sim-cli PROPERTIES
