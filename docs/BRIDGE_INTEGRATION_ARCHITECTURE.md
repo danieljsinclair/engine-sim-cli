@@ -270,25 +270,47 @@ The system receives input from upstream systems:
 
 > **Note**: This is a **REFACTORING** (internal architecture change), NOT a feature change. The external CLI behavior remains identical.
 
-### 9.1 Why We Need IEngineProvider
+### 9.1 Bridge Architecture: Static Linking with C++ Wrappers
 
-#### Current Problem: Dynamic Loading with dlopen
+#### Architecture Decision: Static Linking Over Dynamic DLL Loading
 
-Currently the CLI uses dlopen() to load either:
-- `libenginesim.dylib` - real engine-sim
-- `libenginesim-mock.dylib` - mock implementation
+**DECISION**: The bridge should be statically linked to the CLI and expose C++ interfaces (not fragile DLL entry points).
 
-This approach has significant problems:
+**Rationale**:
+1. **Compile-time type safety** - Linker catches all errors at build time
+2. **No runtime path resolution** - Eliminates DYLD_LIBRARY_PATH issues
+3. **SOLID principles** - C++ interfaces enable proper dependency injection
+4. **Simpler deployment** - Single binary, no library dependencies
+5. **Better testing** - Easy to swap implementations via DI
 
-1. **No compile-time type checking** - Linker errors only appear at runtime
-2. **Fragile path resolution** - Requires correct DYLD_LIBRARY_PATH
-3. **No single source of truth** - Engine behavior is split across two implementations
-4. **Testing difficulty** - Cannot easily swap implementations in unit tests
-5. **Code duplication** - Two separate SineGenerator implementations exist
+#### Current Bridge Implementation (Correct)
 
-#### Solution: IEngineProvider Interface + Dependency Injection
+The bridge (`engine_sim_bridge.cpp`) **properly wraps** engine-sim:
+- Presents clean C API (`EngineSimCreate`, `EngineSimRender`, etc.)
+- Internally delegates to engine-sim C++ classes (`PistonEngineSimulator`, `Engine`, etc.)
+- Compiled statically with engine-sim source into `libenginesim.dylib`
+- escli loads the bridge, NOT engine-sim directly
 
-Replace dynamic loading with **static linking** and **dependency injection**:
+**This is the correct wrapper pattern** - static linking with proper abstraction.
+
+#### Transition Plan: Direct C++ Interface
+
+Reference implementation exists in `/Users/danielsinclair/vscode/escli/escli` (uncommitted):
+
+```cpp
+// engine_sim_loader.h (static linking version)
+struct EngineSimAPI {
+    EngineSimResult Create(const EngineSimConfig* config, EngineSimHandle* outHandle) const {
+        return EngineSimCreate(config, outHandle);
+    }
+    // ... direct function calls, no function pointers
+};
+```
+
+This eliminates:
+- `dlopen()` / `dlsym()` complexity
+- Function pointer indirection
+- Runtime symbol resolution failures
 
 ```cpp
 // src/interfaces/IEngineProvider.h (planned)

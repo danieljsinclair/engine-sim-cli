@@ -37,6 +37,8 @@ This document defines a comprehensive test strategy for the engine-sim-cli proje
 
 **Final Recommendation:** Start with **GoogleTest** since it's already in the dependency tree. Consider Catch2 for new projects or if the team prefers BDD-style syntax.
 
+**Status: [x] DONE** - GoogleTest integration added to CMakeLists.txt
+
 ---
 
 ## 2. Test Organization
@@ -51,7 +53,8 @@ This document defines a comprehensive test strategy for the engine-sim-cli proje
 │   │   ├── test_sine_mode.cpp
 │   │   ├── test_default_engine.cpp
 │   │   ├── test_audio_modes.cpp
-│   │   └── test_duration_zero.cpp
+│   │   ├── test_silent_flag.cpp
+│   │   └── test_duration_zero.cpp  # NOT IMPLEMENTED - Skipped per requirements
 │   ├── audio/                     # Priority 2: Audio quality tests
 │   │   ├── test_buffer_management.cpp
 │   │   ├── test_sine_determinism.cpp
@@ -67,6 +70,8 @@ This document defines a comprehensive test strategy for the engine-sim-cli proje
 └── docs/
     └── TEST_ARCHITECTURE.md      # This document
 ```
+
+**Status: [x] DONE** - Test directory structure created with smoke tests
 
 ### CMake Integration
 
@@ -169,6 +174,13 @@ add_test(NAME bridge_tests COMMAND bridge_tests)
 
 **Purpose:** Verify that `--sine` flag works without crashing and produces audio.
 
+**Status: [x] DONE** - Implemented with 3 tests:
+- RunsWithoutCrash (PASSING)
+- ProducesAudioOutput (FAILING - Known limitation: WAV export not supported in unified mode)
+- SineModeWithRPMFlag (PASSING)
+
+**Note:** The ProducesAudioOutput test is currently failing due to a known CLI limitation where WAV export is not supported in "unified mode". This is a CLI implementation issue, not a test issue. The test correctly validates the expected behavior once WAV export is implemented.
+
 **Test Code:**
 
 ```cpp
@@ -226,6 +238,12 @@ TEST_F(SineModeSmokeTest, ProducesAudioOutput) {
 
 **Purpose:** Verify that `--default-engine` flag works without crashing.
 
+**Status: [x] DONE** - Implemented with 4 tests:
+- RunsWithoutCrash (PASSING)
+- ProducesAudioOutput (FAILING - Known limitation: WAV export not supported in unified mode)
+- DefaultEngineWithRPMFlag (PASSING)
+- DefaultEngineWithLoadFlag (PASSING)
+
 **Test Code:**
 
 ```cpp
@@ -267,6 +285,14 @@ TEST_F(DefaultEngineSmokeTest, ProducesAudioOutput) {
 
 **Purpose:** Verify both threaded and sync-pull modes work.
 
+**Status: [x] DONE** - Implemented with 6 tests:
+- ThreadedModeWorks (PASSING)
+- SyncPullModeWorks (PASSING)
+- ThreadedModeWithDefaultEngine (PASSING)
+- SyncPullModeWithDefaultEngine (PASSING)
+- ThreadedModeProducesOutput (FAILING - Known limitation: WAV export not supported in unified mode)
+- SyncPullModeProducesOutput (FAILING - Known limitation: WAV export not supported in unified mode)
+
 **Test Code:**
 
 ```cpp
@@ -295,6 +321,8 @@ TEST_F(AudioModesTest, SyncPullModeWorks) {
 
 **Purpose:** Verify that duration=0 still generates at least one audio frame.
 
+**Status: [ ] SKIPPED** - This test was not implemented per user requirements.
+
 **Test Code:**
 
 ```cpp
@@ -321,6 +349,102 @@ TEST_F(DurationZeroTest, GeneratesAtLeastOneFrame) {
     EXPECT_GE(fileSize, 44) << "WAV file too small, may not have audio data";
     unlink(outputPath.c_str());
 }
+```
+
+### 3.5 Test: Silent Flag Test
+
+**File:** `test/smoke/test_silent_flag.cpp`
+
+**Purpose:** Verify that --silent flag works correctly. The --silent flag runs the full audio pipeline but at zero volume.
+
+**Status: [x] DONE** - Implemented with 5 tests:
+- SilentModeWorks (PASSING)
+- SilentModeProducesOutput (FAILING - Known limitation: WAV export not supported in unified mode)
+- SilentModeWithDefaultEngine (PASSING)
+- SilentModeWithThreaded (PASSING)
+- SilentModeWithRPM (PASSING)
+
+**Test Code:**
+
+```cpp
+TEST_F(SilentFlagTest, SilentModeWorks) {
+    // Test: Run with --silent flag
+    // Expect: No crash, exit code 0
+    std::string command = cliPath + " --sine --silent --duration 0.1 > /dev/null 2>&1";
+    int result = system(command.c_str());
+
+    int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
+    EXPECT_EQ(exitCode, 0) << "CLI failed with --silent flag. Exit code: " << exitCode;
+}
+
+TEST_F(SilentFlagTest, SilentModeProducesOutput) {
+    // Test: Run with --silent --output to verify audio is still generated
+    // The --silent flag should still produce output files, just at zero volume
+    std::string outputPath = "/tmp/test_silent_output.wav";
+    std::string command = cliPath + " --sine --silent --duration 0.1 --output " + outputPath + " 2>/dev/null";
+
+    unlink(outputPath.c_str());
+
+    int result = system(command.c_str());
+    int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
+    ASSERT_EQ(exitCode, 0) << "CLI failed with --silent --output. Exit code: " << exitCode;
+
+    // Verify file exists
+    FILE* file = fopen(outputPath.c_str(), "r");
+    ASSERT_NE(file, nullptr) << "Output file was not created with --silent flag";
+
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fclose(file);
+
+    // File should still have content (WAV header + audio data, even if silent)
+    EXPECT_GT(fileSize, 1000) << "Output file too small with --silent flag";
+
+    unlink(outputPath.c_str());
+}
+```
+
+---
+
+### Smoke Tests Implementation Summary
+
+**Overall Status: [x] IMPLEMENTED**
+
+- **Total Tests Implemented:** 18 tests
+- **Passing Tests:** 13 tests (72%)
+- **Failing Tests:** 5 tests (28%) - All due to known WAV export limitation
+- **Skipped Tests:** 1 test (Duration Zero test per requirements)
+
+**Test Results:**
+- All happy-path/crash prevention tests: PASSING
+- All WAV output production tests: FAILING (due to CLI limitation, not test issue)
+
+**Known Limitation:**
+The CLI currently has a known limitation where WAV export is not supported in "unified mode":
+```
+WARNING: WAV export not supported in unified mode
+Use the old engine mode code path for WAV export.
+```
+
+This affects the following tests:
+- SineModeSmokeTest.ProducesAudioOutput
+- DefaultEngineSmokeTest.ProducesAudioOutput
+- AudioModesTest.ThreadedModeProducesOutput
+- AudioModesTest.SyncPullModeProducesOutput
+- SilentFlagTest.SilentModeProducesOutput
+
+Once WAV export is implemented in the CLI, these tests should pass without modification.
+
+**Test Execution:**
+```bash
+# Build tests
+cmake --build build --target smoke_tests
+
+# Run tests
+cd build && ctest --output-on-failure -L smoke
+
+# Or run directly
+./build/test/smoke_tests
 ```
 
 ---

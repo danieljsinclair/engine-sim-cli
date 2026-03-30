@@ -6,6 +6,7 @@
 #include "audio/modes/IAudioMode.h"
 #include "CircularBuffer.h"
 #include "SyncPullAudio.h"
+#include "ConsoleColors.h"
 
 #include "audio/renderers/SyncPullRenderer.h"
 #include "audio/renderers/CircularBufferRenderer.h"
@@ -97,7 +98,8 @@ bool AudioPlayer::setupAudioUnit() {
 
     OSStatus status = AudioComponentInstanceNew(component, &audioUnit);
     if (status != noErr) {
-        std::cerr << "ERROR: Failed to create AudioUnit: " << status << "\n";
+        std::cerr << ANSIColors::RED << "ERROR: Failed to create AudioUnit (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
+        std::cerr << "  → Cannot allocate audio component - system audio may be unavailable\n";
         return false;
     }
 
@@ -111,7 +113,9 @@ bool AudioPlayer::setupAudioUnit() {
     );
 
     if (status != noErr) {
-        std::cerr << "ERROR: Failed to set AudioUnit format: " << status << "\n";
+        std::cerr << ANSIColors::RED << "ERROR: Failed to set AudioUnit format (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
+        std::cerr << "  → Sample rate 44100 Hz stereo not supported by device\n";
+        std::cerr << "  → Check System Settings → Sound for supported formats\n";
         AudioComponentInstanceDispose(audioUnit);
         audioUnit = nullptr;
         return false;
@@ -132,7 +136,8 @@ bool AudioPlayer::setupAudioUnit() {
     );
 
     if (status != noErr) {
-        std::cerr << "ERROR: Failed to set callback: " << status << "\n";
+        std::cerr << ANSIColors::RED << "ERROR: Failed to set callback (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
+        std::cerr << "  → Cannot register audio render callback - internal error\n";
         AudioComponentInstanceDispose(audioUnit);
         audioUnit = nullptr;
         return false;
@@ -140,7 +145,14 @@ bool AudioPlayer::setupAudioUnit() {
 
     status = AudioUnitInitialize(audioUnit);
     if (status != noErr) {
-        std::cerr << "ERROR: Failed to initialize AudioUnit: " << status << "\n";
+        std::cerr << ANSIColors::RED << "ERROR: Failed to initialize AudioUnit (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
+        if (status == kAudioUnitErr_FormatNotSupported) {
+            std::cerr << "  → Audio format not supported by output device\n";
+        } else if (status == -66681) {
+            std::cerr << "  → Audio device format changed during initialization\n";
+        } else {
+            std::cerr << "  → Audio device unavailable or misconfigured\n";
+        }
         AudioComponentInstanceDispose(audioUnit);
         audioUnit = nullptr;
         return false;
@@ -180,7 +192,39 @@ bool AudioPlayer::start() {
     
     OSStatus status = AudioOutputUnitStart(audioUnit);
     if (status != noErr) {
-        std::cerr << "ERROR: Failed to start AudioUnit: " << status << "\n";
+        std::cerr << ANSIColors::RED << "ERROR: Failed to start AudioUnit (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
+        
+        // Decode common error codes for diagnosis
+        switch (status) {
+            case kAudioUnitErr_Uninitialized:
+                std::cerr << "  → AudioUnit not initialized properly\n";
+                break;
+            case kAudioUnitErr_InvalidParameter:
+                std::cerr << "  → Invalid parameter or configuration\n";
+                break;
+            case kAudioHardwareNotRunningError:
+                std::cerr << "  → Audio hardware stopped (coreaudiod may have restarted)\n";
+                std::cerr << "  → Try: sudo killall coreaudiod\n";
+                break;
+            case kAudioHardwareBadDeviceError:
+                std::cerr << "  → Audio device unavailable (unplugged/changed during startup?)\n";
+                break;
+            case -66671:
+                std::cerr << "  → Another application has exclusive access to audio device\n";
+                std::cerr << "  → Close other audio apps or check Activity Monitor\n";
+                break;
+            case -66681:
+                std::cerr << "  → Audio device format changed (sample rate mismatch?)\n";
+                std::cerr << "  → Check System Settings → Sound for device configuration\n";
+                break;
+            case kAudioHardwareUnspecifiedError:
+                std::cerr << "  → Unspecified hardware error (device busy/unavailable)\n";
+                break;
+            default:
+                std::cerr << "  → Unknown error - check Console.app for coreaudiod logs\n";
+                break;
+        }
+        
         if (context) {
             context->isPlaying.store(false);
         }

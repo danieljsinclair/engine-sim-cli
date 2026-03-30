@@ -8,6 +8,7 @@
 #include "AudioSource.h"
 #include "CircularBuffer.h"
 #include "SyncPullAudio.h"
+#include "ConsoleColors.h"
 
 #include "audio/renderers/SyncPullRenderer.h"
 
@@ -64,7 +65,9 @@ void SyncPullAudioMode::resetBufferAfterWarmup(AudioPlayer* audioPlayer) {
 
 void SyncPullAudioMode::startPlayback(AudioPlayer* audioPlayer) {
     if (audioPlayer) {
-        audioPlayer->start();
+        if (!audioPlayer->start()) {
+            throw std::runtime_error(std::string(ANSIColors::RED) + "ERROR: Failed to start AudioUnit playback" + ANSIColors::RESET);
+        }
         std::cout << "[Audio playback enabled]\n";
     }
 }

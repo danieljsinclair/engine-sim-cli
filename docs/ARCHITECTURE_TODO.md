@@ -79,12 +79,95 @@ SimulationLoop (Orchestration)
 See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 
 ## SOLID Status
+
+### Overall Assessment
 - SRP: ✅ Good (input/presentation extracted)
 - OCP: ✅ Good (Strategy pattern for audio mode)
 - LSP: ✅ Good
 - ISP: ✅ Good (separate IInputProvider, IPresentation)
 - DIP: ✅ Good (factory returns interfaces)
-- DRY: ✅ Good (helpers extracted)
+- DRY: ⚠️ **ISSUES FOUND** (see below)
+- YAGNI: ⚠️ **DEAD CODE** (see below)
+
+### SOLID Pedant Analysis (2026-03-27)
+
+#### ✅ SOLID Compliance (Good)
+- **SRP**: `EngineConfig`, `SimulationLoop`, `AudioPlayer` each have single responsibilities
+- **OCP**: Strategy pattern via `IAudioMode` and `IAudioRenderer` allows extension without modification
+- **DIP**: High-level modules depend on abstractions (`IAudioMode`, `IInputProvider`, `IPresentation`)
+- **DI**: Dependencies are properly injected throughout
+
+#### ❌ Critical Issues Found
+
+**1. WET VIOLATION - Path Resolution Duplication**
+
+The same path resolution logic exists in TWO places:
+
+- **Location A**: `src/SimulationLoop.cpp:171-207` (`resolveConfigPath()` function)
+- **Location B**: `src/EngineConfig.cpp:83-117` (`resolveAssetBasePath()` method)
+
+Both functions do identical work:
+- Convert to absolute paths
+- Handle "assets"/"es" parent directories
+- Resolve asset base paths
+
+**Fix Required**: Remove `resolveConfigPath()` from `SimulationLoop.cpp`, use `EngineConfig::resolveConfigPaths()` instead.
+
+**2. DEAD CODE - Debug Conditional**
+
+`src/SimulationLoop.cpp:391-414` contains:
+```cpp
+bool useConfigScript = true;  // Set to false to use old LoadScript method
+if (useConfigScript) {
+    // NEW METHOD
+} else {
+    // OLD METHOD (never executed)
+}
+```
+
+The `else` branch is dead code that will never execute in production.
+
+**Fix Required**: Remove the conditional and dead code. Use only the new method.
+
+**3. PATH RESOLUTION NOT CALLED**
+
+`EngineConfig::resolveConfigPaths()` exists but is **never called** in the happy path. The CLI passes raw user input to the bridge, which expects absolute paths.
+
+**Fix Required**: Call `EngineConfig::resolveConfigPaths()` in `CreateSimulationConfig()` or in `runSimulation()` before calling `createDefaultWithScript()`.
+
+**4. STATIC STORAGE LIFETIME ISSUE**
+
+`src/EngineConfig.cpp:32-35` uses static storage for path strings:
+```cpp
+static std::string scriptPathStorage;
+static std::string assetBasePathStorage;
+```
+
+**Issues**:
+- Only one simulator instance supported
+- Thread safety violations
+- Subsequent calls overwrite previous paths
+
+**Fix Required**: Use `SimulationConfig` strings instead of static storage.
+
+#### 📊 SOLID Scorecard
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| SRP | ✅ PASS | Good separation |
+| OCP | ✅ PASS | Strategy pattern |
+| LSP | ✅ PASS | Interface contracts |
+| ISP | ✅ PASS | Focused interfaces |
+| DIP | ✅ PASS | Dependencies inverted |
+| **DRY** | ❌ **FAIL** | **Path resolution duplicated** |
+| **YAGNI** | ❌ **FAIL** | **Dead conditional code** |
+
+#### 🎯 Action Items
+
+- [ ] Remove `resolveConfigPath()` from `SimulationLoop.cpp`
+- [ ] Delete `useConfigScript` conditional and dead code
+- [ ] Call `EngineConfig::resolveConfigPaths()` before Create
+- [ ] Replace static storage with `SimulationConfig` strings
 
 ## Audio Volume Control
 
@@ -109,14 +192,13 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 - Useful for: cranking volume boost, fade in/out, compression
 - Example: `applyGain(samples, frameCount, gain)`
 
-### Replace Dynamic Linking with Static + DI
-- Current: `StartAudioThread` function pointer checks if DLL export exists
-- Problem: This checks DLL availability, not whether threaded mode should be used
-- Solution: Use static linking with interfaces and DI
-  - Compile-time linker verification instead of runtime DLL loading
-  - IAudioEngine interface for engine physics
-  - MockSineGenerator vs RealEngine selectable via DI
-  - No more flaky dynamic symbol resolution
+### Static Linking Architecture (COMPLETED in reference escli)
+- **DECISION**: Bridge should be statically linked, NOT dynamically loaded via dlopen
+- Reference implementation: `/Users/danielsinclair/vscode/escli/escli` (uncommitted)
+- Direct function calls instead of function pointer indirection
+- C++ interfaces for SOLID compliance (IInputProvider, IPresentation)
+- No runtime library loading - compile-time type safety
+- TODO: Port reference implementation to escli.refac7
 
 ### Ignition State Management
 - Input providers report user intent (toggle pressed), not state

@@ -80,7 +80,9 @@ void ThreadedAudioMode::prepareBuffer(AudioPlayer* audioPlayer) {
         return;
     }
     BufferOps::preFillCircularBuffer(audioPlayer);
-    audioPlayer->start();
+    if (!audioPlayer->start()) {
+        throw std::runtime_error(std::string(ANSIColors::RED) + "ERROR: Failed to start AudioUnit playback" + ANSIColors::RESET);
+    }
     std::cout << "[Audio playback enabled]\n";
 }
 
