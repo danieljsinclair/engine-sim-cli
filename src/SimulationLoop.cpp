@@ -12,6 +12,7 @@
 #include "interfaces/IPresentation.h"
 #include "EngineConfig.h"
 #include "ConsoleColors.h"
+#include "engine_sim_loader.h"
 
 #include <iostream>
 #include <fstream>
@@ -97,8 +98,9 @@ double updateInputAndGetThrottle(input::IInputProvider* inputProvider, double cu
     return currentTime < 0.5 ? currentTime / 0.5 : 1.0;
 }
 
-
-
+/// ============================================================================
+/// Presentation Update
+/// ============================================================================
 void updatePresentation(presentation::IPresentation* presentation, double currentTime,
                         const EngineSimStats& stats, double throttle, 
                         int underrunCount, IAudioMode& audioMode,
@@ -120,18 +122,6 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
     }
 }
 
-// Update sine frequency in writer thread
-void updateSineFrequency(EngineSimHandle handle, const EngineSimAPI& api,
-                          const EngineSimStats& stats, bool sineMode, bool sineMockMode) {
-    if (!sineMode && !sineMockMode) {
-        return;
-    }
-    double frequency = (stats.currentRPM / 600.0) * 100.0;
-    if (api.SetSineFrequency) {
-        api.SetSineFrequency(handle, frequency);
-    }
-}
-
 // ----------------------------------------------------------------------------
 // runSimulation helpers - ONE thing each
 // ----------------------------------------------------------------------------
@@ -140,84 +130,98 @@ EngineSimConfig createDefaultConfig(int sampleRate, int simulationFrequency = En
     return EngineConfig::createDefault(sampleRate, simulationFrequency);
 }
 
-std::string determineConfigPath(const SimulationConfig& config) {
-    if (config.sineMode || config.useDefaultEngine) {
-        return "engine-sim-bridge/engine-sim/assets/main.mr";
+/**
+ * Script configuration result from path resolution.
+ * For sine mode: scriptPath and assetBasePath are empty (no script needed).
+ * For other modes: paths are validated and converted to absolute.
+ */
+struct ScriptConfig {
+    std::string scriptPath;
+    std::string assetBasePath;
+    bool valid = false;
+    std::string errorMessage;
+};
+
+/**
+ * Prepare script configuration based on mode priority.
+ * PRIORITY ORDER: --sine > --default-engine > --script
+ * 
+ * This is the ONLY place that checks mode and determines which script to load.
+ * All path validation and asset base resolution happens here.
+ * 
+ * @param config Simulation configuration with mode flags
+ * @return ScriptConfig with resolved paths or error message
+ */
+ScriptConfig prepareScriptConfig(const SimulationConfig& config) {
+    ScriptConfig result;
+    
+    // Sine mode: no script needed, SineWaveSimulator creates dummy engine
+    if (config.sineMode) {
+        result.valid = true;
+        return result;
     }
-    return config.configPath;
+    
+    // Determine which path to use
+    std::string pathToResolve;
+    if (config.useDefaultEngine) {
+        pathToResolve = "engine-sim-bridge/engine-sim/assets/main.mr";
+    } else if (!config.configPath.empty()) {
+        pathToResolve = config.configPath;
+    } else {
+        result.errorMessage = "No engine configuration specified. Use --script <config.mr>, --default-engine, or --sine";
+        return result;
+    }
+    
+    // Resolve to absolute path
+    std::filesystem::path scriptPath(pathToResolve);
+    if (scriptPath.is_relative()) {
+        scriptPath = std::filesystem::absolute(scriptPath);
+    }
+    scriptPath = scriptPath.lexically_normal();
+    
+    // Validate existence
+    if (!std::filesystem::exists(scriptPath) || !std::filesystem::is_regular_file(scriptPath)) {
+        result.errorMessage = "Script file not found: " + scriptPath.string();
+        if (config.useDefaultEngine) {
+            result.errorMessage += "\nDefault engine requires engine-sim assets at: engine-sim-bridge/engine-sim/assets/main.mr";
+        }
+        return result;
+    }
+    
+    result.scriptPath = scriptPath.string();
+    
+    // Asset base path is always PWD - scripts reference resources like "es/sound-library/..."
+    // relative to where the CLI is run. Keep it simple - no special-case logic.
+    result.assetBasePath = std::filesystem::current_path().string();
+    result.valid = true;
+    
+    return result;
 }
 
-bool validateConfigPath(const std::string& configPath, EngineSimHandle handle, 
-                        EngineSimAPI& engineAPI) {
-    if (configPath.empty()) {
-        std::cerr << "ERROR: No engine configuration specified\n";
-        std::cerr << "Use --script <config.mr> or --default-engine\n";
-        engineAPI.Destroy(handle);
-        return false;
-    }
-    return true;
-}
-
-bool resolveConfigPath(const std::string& configPath, 
-                       std::string& resolvedPath, 
-                       std::string& assetBasePath) {
-    try {
-        std::filesystem::path scriptPath(configPath);
-        if (scriptPath.is_relative()) {
-            scriptPath = std::filesystem::absolute(scriptPath);
-        }
-        scriptPath = scriptPath.lexically_normal();
-        resolvedPath = scriptPath.string();
-        
-        assetBasePath = "engine-sim-bridge/engine-sim";
-        
-        if (scriptPath.has_parent_path()) {
-            std::filesystem::path parentPath = scriptPath.parent_path();
-            if (parentPath.filename() == "assets") {
-                assetBasePath = parentPath.parent_path().string();
-            } else if (parentPath.filename() == "es") {
-                assetBasePath = parentPath.parent_path().string();
-            } else {
-                assetBasePath = parentPath.string();
-            }
-        }
-        
-        std::filesystem::path assetPath(assetBasePath);
-        if (assetPath.is_relative()) {
-            assetPath = std::filesystem::absolute(assetPath);
-        }
-        assetPath = assetPath.lexically_normal();
-        assetBasePath = assetPath.string();
-        
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "ERROR: Failed to resolve path: " << e.what() << "\n";
-        return false;
-    }
-    return true;
-}
-
-
-
-
+/// @brief Run the warmup phase of the simulation
+/// @param handle Engine simulation handle
+/// @param engineAPI Engine simulation API
+/// @param audioPlayer Audio player instance
+/// @param drainDuringWarmup Whether to drain audio during warmup
 void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
                    AudioPlayer* audioPlayer, bool drainDuringWarmup) {
     WarmupOps::runWarmup(handle, engineAPI, audioPlayer, drainDuringWarmup);
 }
 
+/**
+ * Create audio source for simulation.
+ * Always uses EngineAudioSource - the bridge handles whether it's using
+ * PistonEngineSimulator or SineWaveSimulator based on config.sineMode (DI pattern).
+ * 
+ * @param handle Engine simulation handle
+ * @param engineAPI Engine simulation API
+ * @return Audio source instance (always EngineAudioSource)
+ */
 std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle, 
-                                                EngineSimAPI& engineAPI, 
-                                                bool sineMode,
-                                                bool sineMockMode) {
-    if (sineMode) {
-        std::cout << "Engine: " << ANSIColors::colorEngineType("SINE GENERATOR") << " (simple bypass)\n";
-        return std::make_unique<SineAudioSource>(handle, engineAPI);
-    }
-    if (sineMockMode) {
-        std::cout << "Engine: " << ANSIColors::colorEngineType("MOCK ENGINE SINE") << " (threaded, buffered)\n";
-        engineAPI.SetSineMode(handle, 1);
-    }
-    else
-    std::cout << "Engine: " << ANSIColors::colorEngineType("REAL ENGINE") << "\n";
+                                                EngineSimAPI& engineAPI) {
+    // Bridge created the right simulator type during Create() based on config.sineMode
+    // No need to check mode here - just use the handle polymorphically
+    std::cout << "Audio Source: " << ANSIColors::colorEngineType("ENGINE") << " (bridge-managed)\n";
     return std::make_unique<EngineAudioSource>(handle, engineAPI);
 }
 
@@ -239,30 +243,6 @@ void warnWavExportNotSupported(bool outputWavRequested) {
     }
 }
 } // anonymous namespace
-
-// ============================================================================
-// Config Path Loading - Single function (Feedback #3)
-// ============================================================================
-
-EngineLoaderResult loadEngineScript(const SimulationConfig& config) {
-    EngineLoaderResult result;
-    
-    result.configPath = determineConfigPath(config);
-    
-    if (result.configPath.empty()) {
-        std::cerr << "ERROR: No engine configuration specified\n";
-        std::cerr << "Use --script <config.mr> or --default-engine\n";
-        return result;
-    }
-    
-    if (!resolveConfigPath(result.configPath, result.configPath, result.assetBasePath)) {
-        return result;
-    }
-    
-    result.success = true;
-    return result;
-}
-
 
 // ============================================================================
 // Unified Main Loop Implementation
@@ -308,7 +288,6 @@ int runUnifiedAudioLoop(
 
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
-        updateSineFrequency(handle, api, stats, config.sineMode, config.sineMockMode);
         
         // Update audio source with latest stats (needed for threaded sine mode)
         audioSource.updateStats(stats);
@@ -375,25 +354,26 @@ int runSimulation(
     presentation::IPresentation* presentation) {
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
 
-    // Determine script path - handle both sine mode and default engine
-    // TODO: Make bridge support sine mode internally without CLI knowing
-    std::string scriptPath;
-    std::string assetBasePath;
-
-    if (config.sineMode || config.useDefaultEngine) {
-        // For sine mode or default engine, use the main.mr from engine-sim
-        scriptPath = "engine-sim-bridge/engine-sim/assets/main.mr";
-    } else {
-        scriptPath = config.configPath;
-    }
-
-    // Resolve config paths to absolute paths
-    if (!resolveConfigPath(scriptPath, scriptPath, assetBasePath)) {
+    // Prepare script configuration (handles all mode priority and path validation)
+    ScriptConfig scriptConfig = prepareScriptConfig(config);
+    if (!scriptConfig.valid) {
+        std::cerr << ANSIColors::RED << "ERROR: " << scriptConfig.errorMessage << ANSIColors::RESET << "\n";
         return 1;
+    }
+    
+    // Show what we're loading (after validation)
+    if (config.sineMode) {
+        std::cout << "Loading: " << ANSIColors::CYAN << "[SINE MODE]" << ANSIColors::RESET << "\n";
+    } else {
+        std::cout << "Loading: " << ANSIColors::CYAN << scriptConfig.scriptPath << ANSIColors::RESET << "\n";
     }
 
     // Create simulator
     EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
+    
+    // Set sineMode in config so bridge creates correct simulator type (DI at creation)
+    engineConfig.sineMode = config.sineMode ? 1 : 0;
+    
     EngineSimHandle handle = nullptr;
 
     EngineSimResult result = engineAPI.Create(&engineConfig, &handle);
@@ -402,8 +382,11 @@ int runSimulation(
         return 1;
     }
 
-    // Load script with appropriate path
-    result = engineAPI.LoadScript(handle, scriptPath.c_str(), assetBasePath.c_str());
+    // Load script (nullptr for sine mode since scriptPath will be empty)
+    const char* scriptPathPtr = scriptConfig.scriptPath.empty() ? nullptr : scriptConfig.scriptPath.c_str();
+    const char* assetBasePtr = scriptConfig.assetBasePath.empty() ? nullptr : scriptConfig.assetBasePath.c_str();
+    
+    result = engineAPI.LoadScript(handle, scriptPathPtr, assetBasePtr);
     if (result != ESIM_SUCCESS) {
         std::cerr << ANSIColors::RED << "ERROR: Failed to load script: " << engineAPI.GetLastError(handle) << ANSIColors::RESET << "\n";
         engineAPI.Destroy(handle);
@@ -442,7 +425,7 @@ int runSimulation(
     
     // Start playback based on audio mode
     audioMode->startPlayback(audioPlayer);
-    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI, config.sineMode, config.sineMockMode);
+    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI);
     
     // Run MAIN loop - now uses injectable input provider and presentation
     // Some input providers enable ignition by default which will allow the engine to fire during the cranking phase otherwise it will crank endlessly huffing and puffing

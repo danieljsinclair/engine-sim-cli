@@ -41,8 +41,7 @@ add_executable(engine-sim-cli
     src/CLIMain.cpp
     src/CircularBuffer.cpp      # NEW: Pure ring buffer handling
     src/SyncPullAudio.cpp       # NEW: Sync-pull audio rendering
-    src/SineGenerator.cpp       # NEW: One place for sine generation
-    src/EngineConfig.cpp          # NEW: Engine config and script loading
+    src/EngineConfig.cpp          # Engine config and script loading
     src/ILogging.cpp             # NEW: Logging interface implementation
     src/interfaces/KeyboardInputProvider.cpp    # NEW: Input provider interface
     src/interfaces/ConsolePresentation.cpp     # NEW: Presentation interface
@@ -73,21 +72,22 @@ if(APPLE)
 endif()
 
 # Post-build: Copy engine-sim libraries from bridge build directory
-# Bridge builds both engine-sim-bridge and engine-sim-mock (self-contained dependency)
+# Bridge builds both engine-sim-bridge (self-contained dependency)
 # Parent just copies what it needs - no intrinsic knowledge of bridge internals
 add_custom_command(TARGET engine-sim-cli POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_BINARY_DIR}/engine-sim-bridge/libenginesim.dylib
         ${CMAKE_BINARY_DIR}/libenginesim.dylib
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_BINARY_DIR}/engine-sim-bridge/libenginesim-mock.dylib
-        ${CMAKE_BINARY_DIR}/libenginesim-mock.dylib
+    # Copy engine-sim assets so bridge can find them when running from build dir
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim
+        ${CMAKE_BINARY_DIR}/engine-sim-bridge/engine-sim
     COMMENT "Copying engine-sim libraries from bridge build directory"
 )
 
-# Ensure engine-sim-bridge and engine-sim-mock are built before engine-sim-cli
-add_dependencies(engine-sim-cli engine-sim-bridge engine-sim-mock)
+# Ensure engine-sim-bridge and dependencies are built before engine-sim-cli
+add_dependencies(engine-sim-cli engine-sim-bridge)
 
 # Installation
 install(TARGETS engine-sim-cli

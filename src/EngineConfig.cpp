@@ -19,6 +19,7 @@ EngineSimConfig EngineConfig::createDefault(int sampleRate, int simulationFreque
     config.volume = 1.0f;
     config.convolutionLevel = 0.5f;
     config.airNoise = 1.0f;
+    config.sineMode = 0;  // Default: no sine mode (requires engine script)
     return config;
 }
 
@@ -36,16 +37,14 @@ EngineSimHandle EngineConfig::createAndLoad(
         return nullptr;
     }
 
-    result = api.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
-    if (result != ESIM_SUCCESS) {
-        error = "Failed to load script: ";
-        if (handle) {
-            error += api.GetLastError(handle);
-        } else {
-            error += "Unknown error";
+    // Load script separately
+    if (!configPath.empty()) {
+        result = api.LoadScript(handle, configPath.c_str(), assetBasePath.c_str());
+        if (result != ESIM_SUCCESS) {
+            error = "Failed to load script";
+            api.Destroy(handle);
+            return nullptr;
         }
-        api.Destroy(handle);
-        return nullptr;
     }
 
     return handle;

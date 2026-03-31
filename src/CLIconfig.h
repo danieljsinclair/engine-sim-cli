@@ -45,7 +45,6 @@ struct CommandLineArgs {
     bool playAudio = false;
     bool useDefaultEngine = false;
     bool sineMode = false;  // Generate sine wave test tone instead of engine audio
-    bool sineMockMode = false;  // Use mock engine's internal SineGenerator
     bool syncPull = true;  // Use sync pull model by default
     bool silent = false;   // Run full audio pipeline but with zero volume
     float crankingVolume = 1.0f;  // Cranking volume boost (applied when ignition ON, RPM < threshold, no exhaust flow)

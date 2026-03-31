@@ -12,7 +12,7 @@
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
 
-// Forward declaration
+// Forward declarations
 struct AudioUnitContext;
 
 // ============================================================================

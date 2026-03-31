@@ -33,7 +33,6 @@ struct SimulationConfig {
     bool playAudio = false;
     float volume = 1.0f;
     bool sineMode = false;             // Generate sine wave test tone
-    bool sineMockMode = false;         // Use mock engine's internal SineGenerator
     bool syncPull = true;              // Use sync pull audio mode
     double targetRPM = 0.0;
     double targetLoad = -1.0;

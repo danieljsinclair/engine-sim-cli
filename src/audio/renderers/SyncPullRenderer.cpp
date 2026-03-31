@@ -10,6 +10,7 @@
 namespace {
     // Constants for 16ms hardware buffer budget tracking
     constexpr double BUFFER_PERIOD_MS = 16.0;
+    constexpr double PERF_WINDOW_MS = 1000.0;  // 1-second performance window
     constexpr int FRAMES_PER_BUFFER(int sampleRate) {
         return static_cast<int>(sampleRate * BUFFER_PERIOD_MS / 1000.0);
     }
@@ -22,6 +23,33 @@ namespace {
         // Get current time
         auto now = std::chrono::high_resolution_clock::now();
         double nowMs = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+
+        // Track 1-second rolling window for real-time performance
+        double perfWindowStart = context->perfWindowStartTimeMs.load();
+        if (perfWindowStart == 0.0 || (nowMs - perfWindowStart >= PERF_WINDOW_MS)) {
+            // Start new performance window
+            context->perfWindowStartTimeMs.store(nowMs);
+            context->framesRequestedInWindow.store(0);
+            context->framesGeneratedInWindow.store(0);
+            perfWindowStart = nowMs;
+        }
+
+        // Add frames to performance window (atomic adds)
+        context->framesRequestedInWindow.fetch_add(static_cast<int>(numberFrames));
+        context->framesGeneratedInWindow.fetch_add(framesRead);
+
+        // Track callback interval (for callback rate calculation)
+        double lastCallbackTime = context->lastCallbackTimeMs.load();
+        double callbackIntervalMs = 0.0;
+
+        if (lastCallbackTime > 0.0 && nowMs > lastCallbackTime) {
+            // Valid previous callback - calculate interval
+            callbackIntervalMs = nowMs - lastCallbackTime;
+        } else if (lastCallbackTime == 0.0) {
+            // First callback - just store the time for next interval calculation
+            context->lastCallbackTimeMs.store(nowMs);
+        }
+        // If nowMs < lastCallbackTime (shouldn't happen), ignore
 
         // Check if we need to start a new 16ms window
         double windowStart = context->windowStartTimeMs.load();
@@ -44,6 +72,13 @@ namespace {
         int maxFramesForBuffer = FRAMES_PER_BUFFER(context->sampleRate);
         double frameBudgetPct = (static_cast<double>(totalFramesInWindow) * 100.0) / maxFramesForBuffer;
 
+        // 3. Real-time performance: are we keeping up?
+        // Calculate based on what CoreAudio needs vs what we're producing
+        int framesRequested = context->framesRequestedInWindow.load();
+        int framesGenerated = context->framesGeneratedInWindow.load();
+        double bufferTrendPct = (framesRequested > 0) ?
+            ((static_cast<double>(framesGenerated) - static_cast<double>(framesRequested)) * 100.0 / framesRequested) : 0.0;
+
         // Store timing data for main simulation loop to read
         context->lastReqFrames.store(static_cast<int>(numberFrames));
         context->lastGotFrames.store(framesRead);
@@ -51,6 +86,8 @@ namespace {
         context->lastHeadroomMs.store(headroomMs);
         context->lastBudgetPct.store(timeBudgetPct);  // Store time budget for display
         context->lastFrameBudgetPct.store(frameBudgetPct);  // Store frame budget separately
+        context->lastBufferTrendPct.store(bufferTrendPct);  // Store buffer trend
+        context->lastCallbackIntervalMs.store(callbackIntervalMs);  // Store for rate calc
     }
 }
 

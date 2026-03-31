@@ -70,7 +70,6 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.playAudio = args.playAudio;
     config.volume = args.silent ? 0.0f : 1.0f;
     config.sineMode = args.sineMode;
-    config.sineMockMode = args.sineMockMode;
     config.syncPull = args.syncPull;
     config.targetRPM = args.targetRPM;
     config.targetLoad = args.targetLoad;
@@ -100,11 +99,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Load engine-sim library dynamically based on mode
+    // Load engine-sim library dynamically
     EngineSimAPI engineAPI = {};
-    // TODO: Make bridge handle sine mode internally so we don't need special casing
-    bool useMock = args.sineMockMode;  // Only use mock for --sine-mock, not --sine
-    if (!LoadEngineSimLibrary(engineAPI, useMock)) {
+    if (!LoadEngineSimLibrary(engineAPI)) {
         std::cerr << "ERROR: Failed to load engine-sim library\n";
         return 1;
     }

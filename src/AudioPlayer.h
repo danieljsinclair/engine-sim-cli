@@ -62,11 +62,19 @@ struct AudioUnitContext {
     std::atomic<double> lastHeadroomMs;   // Last headroom (16ms - renderTime) in milliseconds
     std::atomic<double> lastBudgetPct;    // Last time budget percentage used (renderTime / 16ms)
     std::atomic<double> lastFrameBudgetPct; // Last frame budget percentage (framesInWindow / framesNeeded)
+    std::atomic<double> lastBufferTrendPct; // Buffer trend: positive = filling, negative = depleting
+    std::atomic<double> lastCallbackIntervalMs; // Time since last callback (for rate calculation)
     std::atomic<bool> preBufferDepleted;  // Whether pre-buffer was depleted
 
     // 16ms budget tracking (SRP: tracks budget state, not presentation)
     std::atomic<double> windowStartTimeMs; // Start time of current 16ms window (0 = not started)
     std::atomic<int> framesServedInWindow;  // Cumulative frames in current window
+
+    // Real-time performance tracking (1-second rolling window)
+    std::atomic<double> perfWindowStartTimeMs;  // Start of current 1-second performance window
+    std::atomic<int> framesRequestedInWindow;   // Frames CoreAudio requested in current window
+    std::atomic<int> framesGeneratedInWindow;   // Frames we actually generated in current window
+    std::atomic<double> lastCallbackTimeMs;     // Timestamp of last callback (for interval calculation)
 
     // Master volume
     float volume;
@@ -79,9 +87,14 @@ struct AudioUnitContext {
                         lastReqFrames(0), lastGotFrames(0),
                         lastRenderMs(0.0), lastHeadroomMs(0.0),
                         lastBudgetPct(0.0), lastFrameBudgetPct(0.0),
+                        lastBufferTrendPct(0.0), lastCallbackIntervalMs(0.0),
                         preBufferDepleted(false),
                         windowStartTimeMs(0.0),
                         framesServedInWindow(0),
+                        perfWindowStartTimeMs(0.0),
+                        framesRequestedInWindow(0),
+                        framesGeneratedInWindow(0),
+                        lastCallbackTimeMs(0.0),
                         volume(1.0f) {}
     
     // Helper to set the rendering mode (Strategy injection point)

@@ -33,7 +33,6 @@ void printUsage(const char* progName) {
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
-    std::cout << "  --sine-mock          Use mock engine's internal SineGenerator (threaded, buffered)\n";
     std::cout << "  --threaded           Use threaded circular buffer (default: sync-pull)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
@@ -119,9 +118,6 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         else if (arg == "--sine") {
             args.sineMode = true;
         }
-        else if (arg == "--sine-mock") {
-            args.sineMockMode = true;
-        }
         else if (arg == "--threaded") {
             args.syncPull = false;
         }
@@ -186,9 +182,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     }
 
     // Engine config is required unless in sine mode
-    if (args.engineConfig == nullptr && !args.sineMode && !args.sineMockMode) {
+    if (args.engineConfig == nullptr && !args.sineMode) {
         std::cerr << "ERROR: Engine configuration file is required\n";
-        std::cerr << "       Use --script <path>, --sine, --sine-mock, or provide positional argument\n\n";
+        std::cerr << "       Use --script <path>, --sine, or provide positional argument\n\n";
         printUsage(argv[0]);
         return false;
     }
@@ -238,11 +234,7 @@ void ShowConfigHeader(CommandLineArgs& args, const char* engineAPIVersion = "unk
     }
 
     std::cout << "Configuration:\n";
-    if (args.sineMockMode) {
-        std::cout << "  Mode: Mock Sine Generator (threaded, buffered)\n";
-        std::cout << "  Mapping: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz\n";
-        std::cout << "  Engine: Mock (internal SineGenerator)\n";
-    } else if (args.sineMode) {
+    if (args.sineMode) {
         std::cout << "  Mode: RPM-Linked Sine Wave Test\n";
         std::cout << "  Mapping: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz\n";
         std::cout << "  Engine: Default (Subaru EJ25)\n";

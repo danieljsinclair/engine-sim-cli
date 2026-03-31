@@ -41,8 +41,6 @@ typedef const char* (*PFN_EngineSimGetVersion)(void);
 typedef EngineSimResult (*PFN_EngineSimValidateConfig)(const EngineSimConfig*);
 typedef EngineSimResult (*PFN_EngineSimLoadImpulseResponse)(EngineSimHandle, int, const int16_t*, int, float);
 typedef EngineSimResult (*PFN_EngineSimRenderOnDemand)(EngineSimHandle, float*, int32_t, int32_t*);
-typedef EngineSimResult (*PFN_EngineSimSetSineMode)(EngineSimHandle, int);
-typedef EngineSimResult (*PFN_EngineSimSetSineFrequency)(EngineSimHandle, double);
 
 // Global function pointers (loaded at runtime via dlopen)
 struct EngineSimAPI {
@@ -70,8 +68,6 @@ struct EngineSimAPI {
     PFN_EngineSimValidateConfig ValidateConfig;
     PFN_EngineSimLoadImpulseResponse LoadImpulseResponse;
     PFN_EngineSimRenderOnDemand RenderOnDemand;
-    PFN_EngineSimSetSineMode SetSineMode;
-    PFN_EngineSimSetSineFrequency SetSineFrequency;
 };
 
 // Helper macro for loading function pointers (required)
@@ -126,7 +122,7 @@ inline std::string GetExecutableDir() {
 }
 
 // Load the engine-sim library dynamically
-inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
+inline bool LoadEngineSimLibrary(EngineSimAPI& api) {
     // Clear any existing errors
     dlerror();
 
@@ -137,9 +133,8 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
         return false;
     }
 
-    // Choose library based on mode
-    const char* libName = useMock ? "libenginesim-mock.dylib" : "libenginesim.dylib";
-    std::string libPath = exeDir + "/" + libName;
+    // Always load the real bridge library (handles all modes polymorphically)
+    std::string libPath = exeDir + "/libenginesim.dylib";
 
     // Load library
     api.libHandle = dlopen(libPath.c_str(), RTLD_NOW);
@@ -173,9 +168,6 @@ inline bool LoadEngineSimLibrary(EngineSimAPI& api, bool useMock) {
     LOAD_FUNC(api, ValidateConfig);
     LOAD_FUNC(api, LoadImpulseResponse);
     LOAD_FUNC(api, RenderOnDemand);
-    // Sine mode functions are optional - only available in mock library
-    LOAD_FUNC_OPTIONAL(api, SetSineMode);
-    LOAD_FUNC_OPTIONAL(api, SetSineFrequency);
 
     return true;
 }

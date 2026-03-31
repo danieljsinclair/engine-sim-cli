@@ -1,5 +1,4 @@
 // AudioSource.cpp - Audio source implementation
-// DRY: BaseAudioSource contains common generateAudio() using SineGenerator
 
 #include "AudioSource.h"
 #include "CLIconfig.h"
@@ -15,62 +14,18 @@
 // BaseAudioSource Implementation - DRY: common code for both modes
 // ============================================================================
 
-BaseAudioSource::BaseAudioSource(EngineSimHandle h, const EngineSimAPI& a, bool useSine)
-    : handle_(h), api_(a), currentRPM_(0.0), useSineGenerator_(useSine) {
-    // Initialize SineGenerator with sample rate
-    if (useSineGenerator_) {
-        sineGenerator_.initialize(AudioLoopConfig::SAMPLE_RATE);
-    }
+BaseAudioSource::BaseAudioSource(EngineSimHandle h, const EngineSimAPI& a)
+    : handle_(h), api_(a) {
 }
 
 bool BaseAudioSource::generateAudio(std::vector<float>& buffer, int frames) {
-    // DRY: Single implementation for both sync-pull and threaded modes
-    // Uses SineGenerator when in sine mode, otherwise reads from engine buffer
-    
-    if (useSineGenerator_ && sineGenerator_.isInitialized()) {
-        // Use SineGenerator for sine wave generation - DRY between modes
-        // Frequency is derived from RPM: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz
-        sineGenerator_.generateRPMLinked(buffer.data(), frames, currentRPM_, 0.5);
-        return true;
-    }
-    
-    // Fallback: read from engine audio buffer
     int totalRead = 0;
     api_.ReadAudioBuffer(handle_, buffer.data(), frames, &totalRead);
     return totalRead > 0;
 }
 
 void BaseAudioSource::updateStats(const EngineSimStats& stats) {
-    // Update RPM for sine generation - needed for threaded mode
-    currentRPM_ = stats.currentRPM;
-}
-
-// ============================================================================
-// SineAudioSource Implementation
-// ============================================================================
-
-SineAudioSource::SineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
-    : BaseAudioSource(h, a, true) {  // true = use SineGenerator
-}
-
-void SineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer) {
-    (void)audioPlayer;  // Not used for sine mode
-
-    // Update RPM for sine generation
-    setCurrentRPM(stats.currentRPM);
-    
-    int progress = static_cast<int>(currentTime * 100 / duration);
-    double frequency = (stats.currentRPM / 600.0) * 100.0;
-    
-    std::ostringstream prefix;
-    prefix << ANSIColors::CYAN << "[Frequency: " << static_cast<int>(frequency) << " Hz] " << ANSIColors::RESET;
-    int rpm = static_cast<int>(stats.currentRPM);
-    if (rpm < 10 && stats.currentRPM > 0) rpm = 0;
-    prefix << "[" << std::setw(5) << rpm << " RPM] ";
-    prefix << "[Throttle: " << std::setw(4) << static_cast<int>(throttle * 100) << "%] ";
-    prefix << "[Underruns: " << underrunCount << "] ";
-    
-    DisplayHelper::outputProgress(interactive, prefix.str(), currentTime, duration, progress, stats, throttle, underrunCount);
+    (void)stats;
 }
 
 // ============================================================================
@@ -78,7 +33,7 @@ void SineAudioSource::displayProgress(double currentTime, double duration, bool 
 // ============================================================================
 
 EngineAudioSource::EngineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
-    : BaseAudioSource(h, a, false) {  // false = use engine API
+    : BaseAudioSource(h, a) {
 }
 
 void EngineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer) {
@@ -108,31 +63,43 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
             double headroomMs = ctx->lastHeadroomMs.load();
             double timeBudgetPct = ctx->lastBudgetPct.load();
             double frameBudgetPct = ctx->lastFrameBudgetPct.load();
+            double bufferTrendPct = ctx->lastBufferTrendPct.load();
+            double callbackIntervalMs = ctx->lastCallbackIntervalMs.load();
 
-            // Color code based on performance
-            std::string headroomColor;
-            if (headroomMs > 5.0) {
-                headroomColor = ANSIColors::GREEN;
-            } else if (headroomMs >= 0.0) {
-                headroomColor = ANSIColors::YELLOW;
+            // Calculate callback rate and fps
+            double callbackRateHz = (callbackIntervalMs > 0.0) ? (1000.0 / callbackIntervalMs) : 0.0;
+            double neededFps = callbackRateHz * reqFrames;
+            double generatingFps = (callbackIntervalMs > 0.0) ? (gotFrames * 1000.0 / callbackIntervalMs) : 0.0;
+
+            // Color code based on buffer trend - this tells us if we're keeping up
+            std::string trendColor;
+            if (bufferTrendPct >= 1.0) {
+                trendColor = ANSIColors::GREEN;  // Ahead - buffer filling
+            } else if (bufferTrendPct >= -1.0) {
+                trendColor = ANSIColors::YELLOW;  // Near zero - barely keeping up
             } else {
-                headroomColor = ANSIColors::RED;
+                trendColor = ANSIColors::RED;  // Behind - buffer depleting
             }
 
             std::string budgetColor;
             if (timeBudgetPct < 80) {
                 budgetColor = ANSIColors::GREEN;
-            } else if (timeBudgetPct <= 100) {
+            } else if (timeBudgetPct < 100) {
                 budgetColor = ANSIColors::YELLOW;
             } else {
                 budgetColor = ANSIColors::RED;
             }
 
-            prefix << "[SYNC-PULL] req=" << reqFrames << " got=" << gotFrames
-                    << " render=" << std::fixed << std::setprecision(1) << renderMs << "ms"
-                    << " headroom=" << headroomColor << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms" << ANSIColors::RESET
-                    << " (" << budgetColor << std::setprecision(0) << timeBudgetPct << "% time" << ANSIColors::RESET
-                    << ", " << std::setprecision(0) << frameBudgetPct << "% frames in window)";
+            // Fixed-width formatting for column alignment
+            prefix << "[SYNC-PULL] req=" << std::setw(3) << reqFrames
+                    << " got=" << std::setw(3) << gotFrames
+                    << " render=" << std::setw(5) << std::fixed << std::setprecision(1) << renderMs << "ms"
+                    << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms"
+                    << " (" << budgetColor << std::setw(3) << std::setprecision(0) << timeBudgetPct << "% of budget" << ANSIColors::RESET << ")"
+                    << " callbacks=" << std::setw(3) << std::setprecision(0) << callbackRateHz << "Hz"
+                    << " needed=" << std::setw(5) << std::setprecision(1) << neededFps / 1000.0 << "kfps"
+                    << " generating=" << std::setw(5) << std::setprecision(1) << generatingFps / 1000.0 << "kfps"
+                    << " trend=" << trendColor << std::showpos << std::setw(4) << std::setprecision(1) << bufferTrendPct << "%" << std::noshowpos << ANSIColors::RESET;
         }
     }
 
