@@ -50,24 +50,6 @@ EngineSimHandle EngineConfig::createAndLoad(
     return handle;
 }
 
-EngineConfig::ConfigPaths EngineConfig::resolveConfigPaths(const char* engineConfig) {
-    ConfigPaths paths;
-    
-    // Determine config path
-    if (engineConfig) {
-        paths.configPath = engineConfig;
-    }
-    else {
-        // use default
-        paths.configPath = "engine-sim-bridge/engine-sim/assets/main.mr";
-    }
-    
-    // Resolve asset base path
-    paths.assetBasePath = resolveAssetBasePath(paths.configPath);
-    
-    return paths;
-}
-
 std::string EngineConfig::resolveAssetBasePath(const std::string& configPath) {
     try {
         std::filesystem::path scriptPath(configPath);

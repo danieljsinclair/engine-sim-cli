@@ -40,7 +40,6 @@ public:
         std::string configPath;
         std::string assetBasePath;
     };
-    static ConfigPaths resolveConfigPaths(const char* engineConfig);
     
     // Resolve asset base path from config path
     static std::string resolveAssetBasePath(const std::string& configPath);
