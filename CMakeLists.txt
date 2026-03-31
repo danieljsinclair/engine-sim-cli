@@ -96,3 +96,44 @@ add_dependencies(engine-sim-cli engine-sim-bridge)
 install(TARGETS engine-sim-cli
     RUNTIME DESTINATION bin
 )
+
+# -----------------------------------------------------------------------------
+# Tests
+# Bridge owns its own tests (BridgeUnitTests); CLI owns its own tests (smoke_tests)
+# `make test` from CLI runs both; `make run_tests` shows real-time output
+# -----------------------------------------------------------------------------
+option(BUILD_TESTS "Build engine-sim-cli unit tests" ON)
+if(BUILD_TESTS)
+    # Download GoogleTest if not found
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG release-1.12.1
+    )
+
+    # For Windows: Prevent overriding parent project's compiler/linker settings
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+
+    # Enable testing
+    enable_testing()
+
+    # Add CLI smoke tests
+    add_subdirectory(test)
+
+    # Custom 'run_tests' target: runs all tests with real-time output
+    # Bridge tests its own code; CLI tests its own code
+    add_custom_target(run_tests
+        DEPENDS engine-sim-cli smoke_tests bridge_unit_tests
+        COMMAND ${CMAKE_COMMAND} -E echo "=== Bridge Unit Tests ==========================================="
+        COMMAND ${CMAKE_BINARY_DIR}/engine-sim-bridge/bridge_unit_tests --gtest_color=yes
+        COMMAND ${CMAKE_COMMAND} -E echo ""
+        COMMAND ${CMAKE_COMMAND} -E echo "=== CLI Smoke Tests ============================================="
+        COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test/smoke_tests --gtest_color=yes
+        COMMAND ${CMAKE_COMMAND} -E echo ""
+        COMMAND ${CMAKE_COMMAND} -E echo "=== All tests complete ==========================================="
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMENT "Running all tests with real-time output"
+    )
+endif()

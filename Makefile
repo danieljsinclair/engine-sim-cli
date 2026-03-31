@@ -68,4 +68,4 @@ $(BUILD_DIR)/Makefile: submodules
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
 
 test: $(BUILD_DIR)/Makefile
-	@cd $(BUILD_DIR) && $(MAKE) test
+	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure"
