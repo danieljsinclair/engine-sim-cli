@@ -1,183 +1,85 @@
 #ifndef ENGINE_SIM_LOADER_H
 #define ENGINE_SIM_LOADER_H
 
+// Direct-linked bridge API — no dlopen, no function pointer table.
+// The bridge dylib is loaded by the OS at startup via @rpath linking.
+// Each method forwards directly to a bridge C function, giving compile-time
+// signature checking: if the bridge header changes, this file fails to compile.
+//
+// Call sites (api.Create(...) etc.) are unchanged from the old dlopen version.
+// LoadEngineSimLibrary / UnloadEngineSimLibrary are kept as no-ops so existing
+// call sites in CLIMain.cpp continue to compile without modification.
+
 #include "engine_sim_bridge.h"
 #include "ILogging.h"
-#include <dlfcn.h>
-#include <iostream>
-#include <cstring>
-#include <string>
-#include <libgen.h>
 
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
-
-#ifdef __linux__
-#include <unistd.h>
-#include <limits.h>
-#endif
-
-// Function pointer types for all engine-sim API functions
-typedef EngineSimResult (*PFN_EngineSimCreate)(const EngineSimConfig*, EngineSimHandle*);
-typedef EngineSimResult (*PFN_EngineSimLoadScript)(EngineSimHandle, const char*, const char*);
-typedef EngineSimResult (*PFN_EngineSimSetLogging)(EngineSimHandle, ILogging*);
-typedef EngineSimResult (*PFN_EngineSimStartAudioThread)(EngineSimHandle);
-typedef EngineSimResult (*PFN_EngineSimDestroy)(EngineSimHandle);
-typedef EngineSimResult (*PFN_EngineSimSetThrottle)(EngineSimHandle, double);
-typedef EngineSimResult (*PFN_EngineSimSetSpeedControl)(EngineSimHandle, double);
-typedef EngineSimResult (*PFN_EngineSimSetStarterMotor)(EngineSimHandle, int);
-typedef EngineSimResult (*PFN_EngineSimSetIgnition)(EngineSimHandle, int);
-typedef EngineSimResult (*PFN_EngineSimShiftGear)(EngineSimHandle, int);
-typedef EngineSimResult (*PFN_EngineSimSetClutch)(EngineSimHandle, double);
-typedef EngineSimResult (*PFN_EngineSimSetDyno)(EngineSimHandle, int);
-typedef EngineSimResult (*PFN_EngineSimSetDynoHold)(EngineSimHandle, int, double);
-typedef EngineSimResult (*PFN_EngineSimUpdate)(EngineSimHandle, double);
-typedef EngineSimResult (*PFN_EngineSimRender)(EngineSimHandle, float*, int32_t, int32_t*);
-typedef EngineSimResult (*PFN_EngineSimReadAudioBuffer)(EngineSimHandle, float*, int32_t, int32_t*);
-typedef EngineSimResult (*PFN_EngineSimGetStats)(EngineSimHandle, EngineSimStats*);
-typedef const char* (*PFN_EngineSimGetLastError)(EngineSimHandle);
-typedef const char* (*PFN_EngineSimGetVersion)(void);
-typedef EngineSimResult (*PFN_EngineSimValidateConfig)(const EngineSimConfig*);
-typedef EngineSimResult (*PFN_EngineSimLoadImpulseResponse)(EngineSimHandle, int, const int16_t*, int, float);
-typedef EngineSimResult (*PFN_EngineSimRenderOnDemand)(EngineSimHandle, float*, int32_t, int32_t*);
-
-// Global function pointers (loaded at runtime via dlopen)
 struct EngineSimAPI {
-    void* libHandle;
-
-    PFN_EngineSimCreate Create;
-    PFN_EngineSimLoadScript LoadScript;
-    PFN_EngineSimSetLogging SetLogging;
-    PFN_EngineSimStartAudioThread StartAudioThread;
-    PFN_EngineSimDestroy Destroy;
-    PFN_EngineSimSetThrottle SetThrottle;
-    PFN_EngineSimSetSpeedControl SetSpeedControl;
-    PFN_EngineSimSetStarterMotor SetStarterMotor;
-    PFN_EngineSimSetIgnition SetIgnition;
-    PFN_EngineSimShiftGear ShiftGear;
-    PFN_EngineSimSetClutch SetClutch;
-    PFN_EngineSimSetDyno SetDyno;
-    PFN_EngineSimSetDynoHold SetDynoHold;
-    PFN_EngineSimUpdate Update;
-    PFN_EngineSimRender Render;
-    PFN_EngineSimReadAudioBuffer ReadAudioBuffer;
-    PFN_EngineSimGetStats GetStats;
-    PFN_EngineSimGetLastError GetLastError;
-    PFN_EngineSimGetVersion GetVersion;
-    PFN_EngineSimValidateConfig ValidateConfig;
-    PFN_EngineSimLoadImpulseResponse LoadImpulseResponse;
-    PFN_EngineSimRenderOnDemand RenderOnDemand;
+    EngineSimResult Create(const EngineSimConfig* cfg, EngineSimHandle* h) const {
+        return EngineSimCreate(cfg, h);
+    }
+    EngineSimResult LoadScript(EngineSimHandle h, const char* cfg, const char* asset) const {
+        return EngineSimLoadScript(h, cfg, asset);
+    }
+    EngineSimResult SetLogging(EngineSimHandle h, ILogging* log) const {
+        return EngineSimSetLogging(h, log);
+    }
+    EngineSimResult StartAudioThread(EngineSimHandle h) const {
+        return EngineSimStartAudioThread(h);
+    }
+    EngineSimResult Destroy(EngineSimHandle h) const {
+        return EngineSimDestroy(h);
+    }
+    EngineSimResult SetThrottle(EngineSimHandle h, double v) const {
+        return EngineSimSetThrottle(h, v);
+    }
+    EngineSimResult SetSpeedControl(EngineSimHandle h, double v) const {
+        return EngineSimSetSpeedControl(h, v);
+    }
+    EngineSimResult SetStarterMotor(EngineSimHandle h, int on) const {
+        return EngineSimSetStarterMotor(h, on);
+    }
+    EngineSimResult SetIgnition(EngineSimHandle h, int on) const {
+        return EngineSimSetIgnition(h, on);
+    }
+    EngineSimResult ShiftGear(EngineSimHandle h, int gear) const {
+        return EngineSimShiftGear(h, gear);
+    }
+    EngineSimResult SetClutch(EngineSimHandle h, double v) const {
+        return EngineSimSetClutch(h, v);
+    }
+    EngineSimResult SetDyno(EngineSimHandle h, int on) const {
+        return EngineSimSetDyno(h, on);
+    }
+    EngineSimResult SetDynoHold(EngineSimHandle h, int on, double torque) const {
+        return EngineSimSetDynoHold(h, on, torque);
+    }
+    EngineSimResult Update(EngineSimHandle h, double dt) const {
+        return EngineSimUpdate(h, dt);
+    }
+    EngineSimResult Render(EngineSimHandle h, float* buf, int32_t frames, int32_t* written) const {
+        return EngineSimRender(h, buf, frames, written);
+    }
+    EngineSimResult ReadAudioBuffer(EngineSimHandle h, float* buf, int32_t frames, int32_t* read) const {
+        return EngineSimReadAudioBuffer(h, buf, frames, read);
+    }
+    EngineSimResult GetStats(EngineSimHandle h, EngineSimStats* s) const {
+        return EngineSimGetStats(h, s);
+    }
+    const char* GetLastError(EngineSimHandle h) const {
+        return EngineSimGetLastError(h);
+    }
+    const char* GetVersion() const {
+        return EngineSimGetVersion();
+    }
+    EngineSimResult ValidateConfig(const EngineSimConfig* cfg) const {
+        return EngineSimValidateConfig(cfg);
+    }
+    EngineSimResult LoadImpulseResponse(EngineSimHandle h, int idx, const int16_t* ir, int len, float vol) const {
+        return EngineSimLoadImpulseResponse(h, idx, ir, len, vol);
+    }
+    EngineSimResult RenderOnDemand(EngineSimHandle h, float* buf, int32_t frames, int32_t* written) const {
+        return EngineSimRenderOnDemand(h, buf, frames, written);
+    }
 };
-
-// Helper macro for loading function pointers (required)
-#define LOAD_FUNC(api, name) \
-    do { \
-        api.name = (PFN_EngineSim##name)dlsym(api.libHandle, "EngineSim" #name); \
-        if (!api.name) { \
-            std::cerr << "ERROR: Failed to load function EngineSim" #name << ": " << dlerror() << "\n"; \
-            dlclose(api.libHandle); \
-            return false; \
-        } \
-    } while(0)
-
-// Helper macro for loading optional function pointers (won't fail if missing)
-#define LOAD_FUNC_OPTIONAL(api, name) \
-    do { \
-        api.name = (PFN_EngineSim##name)dlsym(api.libHandle, "EngineSim" #name); \
-        if (!api.name) { \
-            std::cout << "[Optional] EngineSim" #name " not available in library\n"; \
-        } \
-    } while(0)
-
-// Get executable directory path
-inline std::string GetExecutableDir() {
-    char exePath[PATH_MAX];
-
-#ifdef __APPLE__
-    uint32_t size = sizeof(exePath);
-    if (_NSGetExecutablePath(exePath, &size) != 0) {
-        std::cerr << "ERROR: Failed to get executable path\n";
-        return "";
-    }
-#elif __linux__
-    ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
-    if (len == -1) {
-        std::cerr << "ERROR: Failed to get executable path\n";
-        return "";
-    }
-    exePath[len] = '\0';
-#else
-    std::cerr << "ERROR: Unsupported platform for executable path resolution\n";
-    return "";
-#endif
-
-    // Get directory part of path (dirname modifies buffer, so make a copy)
-    char* exePathCopy = strdup(exePath);
-    char* dir = dirname(exePathCopy);
-    std::string result(dir);
-    free(exePathCopy);
-
-    return result;
-}
-
-// Load the engine-sim library dynamically
-inline bool LoadEngineSimLibrary(EngineSimAPI& api) {
-    // Clear any existing errors
-    dlerror();
-
-    // Get executable directory and construct library path
-    std::string exeDir = GetExecutableDir();
-    if (exeDir.empty()) {
-        std::cerr << "ERROR: Failed to determine executable directory\n";
-        return false;
-    }
-
-    // Always load the real bridge library (handles all modes polymorphically)
-    std::string libPath = exeDir + "/libenginesim.dylib";
-
-    // Load library
-    api.libHandle = dlopen(libPath.c_str(), RTLD_NOW);
-    if (!api.libHandle) {
-        std::cerr << "ERROR: Failed to load " << libPath << ": " << dlerror() << "\n";
-        return false;
-    }
-
-    std::cout << "[Library loaded: " << libPath << "]\n";
-
-    // Load all function pointers
-    LOAD_FUNC(api, Create);
-    LOAD_FUNC(api, LoadScript);
-    LOAD_FUNC(api, SetLogging);
-    LOAD_FUNC_OPTIONAL(api, StartAudioThread);  // Optional: Not used in sync-pull mode
-    LOAD_FUNC(api, Destroy);
-    LOAD_FUNC(api, SetThrottle);
-    LOAD_FUNC(api, SetSpeedControl);
-    LOAD_FUNC(api, SetStarterMotor);
-    LOAD_FUNC(api, SetIgnition);
-    LOAD_FUNC(api, ShiftGear);
-    LOAD_FUNC(api, SetClutch);
-    LOAD_FUNC(api, SetDyno);
-    LOAD_FUNC(api, SetDynoHold);
-    LOAD_FUNC(api, Update);
-    LOAD_FUNC(api, Render);
-    LOAD_FUNC(api, ReadAudioBuffer);
-    LOAD_FUNC(api, GetStats);
-    LOAD_FUNC(api, GetLastError);
-    LOAD_FUNC(api, GetVersion);
-    LOAD_FUNC(api, ValidateConfig);
-    LOAD_FUNC(api, LoadImpulseResponse);
-    LOAD_FUNC(api, RenderOnDemand);
-
-    return true;
-}
-
-// Unload the library
-inline void UnloadEngineSimLibrary(EngineSimAPI& api) {
-    if (api.libHandle) {
-        dlclose(api.libHandle);
-        api.libHandle = nullptr;
-    }
-}
 
 #endif // ENGINE_SIM_LOADER_H

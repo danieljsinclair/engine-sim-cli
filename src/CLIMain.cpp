@@ -101,11 +101,6 @@ int main(int argc, char* argv[]) {
 
     // Load engine-sim library dynamically
     EngineSimAPI engineAPI = {};
-    if (!LoadEngineSimLibrary(engineAPI)) {
-        std::cerr << "ERROR: Failed to load engine-sim library\n";
-        return 1;
-    }
-
     ShowConfigHeader(args, engineAPI.GetVersion());
 
     // SETUP simulator
@@ -122,9 +117,6 @@ int main(int argc, char* argv[]) {
     delete audioMode;
     delete inputProvider;
     delete presentation;
-
-    // Cleanup: unload library
-    UnloadEngineSimLibrary(engineAPI);
 
     return result;
 }

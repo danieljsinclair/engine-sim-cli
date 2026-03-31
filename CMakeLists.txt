@@ -49,9 +49,9 @@ add_executable(engine-sim-cli
 
 target_link_libraries(engine-sim-cli
     PRIVATE
+    engine-sim-bridge
     ${AUDIO_LIBRARY}
     Threads::Threads
-    ${CMAKE_DL_LIBS}
 )
 
 target_include_directories(engine-sim-cli
@@ -79,6 +79,9 @@ add_custom_command(TARGET engine-sim-cli POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_BINARY_DIR}/engine-sim-bridge/libenginesim.dylib
         ${CMAKE_BINARY_DIR}/libenginesim.dylib
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_BINARY_DIR}/engine-sim-bridge/libenginesim.1.dylib
+        ${CMAKE_BINARY_DIR}/libenginesim.1.dylib
     # Copy engine-sim assets so bridge can find them when running from build dir
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim
