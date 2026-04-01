@@ -2,9 +2,6 @@
 
 #include "EngineConfig.h"
 
-#include <iostream>
-#include <filesystem>
-
 EngineConfig::EngineConfig() {}
 EngineConfig::~EngineConfig() {}
 
@@ -48,54 +45,4 @@ EngineSimHandle EngineConfig::createAndLoad(
     }
 
     return handle;
-}
-
-std::string EngineConfig::resolveAssetBasePath(const std::string& configPath) {
-    try {
-        std::filesystem::path scriptPath(configPath);
-        
-        // Make absolute if relative
-        if (scriptPath.is_relative()) {
-            scriptPath = std::filesystem::absolute(scriptPath);
-        }
-        scriptPath = scriptPath.lexically_normal();
-        
-        std::string assetBase = "engine-sim-bridge/engine-sim";
-        
-        if (scriptPath.has_parent_path()) {
-            std::filesystem::path parentPath = scriptPath.parent_path();
-            if (parentPath.filename() == "assets") {
-                assetBase = parentPath.parent_path().string();
-            } else {
-                assetBase = parentPath.string();
-            }
-        }
-        
-        // Make absolute
-        std::filesystem::path assetPath(assetBase);
-        if (assetPath.is_relative()) {
-            assetPath = std::filesystem::absolute(assetPath);
-        }
-        assetPath = assetPath.lexically_normal();
-        
-        return assetPath.string();
-        
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "ERROR: Failed to resolve path: " << e.what() << "\n";
-        return "engine-sim-bridge/engine-sim";
-    }
-}
-
-bool EngineConfig::resolvePath(const std::string& inputPath, std::string& resolvedPath) {
-    try {
-        std::filesystem::path path(inputPath);
-        if (path.is_relative()) {
-            path = std::filesystem::absolute(path);
-        }
-        path = path.lexically_normal();
-        resolvedPath = path.string();
-        return true;
-    } catch (const std::filesystem::filesystem_error&) {
-        return false;
-    }
 }

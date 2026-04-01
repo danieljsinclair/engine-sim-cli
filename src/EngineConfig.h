@@ -5,7 +5,6 @@
 #define ENGINE_CONFIG_H
 
 #include <string>
-#include <memory>
 
 #include "CLIconfig.h"
 #include "engine_sim_bridge.h"
@@ -34,18 +33,6 @@ public:
         const std::string& assetBasePath,
         EngineSimAPI& api,
         std::string& error);
-    
-    // Resolve config path from args - returns both paths
-    struct ConfigPaths {
-        std::string configPath;
-        std::string assetBasePath;
-    };
-    
-    // Resolve asset base path from config path
-    static std::string resolveAssetBasePath(const std::string& configPath);
-    
-private:
-    static bool resolvePath(const std::string& inputPath, std::string& resolvedPath);
 };
 
 #endif // ENGINE_CONFIG_H

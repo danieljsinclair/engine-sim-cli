@@ -89,7 +89,7 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 - DRY: ⚠️ **ISSUES FOUND** (see below)
 - YAGNI: ⚠️ **DEAD CODE** (see below)
 
-### SOLID Pedant Analysis (2026-03-27)
+### SOLID Pedant Analysis (2026-04-01)
 
 #### ✅ SOLID Compliance (Good)
 - **SRP**: `EngineConfig`, `SimulationLoop`, `AudioPlayer` each have single responsibilities
@@ -97,58 +97,30 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 - **DIP**: High-level modules depend on abstractions (`IAudioMode`, `IInputProvider`, `IPresentation`)
 - **DI**: Dependencies are properly injected throughout
 
-#### ❌ Critical Issues Found
+#### ✅ RESOLVED Issues (Fixed in recent commits)
 
-**1. WET VIOLATION - Path Resolution Duplication**
+**1. ~~WET VIOLATION - Path Resolution Duplication~~ ✅ FIXED (commit 2330d4a)**
+- Previously: `resolveConfigPath()` duplication between SimulationLoop.cpp and EngineConfig.cpp
+- Now: Path resolution consolidated, CLI passes raw paths to bridge which handles resolution
 
-The same path resolution logic exists in TWO places:
+**2. ~~DEAD CODE - Debug Conditional~~ ✅ FIXED**
+- Previously: `useConfigScript` boolean with dead else branch
+- Now: Removed, only the new method remains
 
-- **Location A**: `src/SimulationLoop.cpp:171-207` (`resolveConfigPath()` function)
-- **Location B**: `src/EngineConfig.cpp:83-117` (`resolveAssetBasePath()` method)
+**3. ~~PATH RESOLUTION NOT CALLED~~ ✅ FIXED**
+- Previously: `EngineConfig::resolveConfigPaths()` existed but wasn't called
+- Now: CLI passes raw paths directly to bridge via `LoadScript()`, bridge handles resolution
 
-Both functions do identical work:
-- Convert to absolute paths
-- Handle "assets"/"es" parent directories
-- Resolve asset base paths
+**4. ~~STATIC STORAGE LIFETIME ISSUE~~ ✅ FIXED**
+- Previously: Static storage for path strings in `createDefaultWithScript()`
+- Now: Bridge owns path storage in `EngineSimContext`, passed via `LoadScript()` call
 
-**Fix Required**: Remove `resolveConfigPath()` from `SimulationLoop.cpp`, use `EngineConfig::resolveConfigPaths()` instead.
-
-**2. DEAD CODE - Debug Conditional**
-
-`src/SimulationLoop.cpp:391-414` contains:
-```cpp
-bool useConfigScript = true;  // Set to false to use old LoadScript method
-if (useConfigScript) {
-    // NEW METHOD
-} else {
-    // OLD METHOD (never executed)
-}
-```
-
-The `else` branch is dead code that will never execute in production.
-
-**Fix Required**: Remove the conditional and dead code. Use only the new method.
-
-**3. PATH RESOLUTION NOT CALLED**
-
-`EngineConfig::resolveConfigPaths()` exists but is **never called** in the happy path. The CLI passes raw user input to the bridge, which expects absolute paths.
-
-**Fix Required**: Call `EngineConfig::resolveConfigPaths()` in `CreateSimulationConfig()` or in `runSimulation()` before calling `createDefaultWithScript()`.
-
-**4. STATIC STORAGE LIFETIME ISSUE**
-
-`src/EngineConfig.cpp:32-35` uses static storage for path strings:
-```cpp
-static std::string scriptPathStorage;
-static std::string assetBasePathStorage;
-```
-
-**Issues**:
-- Only one simulator instance supported
-- Thread safety violations
-- Subsequent calls overwrite previous paths
-
-**Fix Required**: Use `SimulationConfig` strings instead of static storage.
+#### ✅ Clean Status
+All critical SOLID violations identified in the 2026-03-27 analysis have been resolved:
+- DRY violations eliminated
+- YAGNI violations removed
+- Static storage issues resolved
+- Path resolution properly delegated to bridge
 
 #### 📊 SOLID Scorecard
 
@@ -159,15 +131,15 @@ static std::string assetBasePathStorage;
 | LSP | ✅ PASS | Interface contracts |
 | ISP | ✅ PASS | Focused interfaces |
 | DIP | ✅ PASS | Dependencies inverted |
-| **DRY** | ❌ **FAIL** | **Path resolution duplicated** |
-| **YAGNI** | ❌ **FAIL** | **Dead conditional code** |
+| **DRY** | ✅ **PASS** | Path resolution consolidated |
+| **YAGNI** | ✅ **PASS** | Dead code removed |
 
-#### 🎯 Action Items
+#### 🎯 Action Items (All Completed ✅)
 
-- [ ] Remove `resolveConfigPath()` from `SimulationLoop.cpp`
-- [ ] Delete `useConfigScript` conditional and dead code
-- [ ] Call `EngineConfig::resolveConfigPaths()` before Create
-- [ ] Replace static storage with `SimulationConfig` strings
+- [x] Remove `resolveConfigPath()` from `SimulationLoop.cpp` (commit 2330d4a)
+- [x] Delete `useConfigScript` conditional and dead code
+- [x] Bridge handles path resolution via `LoadScript()`
+- [x] Bridge owns path storage in `EngineSimContext`
 
 ## Audio Volume Control
 
@@ -224,19 +196,55 @@ static std::string assetBasePathStorage;
 - Store stats in atomic/shared variables, presentation handles ALL output
 - See: SyncPullAudio::renderOnDemand() - no debug there now
 
+## Logging Policy
+
+**Neither the bridge nor the CLI shall write directly to `cout` or `cerr`. No exceptions.**
+
+| Output type | Interface | Rationale |
+|-------------|-----------|----------|
+| Engine state (RPM, throttle, audio mode) | `IPresentation` | Swappable UI layer |
+| Diagnostic / operational messages | `ILogging` | Injectable, filterable, testable |
+| Raw data piped downstream | `stdout` only | Keep pipe-safe |
+
+- `ILogging` is injected into the bridge via `EngineSimSetLogging(handle, logger)`.
+- The CLI creates an `ILogging` implementation (default: `StdErrLogging`) and passes it to the bridge at startup. The CLI's own diagnostic output must also go through the same logger.
+- `StdErrLogging` writes to `stderr`, so diagnostic noise never corrupts a `stdout` pipe.
+- **Audio callback**: additional constraint — no logging calls (or any blocking I/O) inside the audio callback thread. Stats are written to atomics; the presentation layer reads them on the main thread.
+
+### ILogging design intent — functional-area selectors
+
+Current `ILogging` uses severity levels (Debug/Info/Warning/Error). The intended direction is bitwise area flags so developers can trace one subsystem without noise from others:
+
+```cpp
+// Intended (requires ILogging redesign — not yet implemented):
+enum LogArea : uint32_t {
+    AUDIO   = 1 << 0,
+    PHYSICS = 1 << 1,
+    BUFFER  = 1 << 2,
+    CONFIG  = 1 << 3,
+    BRIDGE  = 1 << 4,
+};
+```
+
+Until that redesign, use `LogLevel::Debug` for per-frame traces and `LogLevel::Info` for init/shutdown messages.
+
+### TODO: `cout`/`cerr` migration
+- [ ] Audit `engine-sim-bridge/src/` — replace all `cout`/`cerr` with `ILogging` calls
+- [ ] Audit `src/` (CLI) — replace all `cout`/`cerr` with `ILogging` calls
+- [ ] Bitwise area-selector redesign of `ILogging`
+
 ## Debug Output Consolidation
 
-### All RPM/Throttle Output Locations (MUST FIX):
+### All RPM/Throttle Output Locations:
 | File | Function | Status |
-|------|----------|--------|
+|------|----------|---------|
 | AudioSource.cpp | SineAudioSource::displayProgress | ✅ Frequency |
 | AudioSource.cpp | EngineAudioSource::displayProgress | ✅ Flow |
-| CLIConfig.cpp | displayHUD() | Legacy - TODO remove |
-| ConsolePresentation.cpp | ShowEngineState() | Needs consolidating |
+| CLIConfig.cpp | displayHUD() | TODO remove — dead code, no call sites |
+| ConsolePresentation.cpp | ShowEngineState() | ✅ Primary engine state output |
 
 ### Fix Required:
-- Remove displayHUD() from CLIConfig.cpp
-- Move all engine state output to ConsolePresentation
+- Remove displayHUD() from CLIConfig.cpp (dead code)
 - audioSource.displayProgress() already handles both modes correctly
 
 ## Known Issues

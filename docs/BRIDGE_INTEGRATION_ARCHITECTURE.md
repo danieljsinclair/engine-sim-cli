@@ -180,6 +180,40 @@ public:
 } // namespace presentation
 ```
 
+### 3.3 ILogging (See: `engine-sim-bridge/include/ILogging.h`)
+
+**Policy: Neither the bridge nor the CLI shall write directly to `cout` or `cerr`. All diagnostic output goes through `ILogging`.**
+
+- The bridge receives an `ILogging*` via `EngineSimSetLogging(handle, logger)` at startup.
+- The bridge must call `logger->info(...)` / `logger->debug(...)` etc. and never `std::cout` or `std::cerr` directly.
+- The CLI must inject an `ILogging` implementation and route its own diagnostic output through the same interface — not `cout`/`cerr`. `StdErrLogging` (the default `ILogging` implementation) writes to `stderr`, keeping diagnostic output separate from any data piped on `stdout`.
+- `IPresentation` is for **engine state output** (RPM, throttle, audio mode). `ILogging` is for **diagnostic and operational messages** (errors, warnings, init steps, debug traces). They are not interchangeable.
+
+**Design intent — functional-area selectors:**
+
+The current `LogLevel` enum (Debug / Info / Warning / Error) is a baseline. The intended direction is bitwise functional-area flags so callers can enable exactly the subsystems they want to trace without drowning in noise:
+
+```cpp
+// Intended (not yet implemented — requires ILogging redesign):
+enum LogArea : uint32_t {
+    AUDIO   = 1 << 0,
+    PHYSICS = 1 << 1,
+    BUFFER  = 1 << 2,
+    CONFIG  = 1 << 3,
+    BRIDGE  = 1 << 4,
+};
+// logger->log(PHYSICS | BUFFER, "underrun count=%d", n);
+```
+
+Until that redesign lands, use `LogLevel::Debug` for per-frame traces and `LogLevel::Info` for init/shutdown messages.
+
+**Current implementation status:**
+- [x] `ILogging` interface + `StdErrLogging` default implementation
+- [x] `EngineSimSetLogging()` C API for bridge injection
+- [ ] Bridge internals still use `cout`/`cerr` in places — must be migrated
+- [ ] CLI still uses `cout`/`cerr` in places — must be migrated
+- [ ] Bitwise area-selector redesign (future)
+
 ---
 
 ## 4. Current Implementation Status
