@@ -3,7 +3,7 @@
 #ifndef CONSOLE_PRESENTATION_H
 #define CONSOLE_PRESENTATION_H
 
-#include "interfaces/IPresentation.h"
+#include "presentation/IPresentation.h"
 #include <chrono>
 
 namespace presentation {

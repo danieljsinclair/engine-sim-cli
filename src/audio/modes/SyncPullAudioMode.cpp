@@ -3,12 +3,12 @@
 
 #include "audio/modes/SyncPullAudioMode.h"
 #include "audio/modes/IAudioMode.h"
-#include "SimulationLoop.h"
+#include "simulation/SimulationLoop.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
 #include "../common/CircularBuffer.h"
 #include "SyncPullAudio.h"
-#include "ConsoleColors.h"
+#include "config/ANSIColors.h"
 
 #include "audio/renderers/SyncPullRenderer.h"
 

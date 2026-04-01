@@ -10,7 +10,7 @@
 #include <memory>
 
 #include "engine_sim_bridge.h"
-#include "engine_sim_loader.h"
+#include "bridge/engine_sim_loader.h"
 
 namespace input {
 

@@ -1,7 +1,7 @@
 // ConsolePresentation.cpp - Console text presentation implementation
 // Implements IPresentation for text output to console
 
-#include "interfaces/ConsolePresentation.h"
+#include "presentation/ConsolePresentation.h"
 
 #include <iostream>
 #include <iomanip>

@@ -1,28 +1,14 @@
 // AudioSource.cpp - Audio source implementation
 
 #include "AudioSource.h"
-#include "CLIconfig.h"
-#include "ConsoleColors.h"
+#include "config/CLIconfig.h"
+#include "config/ANSIColors.h"
 #include "AudioPlayer.h"
 
 #include <iostream>
 #include <iomanip>
 #include <thread>
 #include <chrono>
-
-// Template color function to avoid repetition
-// use a lambfunction to capture the logic for determining color based on thresholds
-std::string getDispositionColour(bool isGreen = false, bool isYellow = false, bool isRed = true) {
-    if (isGreen) {
-        return ANSIColors::GREEN;
-    } else if (isYellow) {
-        return ANSIColors::YELLOW;
-    } else if (isRed) {
-        return ANSIColors::RED;
-    } else {
-        return ANSIColors::RESET;
-    }
-}
 
 // ============================================================================
 // BaseAudioSource Implementation - DRY: common code for both modes
@@ -50,6 +36,25 @@ EngineAudioSource::EngineAudioSource(EngineSimHandle h, const EngineSimAPI& a)
     : BaseAudioSource(h, a) {
 }
 
+void outputProgress(bool interactive, const std::string& prefix,
+    double currentTime, double duration, int progress,
+    const EngineSimStats& stats, double throttle, int underrunCount) {
+    (void)currentTime;
+    (void)duration;
+    if (interactive) {
+        std::cout << prefix << "\n" << std::flush;
+    } else {
+        static int lastProgress = 0;
+        if (progress != lastProgress && progress % 10 == 0) {
+            // Include prefix (which may contain SYNC-PULL timing data) in non-interactive mode
+            std::cout << prefix << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
+                        << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
+                        << " | Underruns: " << underrunCount << "\r" << std::flush;
+            lastProgress = progress;
+        }
+    }
+}
+
 void EngineAudioSource::displayProgress(double currentTime, double duration, bool interactive, const EngineSimStats& stats, double throttle, int underrunCount, const AudioPlayer* audioPlayer) {
     int progress = static_cast<int>(currentTime * 100 / duration);
     std::ostringstream prefix;
@@ -58,7 +63,7 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
     prefix << "[" << std::setw(5) << rpm << " RPM] ";
     prefix << "[Throttle: " << std::setw(4) << static_cast<int>(throttle * 100) << "%] ";
     prefix << "[Underruns: " << underrunCount << "] ";
-    prefix << ANSIColors::CYAN << "[Flow: " << std::fixed << std::showpos << std::setw(8) << std::setprecision(5) << stats.exhaustFlow << std::noshowpos << " m3/s]" << ANSIColors::RESET << " ";
+    prefix << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8) << std::setprecision(5) << stats.exhaustFlow << std::noshowpos << " m3/s]" << ANSIColors::RESET << " ";
 
     // Append SYNC-PULL timing data if available
     if (audioPlayer && audioPlayer->getContext()) {
@@ -86,9 +91,9 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
             double generatingFps = (callbackIntervalMs > 0.0) ? (gotFrames * 1000.0 / callbackIntervalMs) : 0.0;
 
             // Color code based on metrics
-            std::string reqGotColor = getDispositionColour(reqFrames == gotFrames);
-            std::string budgetColor = getDispositionColour(timeBudgetPct < 80, timeBudgetPct < 100);
-            std::string trendColor = getDispositionColour(bufferTrendPct >= 0, bufferTrendPct < 0, bufferTrendPct < -1.0);
+            std::string reqGotColor = ANSIColors::getDispositionColour(reqFrames == gotFrames);
+            std::string budgetColor = ANSIColors::getDispositionColour(timeBudgetPct < 80, timeBudgetPct < 100);
+            std::string trendColor = ANSIColors::getDispositionColour(bufferTrendPct >= 0, bufferTrendPct < 0, bufferTrendPct < -1.0);
 
             // Fixed-width formatting for column alignment
             prefix << "[SYNC-PULL] req=" << std::setw(3) << reqFrames
@@ -103,7 +108,7 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
         }
     }
 
-    DisplayHelper::outputProgress(interactive, prefix.str(), currentTime, duration, progress, stats, throttle, underrunCount);
+    outputProgress(interactive, prefix.str(), currentTime, duration, progress, stats, throttle, underrunCount);
 }
 
 // ============================================================================
@@ -114,14 +119,14 @@ namespace BufferOps {
     void preFillCircularBuffer(AudioPlayer* player) {
         if (!player) return;
 
-        std::cout << ANSIColors::colorPreFill("Pre-filling audio buffer...") << "\n";
+        std::cout << ANSIColors::infoMessage("Pre-filling audio buffer...") << "\n";
         std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
 
         for (int i = 0; i < AudioLoopConfig::PRE_FILL_ITERATIONS; i++) {
             player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
         }
 
-        std::cout << ANSIColors::colorPreFill("Buffer pre-filled:") << " " << (AudioLoopConfig::PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
+        std::cout << ANSIColors::infoMessage("Buffer pre-filled:") << " " << (AudioLoopConfig::PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
                   << " frames (" << (AudioLoopConfig::PRE_FILL_ITERATIONS / 60.0) << "s)\n";
     }
 
@@ -129,7 +134,7 @@ namespace BufferOps {
         if (!player) return;
 
         player->resetCircularBuffer();
-        std::cout << ANSIColors::colorPreFill("Circular buffer reset after warmup") << "\n";
+        std::cout << ANSIColors::infoMessage("Circular buffer reset after warmup") << "\n";
 
         // Re-pre-fill only if configured (0 iterations = no re-pre-fill)
         if (AudioLoopConfig::RE_PRE_FILL_ITERATIONS > 0) {
@@ -137,7 +142,7 @@ namespace BufferOps {
             for (int i = 0; i < AudioLoopConfig::RE_PRE_FILL_ITERATIONS; i++) {
                 player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
             }
-            std::cout << ANSIColors::colorPreFill("Re-pre-filled:") << " " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
+            std::cout << ANSIColors::infoMessage("Re-pre-filled:") << " " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
                       << " frames (" << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS / 60.0) << "s)\n";
         }
     }
@@ -149,7 +154,7 @@ namespace BufferOps {
 
 namespace WarmupOps {
     void runWarmup(EngineSimHandle handle, const EngineSimAPI& api, AudioPlayer* audioPlayer, bool playAudio) {
-        std::cout << ANSIColors::colorPreFill("Priming synthesizer pipeline (" + std::to_string(AudioLoopConfig::WARMUP_ITERATIONS) + " iterations)...") << "\n";
+        std::cout << ANSIColors::infoMessage("Priming synthesizer pipeline (" + std::to_string(AudioLoopConfig::WARMUP_ITERATIONS) + " iterations)...") << "\n";
 
         double smoothedThrottle = 0.6;
         double currentTime = 0.0;

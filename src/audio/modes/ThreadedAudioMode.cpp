@@ -7,7 +7,7 @@
 #include "AudioSource.h"
 #include "../common/CircularBuffer.h"
 #include "SyncPullAudio.h"
-#include "ConsoleColors.h"
+#include "config/ANSIColors.h"
 
 #include "audio/renderers/SyncPullRenderer.h"
 #include "audio/renderers/CircularBufferRenderer.h"
@@ -71,7 +71,7 @@ bool ThreadedAudioMode::startAudioThread(EngineSimHandle handle, const EngineSim
         std::cerr << "ERROR: Failed to start audio thread\n";
         return false;
     }
-    std::cout << ANSIColors::colorMode("threaded") << " " << ANSIColors::colorPreFill("audio thread started") << "\n";
+    std::cout << "[" << ANSIColors::GREEN << "]" << " " << ANSIColors::infoMessage("audio thread started") << ANSIColors::RESET << "\n";
     return true;
 }
 

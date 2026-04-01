@@ -4,15 +4,15 @@
 
 #include "SimulationLoop.h"
 
-#include "CLIconfig.h"
+#include "config/CLIconfig.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
 #include "audio/modes/IAudioMode.h"
-#include "interfaces/IInputProvider.h"
-#include "interfaces/IPresentation.h"
-#include "EngineConfig.h"
-#include "ConsoleColors.h"
-#include "engine_sim_loader.h"
+#include "input/IInputProvider.h"
+#include "presentation/IPresentation.h"
+#include "simulation/EngineConfig.h"
+#include "config/ANSIColors.h"
+#include "bridge/engine_sim_loader.h"
 #include "ILogging.h"
 #include "ITelemetryProvider.h"
 
@@ -28,7 +28,6 @@
 #include <algorithm>
 #include <iomanip>
 #include <filesystem>
-#include "ConsoleColors.h"
 
 
 // ============================================================================
@@ -230,7 +229,7 @@ std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle,
                                                 EngineSimAPI& engineAPI) {
     // Bridge created the right simulator type during Create() based on config.sineMode
     // No need to check mode here - just use the handle polymorphically
-    std::cout << "Audio Source: " << ANSIColors::colorEngineType("ENGINE") << " (bridge-managed)\n";
+    std::cout << "Audio Source: " << ANSIColors::infoMessage("[ENGINE]") << " (bridge-managed)\n";
     return std::make_unique<EngineAudioSource>(handle, engineAPI);
 }
 
@@ -247,7 +246,7 @@ void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle,
 
 void warnWavExportNotSupported(bool outputWavRequested) {
     if (outputWavRequested) {
-        std::cout << "\n" << ANSIColors::colorWarning("WARNING:") << " WAV export not supported in unified mode\n";
+        std::cout << "\n" << ANSIColors::warningMessage("WARNING: WAV export not supported in unified mode\n");
         std::cout << "Use the old engine mode code path for WAV export.\n";
     }
 }

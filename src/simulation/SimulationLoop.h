@@ -4,10 +4,10 @@
 #ifndef SIMULATION_LOOP_H
 #define SIMULATION_LOOP_H
 
-#include "CLIconfig.h"
+#include "config/CLIconfig.h"
 #include "engine_sim_bridge.h"
-#include "EngineConfig.h"
-#include "engine_sim_loader.h"
+#include "simulation/EngineConfig.h"
+#include "bridge/engine_sim_loader.h"
 
 #include <memory>
 

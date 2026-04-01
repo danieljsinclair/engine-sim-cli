@@ -22,30 +22,37 @@ endif()
 # The bridge now handles engine-sim as its own nested submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 
-# CLI executable - refactored into separate source files for SOLID compliance
-# NEW: Includes audio/modes and audio/renderers for one-class-per-file structure
+# CLI executable - refactored into modular folder structure
+# Organized by concern: config, simulation, presentation, input, logging, audio, bridge
 add_executable(engine-sim-cli
-    src/CLIconfig.cpp
-    src/AudioPlayer.cpp
-    src/KeyboardInput.cpp
-    src/AudioSource.cpp
-    src/ConsoleColors.cpp
+    # Config layer
+    src/config/CLIconfig.cpp
+    src/config/CLIMain.cpp
+    src/config/ANSIColors.cpp
+    # Simulation layer
+    src/simulation/SimulationLoop.cpp
+    src/simulation/EngineConfig.cpp
+    # Presentation layer
+    src/presentation/ConsolePresentation.cpp
+    # Input layer
+    src/input/KeyboardInput.cpp
+    src/input/KeyboardInputProvider.cpp
+    # Logging layer
+    src/logging/StdErrLogging.cpp
+    # Audio layer (already modular)
     src/audio/modes/ThreadedAudioMode.cpp
     src/audio/modes/SyncPullAudioMode.cpp
     src/audio/modes/AudioModeFactory.cpp
-    src/audio/renderers/SyncPullRenderer.cpp      # NEW: Extracted SyncPullRenderer
-    src/audio/renderers/CircularBufferRenderer.cpp # NEW: Extracted CircularBufferRenderer
-    src/audio/renderers/SilentRenderer.cpp        # NEW: Extracted SilentRenderer
-    src/SimulationLoop.cpp
-    src/CLIMain.cpp
-    src/audio/common/CircularBuffer.cpp  # Modular audio: shared utility
-    src/SyncPullAudio.cpp       # NEW: Sync-pull audio rendering
-    src/audio/common/BridgeAudioSource.cpp  # Modular audio: bridge-backed source
-    src/audio/platform/macos/CoreAudioPlatform.cpp  # Modular audio: macOS CoreAudio platform
-    src/EngineConfig.cpp          # Engine config and script loading
-    src/ILogging.cpp             # NEW: Logging interface implementation
-    src/interfaces/KeyboardInputProvider.cpp    # NEW: Input provider interface
-    src/interfaces/ConsolePresentation.cpp     # NEW: Presentation interface
+    src/audio/renderers/SyncPullRenderer.cpp
+    src/audio/renderers/CircularBufferRenderer.cpp
+    src/audio/renderers/SilentRenderer.cpp
+    src/audio/common/CircularBuffer.cpp
+    src/audio/common/BridgeAudioSource.cpp
+    src/audio/platform/macos/CoreAudioPlatform.cpp
+    # Legacy files (to be refactored)
+    src/AudioPlayer.cpp
+    src/AudioSource.cpp
+    src/SyncPullAudio.cpp
 )
 
 target_link_libraries(engine-sim-cli

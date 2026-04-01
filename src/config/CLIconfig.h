@@ -5,7 +5,7 @@
 #define CLI_CONFIG_H
 
 #include "engine_sim_bridge.h"
-#include "engine_sim_loader.h"
+#include "bridge/engine_sim_loader.h"
 
 #include <atomic>
 #include <cstdint>
