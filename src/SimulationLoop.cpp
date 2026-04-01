@@ -146,56 +146,36 @@ struct ScriptConfig {
 /**
  * Prepare script configuration based on mode priority.
  * PRIORITY ORDER: --sine > --default-engine > --script
- * 
+ *
  * This is the ONLY place that checks mode and determines which script to load.
- * All path validation and asset base resolution happens here.
- * 
+ * Path resolution and validation is handled by the bridge (SRP compliance).
+ *
  * @param config Simulation configuration with mode flags
- * @return ScriptConfig with resolved paths or error message
+ * @return ScriptConfig with paths for bridge to process
  */
 ScriptConfig prepareScriptConfig(const SimulationConfig& config) {
     ScriptConfig result;
-    
+
     // Sine mode: no script needed, SineWaveSimulator creates dummy engine
     if (config.sineMode) {
         result.valid = true;
         return result;
     }
-    
+
     // Determine which path to use
-    std::string pathToResolve;
     if (config.useDefaultEngine) {
-        pathToResolve = "engine-sim-bridge/engine-sim/assets/main.mr";
+        result.scriptPath = "engine-sim-bridge/engine-sim/assets/main.mr";
     } else if (!config.configPath.empty()) {
-        pathToResolve = config.configPath;
+        result.scriptPath = config.configPath;
     } else {
         result.errorMessage = "No engine configuration specified. Use --script <config.mr>, --default-engine, or --sine";
         return result;
     }
-    
-    // Resolve to absolute path
-    std::filesystem::path scriptPath(pathToResolve);
-    if (scriptPath.is_relative()) {
-        scriptPath = std::filesystem::absolute(scriptPath);
-    }
-    scriptPath = scriptPath.lexically_normal();
-    
-    // Validate existence
-    if (!std::filesystem::exists(scriptPath) || !std::filesystem::is_regular_file(scriptPath)) {
-        result.errorMessage = "Script file not found: " + scriptPath.string();
-        if (config.useDefaultEngine) {
-            result.errorMessage += "\nDefault engine requires engine-sim assets at: engine-sim-bridge/engine-sim/assets/main.mr";
-        }
-        return result;
-    }
-    
-    result.scriptPath = scriptPath.string();
-    
-    // Asset base path is always PWD - scripts reference resources like "es/sound-library/..."
-    // relative to where the CLI is run. Keep it simple - no special-case logic.
-    result.assetBasePath = std::filesystem::current_path().string();
+
+    // Path resolution, validation, and asset base path derivation handled by bridge
+    // (SRP: CLI provides input, bridge processes it)
     result.valid = true;
-    
+
     return result;
 }
 
