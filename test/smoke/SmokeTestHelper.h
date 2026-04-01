@@ -51,10 +51,12 @@ public:
     }
 
     // Run the CLI with the given arguments from the project root directory
+    // Redirects output to a log file to keep test output clean
     static int runCLI(const std::string& args) {
         std::string projectRoot = getProjectRoot();
         std::string cliPath = getCLIPath();
-        std::string command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + args;
+        std::string logFile = projectRoot + "/build/cli_test.log";
+        std::string command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + args + " >> " + logFile + " 2>&1";
         return system(command.c_str());
     }
 };

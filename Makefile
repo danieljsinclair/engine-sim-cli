@@ -8,6 +8,9 @@ BUILD_DIR ?= build
 BUILD_TYPE ?= Release
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
+# Default to parallel build using available CPU cores
+MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
 .PHONY: all clean scrub test submodules check-cmake remove-orphans force-rebuild
 
 all: check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
@@ -68,4 +71,5 @@ $(BUILD_DIR)/Makefile: submodules
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
 
 test: $(BUILD_DIR)/Makefile
+	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests
 	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure" 2>&1 | tee $(BUILD_DIR)/test.log
