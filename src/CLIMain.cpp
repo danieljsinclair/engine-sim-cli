@@ -13,6 +13,7 @@
 #include "interfaces/ConsolePresentation.h"
 #include "engine_sim_loader.h"
 #include "EngineConfig.h"
+#include "ILogging.h"
 
 #include <iostream>
 #include <csignal>
@@ -106,6 +107,12 @@ int main(int argc, char* argv[]) {
     // SETUP simulator
     const int sampleRate = 44100;
     SimulationConfig config = CreateSimulationConfig(args);
+
+    // Create logger for dependency injection
+    auto logger = std::make_unique<StdErrLogging>();
+    logger->setMinLevel(LogLevel::Info);  // Show Info and above by default
+    config.logger = logger.get();
+
     IAudioMode* audioMode = createAudioModeFactory(&engineAPI, config.syncPull).release();
     input::IInputProvider* inputProvider = createInputProvider(args.interactive);
     presentation::IPresentation* presentation = createPresentation(args);
@@ -114,6 +121,7 @@ int main(int argc, char* argv[]) {
     int result = runSimulation(config, engineAPI, audioMode, inputProvider, presentation);
 
     // Cleanup dependencies we injected
+    // logger is owned by unique_ptr, will be destroyed automatically
     delete audioMode;
     delete inputProvider;
     delete presentation;

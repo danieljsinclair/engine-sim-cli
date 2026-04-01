@@ -18,6 +18,7 @@ class IAudioMode;
 // Forward declarations for injectable interfaces
 namespace input { class IInputProvider; }
 namespace presentation { class IPresentation; }
+class ILogging;
 
 // ============================================================================
 // SimulationConfig - Minimal config for simulation (OCP compliance)
@@ -40,8 +41,9 @@ struct SimulationConfig {
     const char* outputWav = nullptr;
     int simulationFrequency = 10000;  // Physics Hz - lower for faster sync-pull
     int preFillMs = 50;  // Pre-fill buffer ms for sync-pull mode
-    
+
     std::unique_ptr<IAudioMode> audioMode;  // Injected - OCP compliance
+    ILogging* logger = nullptr;  // Injected - DI compliance
 };
 
 // ============================================================================

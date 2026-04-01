@@ -13,6 +13,7 @@
 #include "EngineConfig.h"
 #include "ConsoleColors.h"
 #include "engine_sim_loader.h"
+#include "ILogging.h"
 
 #include <iostream>
 #include <fstream>
@@ -394,11 +395,11 @@ int runSimulation(
     }
 
     // DI: Inject logging interface into bridge
-    static StdErrLogging logger;
-    logger.setMinLevel(LogLevel::Info);  // Show Info and above by default
-    EngineSimResult logResult = engineAPI.SetLogging(handle, &logger);
-    if (logResult != ESIM_SUCCESS) {
-        std::cerr << "WARNING: Failed to set logging: result=" << logResult << "\n";
+    if (config.logger) {
+        EngineSimResult logResult = engineAPI.SetLogging(handle, config.logger);
+        if (logResult != ESIM_SUCCESS) {
+            std::cerr << "WARNING: Failed to set logging: result=" << logResult << "\n";
+        }
     }
 
     // Initialize Audio framework and playback if requested
