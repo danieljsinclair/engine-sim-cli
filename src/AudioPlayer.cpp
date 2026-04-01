@@ -4,7 +4,7 @@
 
 #include "AudioPlayer.h"
 #include "audio/modes/IAudioMode.h"
-#include "CircularBuffer.h"
+#include "audio/common/CircularBuffer.h"
 #include "SyncPullAudio.h"
 #include "ConsoleColors.h"
 

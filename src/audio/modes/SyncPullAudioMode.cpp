@@ -6,7 +6,7 @@
 #include "SimulationLoop.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
-#include "CircularBuffer.h"
+#include "../common/CircularBuffer.h"
 #include "SyncPullAudio.h"
 #include "ConsoleColors.h"
 

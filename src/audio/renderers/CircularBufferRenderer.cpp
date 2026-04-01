@@ -3,7 +3,7 @@
 
 #include "audio/renderers/CircularBufferRenderer.h"
 #include "AudioPlayer.h"
-#include "CircularBuffer.h"
+#include "../common/CircularBuffer.h"
 
 #include <iostream>
 #include <cstring>

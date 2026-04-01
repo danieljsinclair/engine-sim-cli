@@ -16,7 +16,7 @@
 #include "engine_sim_bridge.h"
 #include "engine_sim_loader.h"
 
-#include "CircularBuffer.h"
+#include "audio/common/CircularBuffer.h"
 #include "SyncPullAudio.h"
 #include "audio/renderers/IAudioRenderer.h"
 #include "audio/renderers/SyncPullRenderer.h"

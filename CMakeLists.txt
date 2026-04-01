@@ -38,7 +38,7 @@ add_executable(engine-sim-cli
     src/audio/renderers/SilentRenderer.cpp        # NEW: Extracted SilentRenderer
     src/SimulationLoop.cpp
     src/CLIMain.cpp
-    src/CircularBuffer.cpp      # NEW: Pure ring buffer handling
+    src/audio/common/CircularBuffer.cpp  # Modular audio: shared utility
     src/SyncPullAudio.cpp       # NEW: Sync-pull audio rendering
     src/EngineConfig.cpp          # Engine config and script loading
     src/ILogging.cpp             # NEW: Logging interface implementation
