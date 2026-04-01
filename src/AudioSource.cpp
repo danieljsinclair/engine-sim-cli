@@ -10,6 +10,20 @@
 #include <thread>
 #include <chrono>
 
+// Template color function to avoid repetition
+// use a lambfunction to capture the logic for determining color based on thresholds
+std::string getDispositionColour(bool isGreen = false, bool isYellow = false, bool isRed = true) {
+    if (isGreen) {
+        return ANSIColors::GREEN;
+    } else if (isYellow) {
+        return ANSIColors::YELLOW;
+    } else if (isRed) {
+        return ANSIColors::RED;
+    } else {
+        return ANSIColors::RESET;
+    }
+}
+
 // ============================================================================
 // BaseAudioSource Implementation - DRY: common code for both modes
 // ============================================================================
@@ -71,32 +85,18 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
             double neededFps = callbackRateHz * reqFrames;
             double generatingFps = (callbackIntervalMs > 0.0) ? (gotFrames * 1000.0 / callbackIntervalMs) : 0.0;
 
-            // Color code based on buffer trend - this tells us if we're keeping up
-            std::string trendColor;
-            if (bufferTrendPct >= 1.0) {
-                trendColor = ANSIColors::GREEN;  // Ahead - buffer filling
-            } else if (bufferTrendPct >= -1.0) {
-                trendColor = ANSIColors::YELLOW;  // Near zero - barely keeping up
-            } else {
-                trendColor = ANSIColors::RED;  // Behind - buffer depleting
-            }
-
-            std::string budgetColor;
-            if (timeBudgetPct < 80) {
-                budgetColor = ANSIColors::GREEN;
-            } else if (timeBudgetPct < 100) {
-                budgetColor = ANSIColors::YELLOW;
-            } else {
-                budgetColor = ANSIColors::RED;
-            }
+            // Color code based on metrics
+            std::string reqGotColor = getDispositionColour(reqFrames == gotFrames);
+            std::string budgetColor = getDispositionColour(timeBudgetPct < 80, timeBudgetPct < 100);
+            std::string trendColor = getDispositionColour(bufferTrendPct >= 0, bufferTrendPct < 0, bufferTrendPct < -1.0);
 
             // Fixed-width formatting for column alignment
             prefix << "[SYNC-PULL] req=" << std::setw(3) << reqFrames
                     << " got=" << std::setw(3) << gotFrames
-                    << " render=" << std::setw(5) << std::fixed << std::setprecision(1) << renderMs << "ms"
+                    << " rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << renderMs << "ms"
                     << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms"
                     << " (" << budgetColor << std::setw(3) << std::setprecision(0) << timeBudgetPct << "% of budget" << ANSIColors::RESET << ")"
-                    << " callbacks=" << std::setw(3) << std::setprecision(0) << callbackRateHz << "Hz"
+                    << " callbacks=" << std::setw(6) << std::setprecision(0) << callbackRateHz << "Hz"
                     << " needed=" << std::setw(5) << std::setprecision(1) << neededFps / 1000.0 << "kfps"
                     << " generating=" << std::setw(5) << std::setprecision(1) << generatingFps / 1000.0 << "kfps"
                     << " trend=" << trendColor << std::showpos << std::setw(4) << std::setprecision(1) << bufferTrendPct << "%" << std::noshowpos << ANSIColors::RESET;
@@ -202,8 +202,7 @@ namespace TimingOps {
     void LoopTimer::sleepToMaintain60Hz() {
         iterationCount++;
         auto now = std::chrono::steady_clock::now();
-        auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-            now - absoluteStartTime).count();
+        auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - absoluteStartTime).count();
         auto targetUs = static_cast<long long>(iterationCount * AudioLoopConfig::UPDATE_INTERVAL * 1000000);
         auto sleepUs = targetUs - elapsedUs;
 

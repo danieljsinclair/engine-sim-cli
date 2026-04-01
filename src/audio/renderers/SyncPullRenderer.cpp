@@ -1,6 +1,7 @@
 // SyncPullRenderer.cpp - Sync-pull renderer implementation
 // Renders audio synchronously on-demand from the engine simulator
 #include <chrono>
+#include <iostream>
 #include <iomanip>
 
 #include "audio/renderers/SyncPullRenderer.h"
@@ -50,6 +51,9 @@ namespace {
             context->lastCallbackTimeMs.store(nowMs);
         }
         // If nowMs < lastCallbackTime (shouldn't happen), ignore
+
+        // Update last callback time for next interval calculation (ALWAYS do this)
+        context->lastCallbackTimeMs.store(nowMs);
 
         // Check if we need to start a new 16ms window
         double windowStart = context->windowStartTimeMs.load();
@@ -111,9 +115,11 @@ bool SyncPullRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
             framesToRender = buffer.mDataByteSize / (2 * sizeof(float));
         }
 
-        // Request frames from the engine simulator synchronously (with timing)
         auto start = std::chrono::high_resolution_clock::now();
+
+        // Request frames from the engine simulator synchronously
         int framesRead = context->syncPullAudio->renderOnDemand(data, static_cast<int>(framesToRender));
+        
         auto end = std::chrono::high_resolution_clock::now();
         double renderMs = std::chrono::duration<double, std::milli>(end - start).count();
 
