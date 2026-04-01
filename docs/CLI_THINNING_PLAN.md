@@ -1,6 +1,6 @@
-# CLI Thinning Plan
+# CLI Thinning Plan (Refined)
 
-**Document Version:** 1.0
+**Document Version:** 2.0
 **Date:** 2026-04-01
 **Status:** Architecture Decision Record (ADR)
 **Authors:** Solution Architect, with Test Architect and Tech Architect consensus
@@ -9,9 +9,124 @@
 
 ## Executive Summary
 
-**IMPORTANT CORRECTION:** The initial assumption that "20+ files need to move to the bridge" was based on a misunderstanding of what the bridge is. After careful analysis of the existing architecture, **the CLI is already appropriately thin** and only minimal cleanup is required.
+This document defines the refined CLI architecture based on user clarification. The CLI is an **ultra-thin veneer** that only parses arguments and wires together dependency injection providers. All heavy lifting (simulation, audio, buffering) is handled by the bridge or platform-specific modules.
 
-### Critical Architectural Understanding
+### Key Architectural Decisions (Refined 2026-04-01)
+
+| Decision | Rationale |
+|----------|-----------|
+| **CLI = Ultra-thin veneer** | Parse args, wire providers, call bridge - NOTHING else |
+| **NO threading in CLI** | Bridge/platform handles threading |
+| **NO buffering in CLI** | Platform-specific modules handle their own buffering |
+| **NO physics in CLI** | Bridge handles all simulation |
+| **DI Provider Pattern** | All providers injectable with console defaults |
+| **ITelemetryProvider** | NEW: Separate telemetry from logging |
+
+### DI Providers (All with Console Defaults)
+
+| Provider | Interface | Default Implementation | Purpose |
+|----------|-----------|------------------------|---------|
+| **ILogging** | ILogging | StdErrLogging | Operational messages (init, errors, warnings) |
+| **ITelemetryProvider** | ITelemetryProvider | InMemoryTelemetry | Structured data (RPM, load, flow) for display |
+| **IPresentation** | IPresentation | ConsolePresentation | User output (text, TUI, GUI) |
+| **IInputProvider** | IInputProvider | KeyboardInputProvider | User input (keyboard, upstream, automation) |
+
+---
+
+## Refined CLI Responsibilities (Ultra-Thin)
+
+### CLI DOES (Minimal - Ultra-Thin Veneer)
+
+| Responsibility | Description | Location |
+|----------------|-------------|----------|
+| **Parse arguments** | Convert CLI args to SimulationConfig | `CLIMain.cpp`, `CLIConfig.cpp/h` |
+| **Wire providers** | Create and inject all DI providers | `CLIMain.cpp` |
+| **Signal handling** | Handle Ctrl+C for graceful shutdown | `CLIMain.cpp` |
+| **Call bridge** | Invoke bridge APIs for simulation | `CLIMain.cpp` → bridge |
+
+### CLI DOES NOT DO (Bridge/Platform Responsibilities)
+
+| Responsibility | Who Handles It | Why |
+|----------------|----------------|-----|
+| **Threading** | Bridge/Platform modules | Real-time audio requires platform threading |
+| **Audio buffering** | Platform-specific modules | Different platforms buffer differently |
+| **Physics simulation** | Bridge | Platform-agnostic simulation |
+| **Audio generation** | Bridge | Platform-agnostic audio synthesis |
+| **Audio playback** | Platform modules (CoreAudio/AVAudioEngine/I2S) | Platform-specific APIs |
+| **Telemetry storage** | ITelemetryProvider implementations | Memory/file/network options |
+
+### CLI Data Flow (Ultra-Thin)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     CLIMain.cpp                             │
+│  1. Parse CLI args → SimulationConfig                       │
+│  2. Create providers (ILogging, ITelemetryProvider, etc.)   │
+│  3. Call bridge.runSimulation(config, providers)           │
+│  4. Return exit code                                        │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           │ Passes providers
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Bridge (runSimulation)                         │
+│  - Runs physics (Update)                                    │
+│  - Generates audio (Render)                                 │
+│  - Writes telemetry (ITelemetryProvider)                    │
+│  - Logs operations (ILogging)                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Point:** CLI is just wiring code. All logic is in bridge or platform modules.
+
+---
+
+## ITelemetryProvider (NEW - Critical Addition)
+
+### Problem: Telemetry vs Logging
+
+**Current Issue:** Telemetry data (RPM, load, exhaust flow) is mixed with operational logging:
+
+```cpp
+// Current: Telemetry disguised as logging
+logger->info("RPM: %f, Load: %f", rpm, load);
+```
+
+**Problems:**
+- Can't suppress logging without losing telemetry
+- Parsing structured data from text strings is fragile
+- Future TMUX TUI needs structured data, not text streams
+
+### Solution: Separate Telemetry Provider
+
+```cpp
+// New: Structured telemetry
+telemetry->updateStats(stats);  // Structured data
+```
+
+**Benefits:**
+- Clear separation: logging = messages, telemetry = data
+- Thread-safe atomic access (InMemoryTelemetry)
+- Future-proof: TUI/GUI can consume structured data
+- Logging can be suppressed independently
+
+### Transition Strategy
+
+**Phase 1 (Current): Dual Output**
+- Bridge writes to BOTH ILogging and ITelemetryProvider
+- ConsolePresentation uses ILogging for now
+- No breaking changes
+
+**Phase 2 (Future): Telemetry-Only**
+- Bridge writes to ITelemetryProvider only
+- TUI Presentation reads structured telemetry
+- Logging reserved for operational messages
+
+See `docs/TELEMETRY_ARCHITECTURE.md` for full details.
+
+---
+
+## Critical Architectural Understanding
 
 **The bridge (`engine-sim-bridge`) is a platform-agnostic C API wrapper around engine-sim.**
 

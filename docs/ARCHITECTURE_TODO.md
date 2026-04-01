@@ -1,6 +1,49 @@
 # Architecture Refactoring TODO
 
-## Status: IN PROGRESS
+## Status: IN PROGRESS - Refined Architecture (2026-04-01)
+
+## Refined CLI Architecture (NEW)
+
+### CLI = Ultra-Thin Veneer
+
+**CLI Responsibilities (MINIMAL):**
+- Parse command line arguments
+- Configure and run the simulator
+- Operate controls (throttle, clutch, ignition, starter) via simple bridge APIs
+- NO threading, NO buffering, NO physics in CLI
+
+**Audio Buffering Location:**
+- NOT in CLI
+- Platform-specific modules handle their own buffering
+- Bridge provides high-level runSimulation() API
+
+### DI Provider Pattern (All with Console Defaults)
+
+| Provider | Interface | Default Implementation | Purpose |
+|----------|-----------|------------------------|---------|
+| **ILogging** | ILogging | StdErrLogging | Operational messages |
+| **ITelemetryProvider** | ITelemetryProvider | InMemoryTelemetry | Structured data (NEW) |
+| **IPresentation** | IPresentation | ConsolePresentation | User output |
+| **IInputProvider** | IInputProvider | KeyboardInputProvider | User input |
+
+### ITelemetryProvider (NEW INTERFACE)
+
+**Purpose:** Separate telemetry from logging
+- Bridge produces telemetry/stats (RPM, load, exhaust flow, etc.)
+- DISTINCT from logging (logging = operational messages, telemetry = data)
+- Bridge writes to ITelemetryProvider
+- IPresentation reads from ITelemetryProvider for display
+- Default: In-memory atomic struct (thread-safe reads)
+- Future: TMUX IPresentation will consume this
+
+**Transition Strategy:**
+- For now: Bridge pushes to BOTH ILogging (immediate output) AND ITelemetry
+- ConsolePresentation uses ILogging for now
+- Future: Logging can be suppressed, IPresentation uses ITelemetry exclusively
+
+**Documentation:** See `docs/TELEMETRY_ARCHITECTURE.md` for full details.
+
+---
 
 ## Completed ✅
 - [x] Git mv AudioMode.cpp → audio/modes/ThreadedAudioMode.cpp (history preserved)
@@ -22,8 +65,47 @@
 - [x] Phase 5: Path consolidation to bridge (commit e43467f)
 
 ## In Progress
+- [x] Refined CLI Architecture documentation (2026-04-01)
+- [x] ITelemetryProvider interface design (TELEMETRY_ARCHITECTURE.md)
 - [ ] Sample amplitude transform (multiply float samples by gain factor)
 - [ ] iOS audio: AudioUnit alternative (AVAudioEngine?)
+
+## Telemetry Implementation Tasks (NEW - 2026-04-01)
+
+### Phase 1: Create ITelemetryProvider (Week 1)
+- [ ] Create `engine-sim-bridge/include/ITelemetryProvider.h`
+- [ ] Implement `InMemoryTelemetry` default (atomic/thread-safe)
+- [ ] Add `EngineSimSetTelemetry()` C API function
+- [ ] Update bridge C API docs
+
+### Phase 2: Bridge Integration (Week 2)
+- [ ] Add telemetry member to `EngineSimContext`
+- [ ] In `runSimulation()` / `Update()`, write telemetry data
+- [ ] Keep dual output (ILogging + ITelemetry) for transition
+- [ ] Update bridge with telemetry calls
+
+### Phase 3: Presentation Updates (Week 3)
+- [ ] Update `IPresentation` to accept `ITelemetryProvider*`
+- [ ] `ConsolePresentation` continues using ILogging (transition)
+- [ ] Document future TUI Presentation will use telemetry
+
+### Phase 4: Testing (Week 4)
+- [ ] Unit tests for `InMemoryTelemetry`
+- [ ] Integration tests for bridge telemetry output
+- [ ] Verify thread safety (sim thread writes, main thread reads)
+
+## SOLID Requirements (Refined 2026-04-01)
+
+### SRP: Provider Separation
+- ILogging: Operational messages (init, errors, warnings)
+- ITelemetryProvider: Structured data (RPM, load, flow)
+- IPresentation: User output display
+- IInputProvider: User input handling
+
+### CLI vs Bridge (Refined)
+- **CLI**: Parse args, wire providers, call bridge (ultra-thin)
+- **Bridge**: Physics, audio, telemetry production
+- **Platform modules**: Audio playback, buffering, threading
 
 ## SOLID Requirements
 
