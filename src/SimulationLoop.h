@@ -19,6 +19,7 @@ class IAudioMode;
 namespace input { class IInputProvider; }
 namespace presentation { class IPresentation; }
 class ILogging;
+namespace telemetry { class ITelemetryWriter; }
 
 // ============================================================================
 // SimulationConfig - Minimal config for simulation (OCP compliance)
@@ -44,6 +45,7 @@ struct SimulationConfig {
 
     std::unique_ptr<IAudioMode> audioMode;  // Injected - OCP compliance
     ILogging* logger = nullptr;  // Injected - DI compliance
+    telemetry::ITelemetryWriter* telemetryWriter = nullptr;  // Injected - DI compliance
 };
 
 // ============================================================================
@@ -60,7 +62,8 @@ int runUnifiedAudioLoop(
     AudioPlayer* audioPlayer,
     IAudioMode& audioMode,
     input::IInputProvider* inputProvider,
-    presentation::IPresentation* presentation);
+    presentation::IPresentation* presentation,
+    telemetry::ITelemetryWriter* telemetryWriter);
 
 // ============================================================================
 // Engine Loader Result - Wraps loaded engine for dependency injection

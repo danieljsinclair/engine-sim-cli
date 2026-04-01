@@ -15,8 +15,8 @@
 #include <chrono>
 #include <atomic>
 
-// Include the telemetry interfaces (to be implemented)
-#include "ITelemetry.h"
+// Include the telemetry interfaces
+#include "ITelemetryProvider.h"
 
 using namespace telemetry;
 

@@ -14,6 +14,7 @@
 #include "ConsoleColors.h"
 #include "engine_sim_loader.h"
 #include "ILogging.h"
+#include "ITelemetryProvider.h"
 
 #include <iostream>
 #include <fstream>
@@ -103,7 +104,7 @@ double updateInputAndGetThrottle(input::IInputProvider* inputProvider, double cu
 /// Presentation Update
 /// ============================================================================
 void updatePresentation(presentation::IPresentation* presentation, double currentTime,
-                        const EngineSimStats& stats, double throttle, 
+                        const EngineSimStats& stats, double throttle,
                         int underrunCount, IAudioMode& audioMode,
                         input::IInputProvider* inputProvider) {
     if (presentation) {
@@ -118,8 +119,35 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
         state.ignition = inputProvider ? inputProvider->GetIgnition() : true;
         state.starterMotor = false;
         state.exhaustFlow = stats.exhaustFlow;
-        
+
         presentation->ShowEngineState(state);
+    }
+}
+
+/// ============================================================================
+/// Telemetry Write
+/// ============================================================================
+void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
+                    const EngineSimStats& stats,
+                    double currentTime,
+                    double throttle,
+                    bool ignition,
+                    int underrunCount) {
+    if (telemetryWriter) {
+        telemetry::TelemetryData data;
+        data.currentRPM = stats.currentRPM;
+        data.currentLoad = stats.currentLoad;
+        data.exhaustFlow = stats.exhaustFlow;
+        data.manifoldPressure = stats.manifoldPressure;
+        data.activeChannels = stats.activeChannels;
+        data.processingTimeMs = stats.processingTimeMs;
+        data.underrunCount = underrunCount;
+        data.bufferHealthPct = 0.0;  // TODO: Calculate from audio player if available
+        data.throttlePosition = throttle;
+        data.ignitionOn = ignition;
+        data.starterMotorEngaged = false;  // TODO: Track starter motor state
+        data.timestamp = currentTime;
+        telemetryWriter->write(data);
     }
 }
 
@@ -238,53 +266,57 @@ int runUnifiedAudioLoop(
     AudioPlayer* audioPlayer,
     IAudioMode& audioMode,
     input::IInputProvider* inputProvider,
-    presentation::IPresentation* presentation)
+    presentation::IPresentation* presentation,
+    telemetry::ITelemetryWriter* telemetryWriter)
 {
     double currentTime = 0.0;
     TimingOps::LoopTimer timer;
-    
+
     const double minSustainedRPM = 550.0;
     double interactiveLoad = 0.1;
     double baselineLoad = interactiveLoad;
     bool wKeyPressed = false;
-    
+
     // Initialize - enable starter motor (simulator logic)
     enableStarterMotor(handle, api);
     double throttle = getThrottle(inputProvider);
-    
+
     std::cout << "\nStarting main loop...\n";
-    
+
     // Main loop
     while (shouldContinueLoop(currentTime, config.duration, inputProvider)) {
         checkStarterMotorRPM(handle, api, minSustainedRPM);
-        
+
         throttle = updateInputAndGetThrottle(inputProvider, currentTime);
         api.SetThrottle(handle, throttle);
 
         bool ignition = inputProvider ? inputProvider->GetIgnition() : true;
         api.SetIgnition(handle, ignition ? 1 : 0);
-        
+
         audioMode.updateSimulation(handle, api, audioPlayer);
-        
+
 
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
-        
+
         // Update audio source with latest stats (needed for threaded sine mode)
         audioSource.updateStats(stats);
         audioMode.generateAudio(audioSource, audioPlayer);
-        
+
         int underrunCount = getUnderrunCount(audioPlayer);
-        
+
+        // Write telemetry data
+        writeTelemetry(telemetryWriter, stats, currentTime, throttle, ignition, underrunCount);
+
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
-        
+
         // Show audio source specific output (Frequency for sine, Flow for engine)
         audioSource.displayProgress(currentTime, config.duration, config.interactive, stats, throttle, underrunCount, audioPlayer);
-        
+
         // Maintain 60hz timing with sleeps :(
         performTimingControl(timer);
     }
-    
+
     return 0;
 }
 
@@ -410,7 +442,7 @@ int runSimulation(
     
     // Run MAIN loop - now uses injectable input provider and presentation
     // Some input providers enable ignition by default which will allow the engine to fire during the cranking phase otherwise it will crank endlessly huffing and puffing
-    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, config, audioPlayer, *audioMode, inputProvider, presentation);
+    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, config, audioPlayer, *audioMode, inputProvider, presentation, config.telemetryWriter);
     
     // EXIT
     cleanupSimulation(audioPlayer, handle, engineAPI, exitCode);
