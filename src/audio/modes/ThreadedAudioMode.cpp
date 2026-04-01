@@ -5,9 +5,9 @@
 #include "audio/modes/IAudioMode.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
-#include "ConsoleColors.h"
 #include "CircularBuffer.h"
 #include "SyncPullAudio.h"
+#include "ConsoleColors.h"
 
 #include "audio/renderers/SyncPullRenderer.h"
 #include "audio/renderers/CircularBufferRenderer.h"

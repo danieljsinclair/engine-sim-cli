@@ -386,3 +386,126 @@ Until that redesign, use `LogLevel::Debug` for per-frame traces and `LogLevel::I
 | simulationFrequency | 10000 | 1000-100000 Hz |
 | fluidSimulationSteps | 8 | 1-32 |
 | targetSynthesizerLatency | 0.02s | Not used in sync-pull |
+
+---
+
+## CLI Thinning Analysis (COMPLETED 2026-04-01)
+
+**IMPORTANT CORRECTION:** The initial plan to "move 20+ files to bridge" was based on a misunderstanding of what the bridge is. After careful analysis, the corrected plan follows.
+
+### Critical Architectural Understanding
+
+**The bridge (`engine-sim-bridge`) is a platform-agnostic C API wrapper around engine-sim.**
+
+The bridge provides:
+- `EngineSimCreate/Destroy` - Simulator lifecycle
+- `EngineSimLoadScript` - Script loading with path resolution
+- `EngineSimUpdate/Render` - Physics and audio generation
+- `EngineSimSetThrottle/Ignition/StarterMotor` - Control inputs
+- `EngineSimGetStats` - State readout
+
+The bridge should NOT contain:
+- Platform-specific audio playback (CoreAudio, AVAudioEngine, I2S)
+- Platform-specific input handling (keyboard, touch, CAN bus)
+- UI/presentation logic (console, TUI, GUI)
+
+These are **client responsibilities** - different platforms implement them differently.
+
+### Analysis Results
+
+**Dead Code Identified (2 items):**
+1. **RPMController.cpp/h** - Defined but NEVER used (verified via grep)
+2. **displayHUD()** function in CLIconfig.cpp - Defined but NEVER called (verified via grep)
+
+**NOT Dead Code (must keep):**
+- **KeyboardInput.cpp/h** - IS used by KeyboardInputProvider (verified via grep)
+- **AudioPlayer.cpp/h** - macOS CoreAudio - platform-specific client code
+- **All audio infrastructure** - Platform-specific client code
+- **All interfaces** (IInputProvider, IPresentation) - Client-side abstractions
+- **EngineConfig.cpp/h** - C++ wrapper convenience over bridge C API
+- **SimulationLoop.cpp/h** - Client-side orchestration
+- **ILogging.cpp** - Default implementation of ILogging interface
+
+### Corrected File Analysis
+
+| File | Current Location | Should Be | Rationale |
+|------|-----------------|-----------|-----------|
+| AudioPlayer.cpp/h | src/ | **CLI** | macOS CoreAudio - platform-specific |
+| AudioSource.cpp/h | src/ | **CLI** | Wrapper around bridge API |
+| CircularBuffer.cpp/h | src/ | **CLI** | Used by AudioPlayer |
+| audio/modes/* | src/ | **CLI** | Client strategies for using bridge |
+| audio/renderers/* | src/ | **CLI** | Client-side rendering strategies |
+| IAudioMode.h | src/audio/modes/ | **CLI** | Client interface |
+| IAudioRenderer.h | src/audio/renderers/ | **CLI** | Client interface |
+| ILogging.cpp | src/ | **CLI** | Default impl of ILogging |
+| interfaces/ConsolePresentation.cpp/h | src/interfaces/ | **CLI** | CLI-specific presentation |
+| interfaces/IInputProvider.h | src/interfaces/ | **CLI** | Client interface |
+| interfaces/IPresentation.h | src/interfaces/ | **CLI** | Client interface |
+| interfaces/KeyboardInputProvider.cpp/h | src/interfaces/ | **CLI** | CLI-specific keyboard input |
+| KeyboardInput.cpp/h | src/ | **CLI** | Used by KeyboardInputProvider |
+| RPMController.cpp/h | src/ | **DELETE** | DEAD CODE - never used |
+| SyncPullAudio.cpp/h | src/ | **CLI** | Client-side sync-pull rendering |
+| CLIMain.cpp/h | src/ | **CLI** | Main entry point |
+| CLIconfig.cpp/h | src/ | **CLI** | CLI argument parsing |
+| SimulationLoop.cpp/h | src/ | **CLI** | Client-side orchestration |
+| EngineConfig.cpp/h | src/ | **CLI** | C++ wrapper over bridge C API |
+| ConsoleColors.cpp/h | src/ | **CLI** | CLI-specific formatting |
+| engine_sim_loader.h | src/ | **CLI** | Bridge API wrapper |
+
+### Revised Execution Plan
+
+**Phase 1 (High Priority):** Delete Dead Code
+1. DELETE `RPMController.cpp/h` - NEVER used
+2. DELETE `displayHUD()` function from CLIconfig.cpp - NEVER called
+3. Run tests, ensure GREEN
+4. Commit: "chore: remove dead code (RPMController, displayHUD)"
+
+**Phase 2 (Low Priority, Optional):** SimulationLoop Review
+1. Analyze SimulationLoop.cpp (400+ lines) for SRP compliance
+2. Current implementation may be acceptable - orchestration is inherently complex
+3. Only make changes if clear benefit exists
+
+**Phase 3 (Medium Priority):** Documentation Update
+1. Update BRIDGE_INTEGRATION_ARCHITECTURE.md if needed
+
+### What NOT To Do (Critical - Avoid These Mistakes)
+
+**DO NOT move audio infrastructure to bridge:**
+- AudioPlayer is macOS-specific (CoreAudio)
+- Other platforms need different implementations (iOS: AVAudioEngine, ESP32: I2S)
+- Bridge should remain platform-agnostic C API
+
+**DO NOT move input/presentation interfaces to bridge:**
+- IInputProvider and IPresentation are client-side abstractions
+- Different platforms need different implementations
+- Bridge doesn't use these interfaces - CLI does
+
+**DO NOT delete KeyboardInput:**
+- It IS used by KeyboardInputProvider (verified via grep)
+- It's a valid implementation detail
+
+**DO NOT delete EngineConfig:**
+- It provides type-safe C++ interface over bridge C API
+- It provides proper error handling with std::string
+- It's client-side convenience code, not bridge code
+
+**DO NOT move SimulationLoop to bridge:**
+- SimulationLoop is client-side orchestration
+- Bridge provides API; client decides how to use it
+- Moving it would make bridge into CLI, defeating the purpose
+
+### Success Criteria
+
+1. All dead code removed (RPMController, displayHUD)
+2. All tests passing (no regression)
+3. Clear separation of concerns maintained
+4. Bridge remains platform-agnostic
+5. CLI remains appropriately structured
+6. SOLID compliance maintained
+
+### Summary
+
+**Initial plan (INCORRECT):** Move 20+ files to bridge
+**Corrected plan:** Delete 2 dead files, keep everything else
+
+The CLI is appropriately structured. The bridge is a thin platform-agnostic C API, and the CLI contains platform-specific client code as it should.

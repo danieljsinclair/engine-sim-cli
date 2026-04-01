@@ -209,22 +209,6 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 }
 
 // ============================================================================
-// Display Interactive HUD
-// ============================================================================
-
-void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimStats& stats, int underrunCount) {
-    std::cout << "\r";
-    std::cout << "[" << std::fixed << std::setprecision(0) << std::setw(4) << rpm << " RPM] ";
-    std::cout << "[Throttle: " << std::setw(3) << static_cast<int>(throttle * 100) << "%] ";
-    if (targetRPM > 0) {
-        std::cout << "[Target: " << std::setw(4) << static_cast<int>(targetRPM) << " RPM] ";
-    }
-    std::cout << "[Flow: " << std::showpos << std::setw(8) << std::setprecision(4) << stats.exhaustFlow << std::noshowpos << " m3/s] ";
-    std::cout << "[Underruns: " << underrunCount << "] ";
-    std::cout << std::flush;
-}
-
-// ============================================================================
 // Shows the configuration on startup in a banner format
 // ============================================================================
 void ShowConfigHeader(CommandLineArgs& args, const char* engineAPIVersion = "unknown") {

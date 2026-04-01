@@ -25,7 +25,7 @@ add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 # CLI executable - refactored into separate source files for SOLID compliance
 # NEW: Includes audio/modes and audio/renderers for one-class-per-file structure
 add_executable(engine-sim-cli
-    src/CLIConfig.cpp
+    src/CLIconfig.cpp
     src/AudioPlayer.cpp
     src/KeyboardInput.cpp
     src/RPMController.cpp

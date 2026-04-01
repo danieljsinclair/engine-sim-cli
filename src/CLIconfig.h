@@ -65,7 +65,6 @@ extern std::atomic<bool> g_interactiveMode;
 
 void printUsage(const char* progName);
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
-void displayHUD(double rpm, double throttle, double targetRPM, const EngineSimStats& stats, int underrunCount);
 void ShowConfigHeader(CommandLineArgs& config, const char* engineAPIVersion);
 
 #endif // CLI_CONFIG_H
