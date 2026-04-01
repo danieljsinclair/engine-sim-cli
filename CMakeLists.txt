@@ -40,6 +40,8 @@ add_executable(engine-sim-cli
     src/CLIMain.cpp
     src/audio/common/CircularBuffer.cpp  # Modular audio: shared utility
     src/SyncPullAudio.cpp       # NEW: Sync-pull audio rendering
+    src/audio/common/BridgeAudioSource.cpp  # Modular audio: bridge-backed source
+    src/audio/platform/macos/CoreAudioPlatform.cpp  # Modular audio: macOS CoreAudio platform
     src/EngineConfig.cpp          # Engine config and script loading
     src/ILogging.cpp             # NEW: Logging interface implementation
     src/interfaces/KeyboardInputProvider.cpp    # NEW: Input provider interface

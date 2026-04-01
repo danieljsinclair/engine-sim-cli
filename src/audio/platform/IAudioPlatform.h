@@ -6,11 +6,12 @@
 #ifndef AUDIO_PLATFORM_IAUDIO_PLATFORM_H
 #define AUDIO_PLATFORM_IAUDIO_PLATFORM_H
 
+#include "audio/common/IAudioSource.h"
+
 namespace audio {
 namespace platform {
 
-// Forward declaration
-class IAudioSource;
+// IAudioSource is now included, no forward declaration needed
 
 /**
  * Platform-agnostic audio output interface.
