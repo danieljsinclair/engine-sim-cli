@@ -15,6 +15,8 @@
 - [x] SimulationConfig replaces CommandLineArgs in SimulationLoop
 - [x] float volume replaces bool silent in SimulationConfig
 - [x] GetSimulationConfig() moved to CLIMain.cpp
+- [x] Phase 1: Remove dead code from EngineConfig (YAGNI)
+- [x] Phase 2: Logger DI injection (eliminate static storage)
 
 ## In Progress
 - [ ] Sample amplitude transform (multiply float samples by gain factor)
@@ -28,8 +30,9 @@
 
 ### SimulationConfig struct
 - configPath: Engine config path (resolved before passing)
-- assetBasePath: Asset base path (resolved before passing)  
-- duration, interactive, playAudio, volume, sineMode, syncPull  // temp boolean - prefer DI
+- assetBasePath: Asset base path (resolved before passing)
+- logger: ILogging* for proper DI (eliminates static storage)
+- duration, interactive, playAudio, volume, sineMode, syncPull
 - targetRPM, targetLoad, useDefaultEngine, outputWav
 - audioMode: Injected (OCP compliance)
 
@@ -86,8 +89,8 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 - LSP: ✅ Good
 - ISP: ✅ Good (separate IInputProvider, IPresentation)
 - DIP: ✅ Good (factory returns interfaces)
-- DRY: ⚠️ **ISSUES FOUND** (see below)
-- YAGNI: ⚠️ **DEAD CODE** (see below)
+- DRY: ✅ **PASS** (duplicate path resolution removed)
+- YAGNI: ✅ **PASS** (dead code removed)
 
 ### SOLID Pedant Analysis (2026-04-01)
 
@@ -97,29 +100,29 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 - **DIP**: High-level modules depend on abstractions (`IAudioMode`, `IInputProvider`, `IPresentation`)
 - **DI**: Dependencies are properly injected throughout
 
-#### ✅ RESOLVED Issues (Fixed in recent commits)
+#### ✅ Phase 1 & 2 Completed (2026-04-01)
 
-**1. ~~WET VIOLATION - Path Resolution Duplication~~ ✅ FIXED (commit 2330d4a)**
-- Previously: `resolveConfigPath()` duplication between SimulationLoop.cpp and EngineConfig.cpp
-- Now: Path resolution consolidated, CLI passes raw paths to bridge which handles resolution
+**Phase 1: Dead Code Removal (commit 3f95af2)**
+- Removed `EngineConfig::resolveAssetBasePath()` - unused, bridge handles path resolution
+- Removed `EngineConfig::resolvePath()` - unused private method
+- Removed `EngineConfig::ConfigPaths` struct - unused
+- Removed unused includes from EngineConfig files
+- YAGNI compliance improved
 
-**2. ~~DEAD CODE - Debug Conditional~~ ✅ FIXED**
-- Previously: `useConfigScript` boolean with dead else branch
-- Now: Removed, only the new method remains
+**Phase 2: Logger DI Fix (commit b52a5f7)**
+- Added `ILogging* logger` to `SimulationConfig` for proper DI
+- Created `StdErrLogging` in `CLIMain` and passed via config
+- Removed static `StdErrLogging` from `SimulationLoop`
+- Eliminated static storage limitation (only one instance)
+- Enabled multiple simulator instances if needed
+- Thread-safe by design
 
-**3. ~~PATH RESOLUTION NOT CALLED~~ ✅ FIXED**
-- Previously: `EngineConfig::resolveConfigPaths()` existed but wasn't called
-- Now: CLI passes raw paths directly to bridge via `LoadScript()`, bridge handles resolution
-
-**4. ~~STATIC STORAGE LIFETIME ISSUE~~ ✅ FIXED**
-- Previously: Static storage for path strings in `createDefaultWithScript()`
-- Now: Bridge owns path storage in `EngineSimContext`, passed via `LoadScript()` call
-
-#### ✅ Clean Status
-All critical SOLID violations identified in the 2026-03-27 analysis have been resolved:
-- DRY violations eliminated
-- YAGNI violations removed
-- Static storage issues resolved
+#### ✅ Clean Status (Updated 2026-04-01)
+All critical SOLID violations identified have been resolved through Phase 1 & 2:
+- DRY violations eliminated (Phase 1)
+- YAGNI violations removed (Phase 1)
+- Static storage issues resolved (Phase 2)
+- Logger DI properly implemented (Phase 2)
 - Path resolution properly delegated to bridge
 
 #### 📊 SOLID Scorecard
@@ -136,6 +139,18 @@ All critical SOLID violations identified in the 2026-03-27 analysis have been re
 
 #### 🎯 Action Items (All Completed ✅)
 
+**Phase 1 - YAGNI Dead Code Removal (commit 3f95af2):**
+- [x] Remove `EngineConfig::resolveAssetBasePath()` - unused
+- [x] Remove `EngineConfig::resolvePath()` - unused private method
+- [x] Remove `EngineConfig::ConfigPaths` struct - unused
+- [x] Remove unused includes from EngineConfig files
+
+**Phase 2 - Logger DI Injection (commit b52a5f7):**
+- [x] Add `ILogging* logger` to `SimulationConfig`
+- [x] Create `StdErrLogging` in `CLIMain` and pass via config
+- [x] Remove static `StdErrLogging` from `SimulationLoop`
+
+**Earlier Work (Pre-Phase 1):**
 - [x] Remove `resolveConfigPath()` from `SimulationLoop.cpp` (commit 2330d4a)
 - [x] Delete `useConfigScript` conditional and dead code
 - [x] Bridge handles path resolution via `LoadScript()`
@@ -246,6 +261,59 @@ Until that redesign, use `LogLevel::Debug` for per-frame traces and `LogLevel::I
 ### Fix Required:
 - Remove displayHUD() from CLIConfig.cpp (dead code)
 - audioSource.displayProgress() already handles both modes correctly
+
+## Path Resolution Test Coverage Gap
+
+### Current Status: **INADEQUATE** (2026-04-01)
+
+**What tests cover:**
+- Smoke tests verify CLI executes successfully with various flags
+- Tests use `SmokeTestHelper` which resolves paths via `getProjectRoot()` and `getCLIPath()`
+- Tests pass `--default-engine` flag but don't validate path resolution behavior
+
+**What tests DO NOT cover:**
+1. **Relative vs absolute path scenarios** - No tests explicitly verify path resolution logic
+2. **Asset folder derivation** - Bridge's `resolveAssetBasePath()` is never tested
+3. **File existence validation** - `prepareScriptConfig()` validation is untested
+4. **Error scenarios** - Missing files, invalid paths, malformed assets paths
+5. **Path format variations** - No tests for `~/`, `../`, absolute paths, etc.
+
+### High Risk Areas
+
+**1. prepareScriptConfig() in SimulationLoop.cpp**
+- Performs path validation and existence checks
+- Hardcoded default engine path: `engine-sim-bridge/engine-sim/assets/main.mr`
+- Asset base path derivation logic
+- **No tests verify this logic works**
+
+**2. Bridge path resolution functions** (engine_sim_bridge.cpp)
+- `normalizeScriptPath()` - handles relative/absolute paths
+- `resolveAssetBasePath()` - derives assets folder from script path
+- `loadImpulseResponses()` - depends on correct asset base path
+- **No tests verify these functions**
+
+### Impact on Future Work
+
+**Task 10 Risk (Consolidate path resolution to bridge):**
+Moving path resolution from CLI to bridge without adequate tests risks:
+- Breaking default engine mode
+- Breaking asset loading for custom scripts
+- Breaking relative path resolution
+- Breaking existing integrations that depend on current path behavior
+
+### Recommendation: **ADD PATH SCENARIO TESTS FIRST**
+
+**Priority Test Scenarios:**
+1. Default engine path resolution (hardcoded path works)
+2. Relative script path resolution (e.g., `./engines/v8.mr`)
+3. Absolute script path resolution
+4. Asset base path derivation from script path
+5. File existence validation error handling
+6. Special path formats (`~/`, `../`, etc.)
+
+**Proposed Test Location:** `test/smoke/test_path_resolution.cpp`
+
+These tests would provide confidence that path consolidation won't break existing functionality.
 
 ## Known Issues
 
