@@ -17,6 +17,9 @@
 - [x] GetSimulationConfig() moved to CLIMain.cpp
 - [x] Phase 1: Remove dead code from EngineConfig (YAGNI)
 - [x] Phase 2: Logger DI injection (eliminate static storage)
+- [x] Phase 3: Path resolution tests (commit aba7cf8)
+- [x] Phase 4: Bridge normalizeScriptPath fix (commits fbb56b7, e75c422)
+- [x] Phase 5: Path consolidation to bridge (commit e43467f)
 
 ## In Progress
 - [ ] Sample amplitude transform (multiply float samples by gain factor)
@@ -25,12 +28,13 @@
 ## SOLID Requirements
 
 ### SRP: CLI vs SimulationLoop
-- CLIMain.cpp: Parses CLI args, creates SimulationConfig, resolves paths
+- CLIMain.cpp: Parses CLI args, creates SimulationConfig, passes raw paths to bridge
 - SimulationLoop.cpp: ONLY knows about SimulationConfig, NOT CommandLineArgs
+- Bridge: Handles all path resolution logic (normalization, asset base path derivation)
 
 ### SimulationConfig struct
-- configPath: Engine config path (resolved before passing)
-- assetBasePath: Asset base path (resolved before passing)
+- configPath: Engine config path (raw - bridge handles resolution)
+- assetBasePath: Asset base path (raw - bridge handles resolution)
 - logger: ILogging* for proper DI (eliminates static storage)
 - duration, interactive, playAudio, volume, sineMode, syncPull
 - targetRPM, targetLoad, useDefaultEngine, outputWav
@@ -38,7 +42,7 @@
 
 ### GetSimulationConfig (in CLIMain.cpp)
 - Converts CommandLineArgs → SimulationConfig
-- Resolves configPath/assetBasePath using EngineConfig
+- Passes raw paths to bridge (bridge handles resolution)
 - Maps args.silent → config.volume (0.0 or 1.0)
 
 ## Current Architecture
@@ -100,7 +104,7 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 - **DIP**: High-level modules depend on abstractions (`IAudioMode`, `IInputProvider`, `IPresentation`)
 - **DI**: Dependencies are properly injected throughout
 
-#### ✅ Phase 1 & 2 Completed (2026-04-01)
+#### ✅ Phase 1-5 Completed (2026-04-01)
 
 **Phase 1: Dead Code Removal (commit 3f95af2)**
 - Removed `EngineConfig::resolveAssetBasePath()` - unused, bridge handles path resolution
@@ -117,13 +121,34 @@ See `docs/BRIDGE_INTEGRATION_ARCHITECTURE.md` for detailed architecture.
 - Enabled multiple simulator instances if needed
 - Thread-safe by design
 
+**Phase 3: Path Resolution Tests (commit aba7cf8)**
+- Added comprehensive path scenario tests in `test/smoke/test_path_resolution.cpp`
+- Tests cover: default engine, relative paths, absolute paths, asset base path derivation
+- Tests verify file existence validation and error handling
+- Tests cover special path formats (`~/`, `../`, etc.)
+- All 20 tests passing
+
+**Phase 4: Bridge normalizeScriptPath Fix (commits fbb56b7, e75c422)**
+- Fixed path normalization to handle relative paths correctly
+- Fixed asset base path derivation from script path
+- Bridge now properly handles both relative and absolute paths
+- SRP compliance improved (bridge owns all path logic)
+
+**Phase 5: Path Consolidation to Bridge (commit e43467f)**
+- CLI now passes raw paths to bridge (thin shell pattern)
+- Bridge handles all path resolution logic
+- Removed duplicate path resolution code from CLI
+- DRY compliance improved
+- SRP compliance improved (clear separation of concerns)
+
 #### ✅ Clean Status (Updated 2026-04-01)
-All critical SOLID violations identified have been resolved through Phase 1 & 2:
-- DRY violations eliminated (Phase 1)
+All critical SOLID violations identified have been resolved through Phase 1-5:
+- DRY violations eliminated (Phase 1, Phase 5)
 - YAGNI violations removed (Phase 1)
 - Static storage issues resolved (Phase 2)
 - Logger DI properly implemented (Phase 2)
-- Path resolution properly delegated to bridge
+- Path resolution properly delegated to bridge (Phase 4, Phase 5)
+- Path resolution test coverage added (Phase 3)
 
 #### 📊 SOLID Scorecard
 
@@ -149,6 +174,26 @@ All critical SOLID violations identified have been resolved through Phase 1 & 2:
 - [x] Add `ILogging* logger` to `SimulationConfig`
 - [x] Create `StdErrLogging` in `CLIMain` and pass via config
 - [x] Remove static `StdErrLogging` from `SimulationLoop`
+
+**Phase 3 - Path Resolution Tests (commit aba7cf8):**
+- [x] Add default engine path resolution test
+- [x] Add relative script path resolution test
+- [x] Add absolute script path resolution test
+- [x] Add asset base path derivation test
+- [x] Add file existence validation error handling test
+- [x] Add special path formats test (`~/`, `../`, etc.)
+
+**Phase 4 - Bridge Path Fix (commits fbb56b7, e75c422):**
+- [x] Fix normalizeScriptPath to handle relative paths correctly
+- [x] Fix asset base path derivation from script path
+- [x] Bridge properly handles both relative and absolute paths
+
+**Phase 5 - Path Consolidation (commit e43467f):**
+- [x] CLI passes raw paths to bridge (thin shell pattern)
+- [x] Bridge handles all path resolution logic
+- [x] Remove duplicate path resolution code from CLI
+- [x] DRY compliance improved
+- [x] SRP compliance improved
 
 **Earlier Work (Pre-Phase 1):**
 - [x] Remove `resolveConfigPath()` from `SimulationLoop.cpp` (commit 2330d4a)
@@ -262,58 +307,42 @@ Until that redesign, use `LogLevel::Debug` for per-frame traces and `LogLevel::I
 - Remove displayHUD() from CLIConfig.cpp (dead code)
 - audioSource.displayProgress() already handles both modes correctly
 
-## Path Resolution Test Coverage Gap
+## Path Resolution Test Coverage
 
-### Current Status: **INADEQUATE** (2026-04-01)
+### Current Status: **COMPLETE** (2026-04-01)
 
-**What tests cover:**
-- Smoke tests verify CLI executes successfully with various flags
-- Tests use `SmokeTestHelper` which resolves paths via `getProjectRoot()` and `getCLIPath()`
-- Tests pass `--default-engine` flag but don't validate path resolution behavior
+**Test Coverage Added (Phase 3, commit aba7cf8):**
+- Comprehensive path scenario tests in `test/smoke/test_path_resolution.cpp`
+- Tests verify: default engine, relative paths, absolute paths, asset base path derivation
+- Tests verify file existence validation and error handling
+- Tests cover special path formats (`~/`, `../`, etc.)
+- All 20 tests passing
 
-**What tests DO NOT cover:**
-1. **Relative vs absolute path scenarios** - No tests explicitly verify path resolution logic
-2. **Asset folder derivation** - Bridge's `resolveAssetBasePath()` is never tested
-3. **File existence validation** - `prepareScriptConfig()` validation is untested
-4. **Error scenarios** - Missing files, invalid paths, malformed assets paths
-5. **Path format variations** - No tests for `~/`, `../`, absolute paths, etc.
+**What tests now cover:**
+1. ✅ **Relative vs absolute path scenarios** - Tests explicitly verify path resolution logic
+2. ✅ **Asset folder derivation** - Bridge's `resolveAssetBasePath()` is tested
+3. ✅ **File existence validation** - Validation is tested
+4. ✅ **Error scenarios** - Missing files, invalid paths tested
+5. ✅ **Path format variations** - Tests for `~/`, `../`, absolute paths, etc.
 
-### High Risk Areas
+### Architecture State (Post-Phase 5)
 
-**1. prepareScriptConfig() in SimulationLoop.cpp**
-- Performs path validation and existence checks
-- Hardcoded default engine path: `engine-sim-bridge/engine-sim/assets/main.mr`
-- Asset base path derivation logic
-- **No tests verify this logic works**
+**CLI (Thin Shell):**
+- Parses CLI arguments
+- Creates SimulationConfig
+- Passes raw paths to bridge
+- No path resolution logic
 
-**2. Bridge path resolution functions** (engine_sim_bridge.cpp)
-- `normalizeScriptPath()` - handles relative/absolute paths
-- `resolveAssetBasePath()` - derives assets folder from script path
-- `loadImpulseResponses()` - depends on correct asset base path
-- **No tests verify these functions**
+**Bridge:**
+- Handles all path normalization
+- Derives asset base path from script path
+- Validates file existence
+- Owns all path-related logic (SRP compliance)
 
-### Impact on Future Work
-
-**Task 10 Risk (Consolidate path resolution to bridge):**
-Moving path resolution from CLI to bridge without adequate tests risks:
-- Breaking default engine mode
-- Breaking asset loading for custom scripts
-- Breaking relative path resolution
-- Breaking existing integrations that depend on current path behavior
-
-### Recommendation: **ADD PATH SCENARIO TESTS FIRST**
-
-**Priority Test Scenarios:**
-1. Default engine path resolution (hardcoded path works)
-2. Relative script path resolution (e.g., `./engines/v8.mr`)
-3. Absolute script path resolution
-4. Asset base path derivation from script path
-5. File existence validation error handling
-6. Special path formats (`~/`, `../`, etc.)
-
-**Proposed Test Location:** `test/smoke/test_path_resolution.cpp`
-
-These tests would provide confidence that path consolidation won't break existing functionality.
+**Test Coverage:**
+- Comprehensive path resolution tests
+- All scenarios covered
+- Regression protection for future changes
 
 ## Known Issues
 
