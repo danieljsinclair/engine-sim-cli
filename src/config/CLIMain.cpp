@@ -34,9 +34,9 @@ void signalHandler(int signal) {
 
 namespace {
 
-input::IInputProvider* createInputProvider(bool interactive) {
+input::IInputProvider* createInputProvider(bool interactive, ILogging* logger) {
     if (interactive) {
-        auto provider = std::make_unique<input::KeyboardInputProvider>();
+        auto provider = std::make_unique<input::KeyboardInputProvider>(logger);
         if (provider->Initialize()) {
             return provider.release();
         }
@@ -94,6 +94,9 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
+    // Create CLI logger for internal logging
+    auto cliLogger = std::make_unique<ConsoleLogger>();
+
     // Parse command line arguments
     CommandLineArgs args;
     if (!parseArguments(argc, argv, args)) {
@@ -107,21 +110,17 @@ int main(int argc, char* argv[]) {
     // SETUP simulator
     const int sampleRate = 44100;
     SimulationConfig config = CreateSimulationConfig(args);
+    config.logger = cliLogger.get();  // Inject logger into config
 
-    // Create logger for dependency injection
-    auto logger = std::make_unique<StdErrLogging>();
-    logger->setMinLevel(LogLevel::Info);  // Show Info and above by default
-    config.logger = logger.get();
-
-    IAudioMode* audioMode = createAudioModeFactory(&engineAPI, config.syncPull).release();
-    input::IInputProvider* inputProvider = createInputProvider(args.interactive);
+    // Create dependencies with logger injection
+    IAudioMode* audioMode = createAudioModeFactory(&engineAPI, config.syncPull, cliLogger.get()).release();
+    input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
     presentation::IPresentation* presentation = createPresentation(args);
 
     // MAIN LOOP - runs the simulation with injected dependencies
     int result = runSimulation(config, engineAPI, audioMode, inputProvider, presentation);
 
     // Cleanup dependencies we injected
-    // logger is owned by unique_ptr, will be destroyed automatically
     delete audioMode;
     delete inputProvider;
     delete presentation;

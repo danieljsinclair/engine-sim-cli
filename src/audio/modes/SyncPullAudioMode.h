@@ -9,6 +9,7 @@
 
 #include "engine_sim_bridge.h"
 #include "audio/modes/IAudioMode.h"
+#include "ILogging.h"
 
 class AudioPlayer;
 class AudioUnitContext;
@@ -19,6 +20,8 @@ struct SimulationConfig;
 
 class SyncPullAudioMode : public IAudioMode {
 public:
+    // Constructor with DI logger (defaults to ConsoleLogger if null)
+    explicit SyncPullAudioMode(ILogging* logger = nullptr);
     std::string getModeName() const override;
     
     void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api,
@@ -42,12 +45,16 @@ public:
 private:
     SyncPullAudio* syncPullAudio_ = nullptr;  // Raw pointer to avoid cycles
     int preFillMs_ = 50;  // Pre-fill buffer duration in ms
-    
+
+    // Logging: owns ConsoleLogger by default, or uses injected logger
+    std::unique_ptr<ConsoleLogger> defaultLogger_;
+    ILogging* logger_;  // Non-null, points to defaultLogger_ or injected logger
+
 public:
     void setSyncPullAudio(SyncPullAudio* audio) { syncPullAudio_ = audio; }
-    
+
     void configure(const SimulationConfig& config) override;
-    
+
     std::unique_ptr<AudioUnitContext> createContext(
         int sampleRate,
         EngineSimHandle engineHandle,

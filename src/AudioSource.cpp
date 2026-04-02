@@ -119,22 +119,17 @@ namespace BufferOps {
     void preFillCircularBuffer(AudioPlayer* player) {
         if (!player) return;
 
-        std::cout << ANSIColors::infoMessage("Pre-filling audio buffer...") << "\n";
         std::vector<float> silence(AudioLoopConfig::FRAMES_PER_UPDATE * 2, 0.0f);
 
         for (int i = 0; i < AudioLoopConfig::PRE_FILL_ITERATIONS; i++) {
             player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
         }
-
-        std::cout << ANSIColors::infoMessage("Buffer pre-filled:") << " " << (AudioLoopConfig::PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
-                  << " frames (" << (AudioLoopConfig::PRE_FILL_ITERATIONS / 60.0) << "s)\n";
     }
 
     void resetAndRePrefillBuffer(AudioPlayer* player) {
         if (!player) return;
 
         player->resetCircularBuffer();
-        std::cout << ANSIColors::infoMessage("Circular buffer reset after warmup") << "\n";
 
         // Re-pre-fill only if configured (0 iterations = no re-pre-fill)
         if (AudioLoopConfig::RE_PRE_FILL_ITERATIONS > 0) {
@@ -142,8 +137,6 @@ namespace BufferOps {
             for (int i = 0; i < AudioLoopConfig::RE_PRE_FILL_ITERATIONS; i++) {
                 player->addToCircularBuffer(silence.data(), AudioLoopConfig::FRAMES_PER_UPDATE);
             }
-            std::cout << ANSIColors::infoMessage("Re-pre-filled:") << " " << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS * AudioLoopConfig::FRAMES_PER_UPDATE)
-                      << " frames (" << (AudioLoopConfig::RE_PRE_FILL_ITERATIONS / 60.0) << "s)\n";
         }
     }
 }
@@ -154,8 +147,6 @@ namespace BufferOps {
 
 namespace WarmupOps {
     void runWarmup(EngineSimHandle handle, const EngineSimAPI& api, AudioPlayer* audioPlayer, bool playAudio) {
-        std::cout << ANSIColors::infoMessage("Priming synthesizer pipeline (" + std::to_string(AudioLoopConfig::WARMUP_ITERATIONS) + " iterations)...") << "\n";
-
         double smoothedThrottle = 0.6;
         double currentTime = 0.0;
 
@@ -167,8 +158,6 @@ namespace WarmupOps {
             api.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
 
             currentTime += AudioLoopConfig::UPDATE_INTERVAL;
-
-            std::cout << "  Priming: " << static_cast<int>(stats.currentRPM) << " RPM\n";
 
             // Drain audio if in play mode - DISCARD to prevent crackles
             // Warmup audio contains starter motor noise and transients

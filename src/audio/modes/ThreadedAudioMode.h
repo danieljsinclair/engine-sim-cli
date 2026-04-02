@@ -9,6 +9,7 @@
 
 #include "engine_sim_bridge.h"
 #include "audio/modes/IAudioMode.h"
+#include "ILogging.h"
 
 class AudioPlayer;
 class AudioUnitContext;
@@ -17,6 +18,8 @@ class CircularBuffer;
 
 class ThreadedAudioMode : public IAudioMode {
 public:
+    // Constructor with DI logger (defaults to ConsoleLogger if null)
+    explicit ThreadedAudioMode(ILogging* logger = nullptr);
     std::string getModeName() const override;
     
     void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api,
@@ -42,6 +45,11 @@ public:
         EngineSimHandle engineHandle,
         const EngineSimAPI* engineAPI
     ) override;
+
+private:
+    // Logging: owns ConsoleLogger by default, or uses injected logger
+    std::unique_ptr<ConsoleLogger> defaultLogger_;
+    ILogging* logger_;  // Non-null, points to defaultLogger_ or injected logger
 };
 
 #endif // THREADED_AUDIO_MODE_H

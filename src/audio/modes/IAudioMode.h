@@ -13,6 +13,7 @@
 
 #include "engine_sim_bridge.h"
 #include "bridge/engine_sim_loader.h"
+#include "ILogging.h"
 
 class AudioPlayer;
 class AudioUnitContext;
@@ -67,6 +68,6 @@ public:
     ) = 0;
 };
 
-std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI, bool preferSyncPull = true);
+std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI, bool preferSyncPull = true, ILogging* logger = nullptr);
 
 #endif // IAUDIO_MODE_H

@@ -12,8 +12,6 @@
 #include "audio/renderers/SyncPullRenderer.h"
 #include "audio/renderers/CircularBufferRenderer.h"
 
-#include <iostream>
-
 // ============================================================================
 // AudioLoopConfig - Constants for audio loop timing
 // ============================================================================
@@ -28,6 +26,11 @@ namespace AudioLoopConfig {
 // ThreadedAudioMode Implementation
 // DI: Creates and injects CircularBufferRenderer into context
 // ============================================================================
+
+ThreadedAudioMode::ThreadedAudioMode(ILogging* logger)
+    : defaultLogger_(logger ? nullptr : new ConsoleLogger())
+    , logger_(logger ? logger : defaultLogger_.get()) {
+}
 
 std::string ThreadedAudioMode::getModeName() const {
     return "Threaded";
@@ -65,13 +68,13 @@ bool ThreadedAudioMode::startAudioThread(EngineSimHandle handle, const EngineSim
     if (!audioPlayer) {
         return true;
     }
-    
+
     EngineSimResult result = api.StartAudioThread(handle);
     if (result != ESIM_SUCCESS) {
-        std::cerr << "ERROR: Failed to start audio thread\n";
+        logger_->error(LogMask::THREADED_AUDIO, "Failed to start audio thread");
         return false;
     }
-    std::cout << "[" << ANSIColors::GREEN << "]" << " " << ANSIColors::infoMessage("audio thread started") << ANSIColors::RESET << "\n";
+    logger_->info(LogMask::THREADED_AUDIO, "audio thread started");
     return true;
 }
 
@@ -83,7 +86,7 @@ void ThreadedAudioMode::prepareBuffer(AudioPlayer* audioPlayer) {
     if (!audioPlayer->start()) {
         throw std::runtime_error(std::string(ANSIColors::RED) + "ERROR: Failed to start AudioUnit playback" + ANSIColors::RESET);
     }
-    std::cout << "[Audio playback enabled]\n";
+    logger_->info(LogMask::THREADED_AUDIO, "Audio playback enabled");
 }
 
 void ThreadedAudioMode::resetBufferAfterWarmup(AudioPlayer* audioPlayer) {
@@ -117,7 +120,7 @@ std::unique_ptr<AudioUnitContext> ThreadedAudioMode::createContext(
     // Create CircularBuffer for cursor-chasing mode
     context->circularBuffer = std::make_unique<CircularBuffer>();
     if (!context->circularBuffer->initialize(96000)) {
-        std::cerr << "ERROR: Failed to initialize CircularBuffer\n";
+        logger_->error(LogMask::THREADED_AUDIO, "Failed to initialize CircularBuffer");
         return nullptr;
     }
 
@@ -131,6 +134,6 @@ std::unique_ptr<AudioUnitContext> ThreadedAudioMode::createContext(
     static CircularBufferRenderer circularBufferRenderer;
     context->setRenderer(&circularBufferRenderer);
 
-    std::cout << "[Audio] Threaded/cursor-chasing mode initialized via factory\n";
+    logger_->info(LogMask::THREADED_AUDIO, "Threaded/cursor-chasing mode initialized");
     return context;
 }

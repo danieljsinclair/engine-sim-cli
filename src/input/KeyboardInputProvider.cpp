@@ -3,20 +3,21 @@
 
 #include "input/KeyboardInputProvider.h"
 
-#include <iostream>
 #include <algorithm>
 
 extern std::atomic<bool> g_running;
 
 namespace input {
 
-KeyboardInputProvider::KeyboardInputProvider()
+KeyboardInputProvider::KeyboardInputProvider(ILogging* logger)
     : keyboardInput_(nullptr)
     , throttle_(0.1)
     , baselineThrottle_(0.1)
     , ignition_(true)
     , starterSwitch_(false)
     , lastKey_(-1)
+    , defaultLogger_(logger ? nullptr : new ConsoleLogger())
+    , logger_(logger ? logger : defaultLogger_.get())
 {
 }
 
@@ -26,7 +27,7 @@ KeyboardInputProvider::~KeyboardInputProvider() {
 
 bool KeyboardInputProvider::Initialize() {
     keyboardInput_ = new KeyboardInput();
-    std::cout << "\nInteractive mode enabled. Press Q to quit.\n";
+    logger_->info(LogMask::UI, "Interactive mode enabled. Press Q to quit.");
     return true;
 }
 
@@ -111,14 +112,14 @@ void KeyboardInputProvider::processKeyPress(int key) {
             static bool ignitionState = true;
             ignitionState = !ignitionState;
             ignition_ = ignitionState;
-            std::cout << "Ignition " << (ignitionState ? "enabled" : "disabled") << "\n";
+            logger_->info(LogMask::UI, "Ignition %s", ignitionState ? "enabled" : "disabled");
             break;
         }
         case 's': {
             static bool starterState = false;
             starterState = !starterState;
             starterSwitch_ = starterState;
-            std::cout << "Starter motor " << (starterState ? "enabled" : "disabled") << "\n";
+            logger_->info(LogMask::UI, "Starter motor %s", starterState ? "enabled" : "disabled");
             break;
         }
         case 65:  // UP arrow (macOS)

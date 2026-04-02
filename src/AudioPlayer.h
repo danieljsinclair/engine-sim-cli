@@ -15,6 +15,7 @@
 
 #include "engine_sim_bridge.h"
 #include "bridge/engine_sim_loader.h"
+#include "ILogging.h"
 
 #include "audio/common/CircularBuffer.h"
 #include "SyncPullAudio.h"
@@ -110,9 +111,10 @@ struct AudioUnitContext {
 
 class AudioPlayer {
 public:
-    // Constructor with injected IAudioRenderer (DI pattern)
+    // Constructor with injected IAudioRenderer and logger (DI pattern)
     // Caller owns the renderer - AudioPlayer just uses it
-    explicit AudioPlayer(IAudioRenderer* renderer);
+    // Logger defaults to ConsoleLogger if null
+    AudioPlayer(IAudioRenderer* renderer, ILogging* logger = nullptr);
     ~AudioPlayer();
 
     // Initialize using IAudioMode (DI pattern)
@@ -168,6 +170,10 @@ private:
     // Injected renderer - not owned by AudioPlayer (DI)
     IAudioRenderer* renderer;
 
+    // Logging: owns ConsoleLogger by default, or uses injected logger
+    std::unique_ptr<ConsoleLogger> defaultLogger_;
+    ILogging* logger_;  // Non-null, points to defaultLogger_ or injected logger
+
     // Static callback for real-time audio rendering
     static OSStatus audioUnitCallback(
         void* refCon,
@@ -177,7 +183,7 @@ private:
         UInt32 numberFrames,
         AudioBufferList* ioData
     );
-    
+
     bool setupAudioUnit();
 };
 

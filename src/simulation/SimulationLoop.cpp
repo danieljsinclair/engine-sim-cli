@@ -225,11 +225,10 @@ void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
  * @param engineAPI Engine simulation API
  * @return Audio source instance (always EngineAudioSource)
  */
-std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle, 
+std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle,
                                                 EngineSimAPI& engineAPI) {
     // Bridge created the right simulator type during Create() based on config.sineMode
     // No need to check mode here - just use the handle polymorphically
-    std::cout << "Audio Source: " << ANSIColors::infoMessage("[ENGINE]") << " (bridge-managed)\n";
     return std::make_unique<EngineAudioSource>(handle, engineAPI);
 }
 
@@ -244,10 +243,9 @@ void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle,
     (void)exitCode;
 }
 
-void warnWavExportNotSupported(bool outputWavRequested) {
+void warnWavExportNotSupported(bool outputWavRequested, ILogging* logger) {
     if (outputWavRequested) {
-        std::cout << "\n" << ANSIColors::warningMessage("WARNING: WAV export not supported in unified mode\n");
-        std::cout << "Use the old engine mode code path for WAV export.\n";
+        if (logger) logger->warning(LogMask::AUDIO, "WAV export not supported in unified mode - use the old engine mode code path");
     }
 }
 } // anonymous namespace
@@ -319,15 +317,15 @@ int runUnifiedAudioLoop(
     return 0;
 }
 
-AudioPlayer *InitAudioPlayback(IAudioMode* audioMode, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI) {
+AudioPlayer *InitAudioPlayback(IAudioMode* audioMode, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, ILogging* logger) {
     // This must happen AFTER the simulator is created and configured
-    auto* audioPlayer = new AudioPlayer(nullptr);
-    
+    auto* audioPlayer = new AudioPlayer(nullptr, logger);
+
     // Use the provided audioMode (DI - don't create a new one!)
     bool initSuccess = audioPlayer->initialize(*audioMode, sampleRate, handle, &engineAPI);
-    
+
     if (!initSuccess) {
-        std::cerr << ANSIColors::RED << "ERROR: Audio init failed" << ANSIColors::RESET << "\n";
+        if (logger) logger->error(LogMask::AUDIO, "Audio init failed");
         delete audioPlayer;
         return nullptr;
     }
@@ -369,7 +367,7 @@ int runSimulation(
     // Prepare script configuration (handles all mode priority and path validation)
     ScriptConfig scriptConfig = prepareScriptConfig(config);
     if (!scriptConfig.valid) {
-        std::cerr << ANSIColors::RED << "ERROR: " << scriptConfig.errorMessage << ANSIColors::RESET << "\n";
+        if (config.logger) config.logger->error(LogMask::BRIDGE, "%s", scriptConfig.errorMessage.c_str());
         return 1;
     }
     
@@ -390,17 +388,18 @@ int runSimulation(
 
     EngineSimResult result = engineAPI.Create(&engineConfig, &handle);
     if (result != ESIM_SUCCESS || !handle) {
-        std::cerr << ANSIColors::RED << "ERROR: Failed to create simulator: " << (handle ? engineAPI.GetLastError(handle) : "Unknown error") << ANSIColors::RESET << "\n";
+        const char* err = handle ? engineAPI.GetLastError(handle) : "Unknown error";
+        if (config.logger) config.logger->error(LogMask::BRIDGE, "Failed to create simulator: %s", err);
         return 1;
     }
 
     // Load script (nullptr for sine mode since scriptPath will be empty)
     const char* scriptPathPtr = scriptConfig.scriptPath.empty() ? nullptr : scriptConfig.scriptPath.c_str();
     const char* assetBasePtr = scriptConfig.assetBasePath.empty() ? nullptr : scriptConfig.assetBasePath.c_str();
-    
+
     result = engineAPI.LoadScript(handle, scriptPathPtr, assetBasePtr);
     if (result != ESIM_SUCCESS) {
-        std::cerr << ANSIColors::RED << "ERROR: Failed to load script: " << engineAPI.GetLastError(handle) << ANSIColors::RESET << "\n";
+        if (config.logger) config.logger->error(LogMask::SCRIPT, "Failed to load script: %s", engineAPI.GetLastError(handle));
         engineAPI.Destroy(handle);
         return 1;
     }
@@ -409,14 +408,14 @@ int runSimulation(
     if (config.logger) {
         EngineSimResult logResult = engineAPI.SetLogging(handle, config.logger);
         if (logResult != ESIM_SUCCESS) {
-            std::cerr << "WARNING: Failed to set logging: result=" << logResult << "\n";
+            config.logger->warning(LogMask::BRIDGE, "Failed to set logging: result=%d", logResult);
         }
     }
 
     // Initialize Audio framework and playback if requested
-    AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI);
+    AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI, config.logger);
     if (!audioPlayer) {
-        std::cerr << "ERROR: Failed to initialize audio player\n";
+        if (config.logger) config.logger->error(LogMask::AUDIO, "Failed to initialize audio player");
         return 1;
     }
     audioPlayer->setVolume(config.volume);
@@ -445,9 +444,9 @@ int runSimulation(
     
     // EXIT
     cleanupSimulation(audioPlayer, handle, engineAPI, exitCode);
-    
+
     // If WAV export was requested, warn that it's not supported in unified mode (since it requires a different audio thread setup)
-    warnWavExportNotSupported(config.outputWav);
-    
+    warnWavExportNotSupported(config.outputWav, config.logger);
+
     return exitCode;
 }

@@ -8,15 +8,13 @@
 #include "AudioSource.h"
 #include "config/ANSIColors.h"
 
-#include <iostream>
-
-std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI, bool preferSyncPull) {
+std::unique_ptr<IAudioMode> createAudioModeFactory(const EngineSimAPI* engineAPI, bool preferSyncPull, ILogging* logger) {
     (void)engineAPI;
     if (!preferSyncPull) {
-        std::cout << "[Audio] " << ANSIColors::infoMessage("THREADED") << " mode selected (StartAudioThread available)" << "\n";
-        return std::make_unique<ThreadedAudioMode>();
+        if (logger) logger->info(LogMask::AUDIO, "THREADED mode selected (StartAudioThread available)");
+        return std::make_unique<ThreadedAudioMode>(logger);
     }
-    
-    std::cout << "[Audio] " << ANSIColors::infoMessage("SYNC-PULL") << " mode selected (default)" << "\n";
-    return std::make_unique<SyncPullAudioMode>();
+
+    if (logger) logger->info(LogMask::AUDIO, "SYNC-PULL mode selected (default)");
+    return std::make_unique<SyncPullAudioMode>(logger);
 }

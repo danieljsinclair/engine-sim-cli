@@ -37,8 +37,6 @@ add_executable(engine-sim-cli
     # Input layer
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
-    # Logging layer
-    src/logging/StdErrLogging.cpp
     # Audio layer (already modular)
     src/audio/modes/ThreadedAudioMode.cpp
     src/audio/modes/SyncPullAudioMode.cpp

@@ -12,7 +12,6 @@
 #include "audio/renderers/CircularBufferRenderer.h"
 #include "audio/renderers/SilentRenderer.h"
 
-#include <iostream>
 #include <cstring>
 #include <cmath>
 #include <thread>
@@ -27,12 +26,14 @@
 // DI: Renderer is injected via constructor or obtained from context
 // ============================================================================
 
-// Constructor with optional injected IAudioRenderer (DI pattern)
+// Constructor with optional injected IAudioRenderer and logger (DI pattern)
 // If provided, can override the mode's renderer; otherwise context's renderer is used
-AudioPlayer::AudioPlayer(IAudioRenderer* renderer) 
+AudioPlayer::AudioPlayer(IAudioRenderer* renderer, ILogging* logger)
     : audioUnit(nullptr), deviceID(0),
       isPlaying(false), sampleRate(0),
-      context(nullptr), renderer(renderer) {
+      context(nullptr), renderer(renderer),
+      defaultLogger_(logger ? nullptr : new ConsoleLogger()),
+      logger_(logger ? logger : defaultLogger_.get()) {
 }
 
 AudioPlayer::~AudioPlayer() {
@@ -45,9 +46,9 @@ bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle hand
     // Use IAudioMode to create the appropriate context
     // DI: IAudioMode injects its own renderer into the context
     context = audioMode.createContext(sr, handle, api).release();
-    
+
     if (!context) {
-        std::cerr << "ERROR: Failed to create audio context\n";
+        logger_->error(LogMask::AUDIO, "Failed to create audio context");
         return false;
     }
 
@@ -56,19 +57,19 @@ bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle hand
     if (renderer) {
         // Constructor-provided renderer takes precedence
         context->setRenderer(renderer);
-        std::cout << "[Audio] Using constructor-injected renderer: " << renderer->getName() << "\n";
+        logger_->info(LogMask::AUDIO, "Using constructor-injected renderer: %s", renderer->getName());
     } else if (!context->audioRenderer) {
         // Hard error: no renderer configured - must have a valid renderer
         throw std::runtime_error("FATAL: No audio renderer injected - IAudioRenderer is required");
     }
-    
+
     if (!setupAudioUnit()) {
         delete context;
         context = nullptr;
         return false;
     }
-    
-    std::cout << "[Audio] Initialized via factory: " << audioMode.getModeName() << "\n";
+
+    logger_->info(LogMask::AUDIO, "Initialized via factory: %s", audioMode.getModeName().c_str());
     return true;
 }
 
@@ -92,14 +93,13 @@ bool AudioPlayer::setupAudioUnit() {
 
     AudioComponent component = AudioComponentFindNext(nullptr, &desc);
     if (!component) {
-        std::cerr << "ERROR: Failed to find AudioComponent\n";
+        logger_->error(LogMask::AUDIO, "Failed to find AudioComponent");
         return false;
     }
 
     OSStatus status = AudioComponentInstanceNew(component, &audioUnit);
     if (status != noErr) {
-        std::cerr << ANSIColors::RED << "ERROR: Failed to create AudioUnit (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
-        std::cerr << "  → Cannot allocate audio component - system audio may be unavailable\n";
+        logger_->error(LogMask::AUDIO, "Failed to create AudioUnit (OSStatus=%d) - system audio may be unavailable", status);
         return false;
     }
 
@@ -113,9 +113,7 @@ bool AudioPlayer::setupAudioUnit() {
     );
 
     if (status != noErr) {
-        std::cerr << ANSIColors::RED << "ERROR: Failed to set AudioUnit format (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
-        std::cerr << "  → Sample rate 44100 Hz stereo not supported by device\n";
-        std::cerr << "  → Check System Settings → Sound for supported formats\n";
+        logger_->error(LogMask::AUDIO, "Failed to set AudioUnit format (OSStatus=%d) - 44100 Hz stereo not supported", status);
         AudioComponentInstanceDispose(audioUnit);
         audioUnit = nullptr;
         return false;
@@ -136,8 +134,7 @@ bool AudioPlayer::setupAudioUnit() {
     );
 
     if (status != noErr) {
-        std::cerr << ANSIColors::RED << "ERROR: Failed to set callback (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
-        std::cerr << "  → Cannot register audio render callback - internal error\n";
+        logger_->error(LogMask::AUDIO, "Failed to set callback (OSStatus=%d)", status);
         AudioComponentInstanceDispose(audioUnit);
         audioUnit = nullptr;
         return false;
@@ -145,14 +142,10 @@ bool AudioPlayer::setupAudioUnit() {
 
     status = AudioUnitInitialize(audioUnit);
     if (status != noErr) {
-        std::cerr << ANSIColors::RED << "ERROR: Failed to initialize AudioUnit (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
-        if (status == kAudioUnitErr_FormatNotSupported) {
-            std::cerr << "  → Audio format not supported by output device\n";
-        } else if (status == -66681) {
-            std::cerr << "  → Audio device format changed during initialization\n";
-        } else {
-            std::cerr << "  → Audio device unavailable or misconfigured\n";
-        }
+        const char* reason = "unavailable or misconfigured";
+        if (status == kAudioUnitErr_FormatNotSupported) reason = "format not supported";
+        else if (status == -66681) reason = "format changed during initialization";
+        logger_->error(LogMask::AUDIO, "Failed to initialize AudioUnit (OSStatus=%d): %s", status, reason);
         AudioComponentInstanceDispose(audioUnit);
         audioUnit = nullptr;
         return false;
@@ -192,39 +185,32 @@ bool AudioPlayer::start() {
     
     OSStatus status = AudioOutputUnitStart(audioUnit);
     if (status != noErr) {
-        std::cerr << ANSIColors::RED << "ERROR: Failed to start AudioUnit (OSStatus=" << status << ")" << ANSIColors::RESET << "\n";
-        
-        // Decode common error codes for diagnosis
+        const char* reason = "unknown error";
         switch (status) {
             case kAudioUnitErr_Uninitialized:
-                std::cerr << "  → AudioUnit not initialized properly\n";
+                reason = "not initialized properly";
                 break;
             case kAudioUnitErr_InvalidParameter:
-                std::cerr << "  → Invalid parameter or configuration\n";
+                reason = "invalid parameter or configuration";
                 break;
             case kAudioHardwareNotRunningError:
-                std::cerr << "  → Audio hardware stopped (coreaudiod may have restarted)\n";
-                std::cerr << "  → Try: sudo killall coreaudiod\n";
+                reason = "audio hardware stopped (try: sudo killall coreaudiod)";
                 break;
             case kAudioHardwareBadDeviceError:
-                std::cerr << "  → Audio device unavailable (unplugged/changed during startup?)\n";
+                reason = "device unavailable (unplugged/changed during startup?)";
                 break;
             case -66671:
-                std::cerr << "  → Another application has exclusive access to audio device\n";
-                std::cerr << "  → Close other audio apps or check Activity Monitor\n";
+                reason = "another app has exclusive access (close other audio apps)";
                 break;
             case -66681:
-                std::cerr << "  → Audio device format changed (sample rate mismatch?)\n";
-                std::cerr << "  → Check System Settings → Sound for device configuration\n";
+                reason = "device format changed (sample rate mismatch?)";
                 break;
             case kAudioHardwareUnspecifiedError:
-                std::cerr << "  → Unspecified hardware error (device busy/unavailable)\n";
-                break;
-            default:
-                std::cerr << "  → Unknown error - check Console.app for coreaudiod logs\n";
+                reason = "unspecified hardware error (device busy/unavailable)";
                 break;
         }
-        
+        logger_->error(LogMask::AUDIO, "Failed to start AudioUnit (OSStatus=%d): %s", status, reason);
+
         if (context) {
             context->isPlaying.store(false);
         }
@@ -266,7 +252,7 @@ void AudioPlayer::setVolume(float volume) {
         0       // bufferOffset (ignored for global param)
     );
     if (status != noErr) {
-        std::cerr << "WARNING: Failed to set volume: " << status << "\n";
+        logger_->warning(LogMask::AUDIO, "Failed to set volume: %d", status);
     }
 }
 
@@ -274,7 +260,7 @@ bool AudioPlayer::playBuffer(const float* data, int frames, int sr) {
     // SOLID: No branching - delegate to renderer via AddFrames()
     // OCP: New renderers can be added without changing this code
     if (!context || !context->audioRenderer) {
-        std::cerr << "ERROR: No audio context or renderer available\n";
+        logger_->error(LogMask::AUDIO, "No audio context or renderer available");
         return false;
     }
     
@@ -412,7 +398,6 @@ OSStatus AudioPlayer::audioUnitCallback(
     // Early exit: if context is null or playback is stopped, output silence
     // This prevents audio glitches when the player is stopped
     if (!ctx || !ctx->isPlaying.load()) {
-        std::cout << "[SYNC-PULL] Audio callback: context is null or playback stopped, rendering silence\n";
         return renderSilence(ioData);
     }
 

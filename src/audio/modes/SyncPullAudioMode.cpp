@@ -12,7 +12,10 @@
 
 #include "audio/renderers/SyncPullRenderer.h"
 
-#include <iostream>
+SyncPullAudioMode::SyncPullAudioMode(ILogging* logger)
+    : defaultLogger_(logger ? nullptr : new ConsoleLogger())
+    , logger_(logger ? logger : defaultLogger_.get()) {
+}
 
 void SyncPullAudioMode::configure(const SimulationConfig& config) {
     preFillMs_ = config.preFillMs;
@@ -68,7 +71,7 @@ void SyncPullAudioMode::startPlayback(AudioPlayer* audioPlayer) {
         if (!audioPlayer->start()) {
             throw std::runtime_error(std::string(ANSIColors::RED) + "ERROR: Failed to start AudioUnit playback" + ANSIColors::RESET);
         }
-        std::cout << "[Audio playback enabled]\n";
+        logger_->info(LogMask::SYNC_PULL, "Audio playback enabled");
     }
 }
 
@@ -87,9 +90,9 @@ std::unique_ptr<AudioUnitContext> SyncPullAudioMode::createContext(
     context->engineHandle = engineHandle;
 
     // Create SyncPullAudio for synchronous on-demand rendering
-    context->syncPullAudio = std::make_unique<SyncPullAudio>();
+    context->syncPullAudio = std::make_unique<SyncPullAudio>(logger_);
     if (!context->syncPullAudio->initialize(engineHandle, engineAPI, sampleRate)) {
-        std::cerr << "ERROR: Failed to initialize SyncPullAudio\n";
+        logger_->error(LogMask::SYNC_PULL, "Failed to initialize SyncPullAudio");
         return nullptr;
     }
     context->syncPullAudio->setContext(context.get());  // Set context for pre-buffer tracking
@@ -100,6 +103,6 @@ std::unique_ptr<AudioUnitContext> SyncPullAudioMode::createContext(
     static SyncPullRenderer syncPullRenderer;
     context->setRenderer(&syncPullRenderer);
 
-    std::cout << "[Audio] Sync pull mode initialized via factory\n";
+    logger_->info(LogMask::SYNC_PULL, "Sync pull mode initialized");
     return context;
 }

@@ -5,12 +5,15 @@
 
 #include "input/IInputProvider.h"
 #include "KeyboardInput.h"
+#include "ILogging.h"
+#include <memory>
 
 namespace input {
 
 class KeyboardInputProvider : public IInputProvider {
 public:
-    KeyboardInputProvider();
+    // Constructor with DI logger (defaults to ConsoleLogger if null)
+    explicit KeyboardInputProvider(ILogging* logger = nullptr);
     ~KeyboardInputProvider() override;
     
     bool Initialize() override;
@@ -32,15 +35,19 @@ public:
 
 private:
     void processKeyPress(int key);
-    
+
     KeyboardInput* keyboardInput_;
-    
+
     double throttle_;
     double baselineThrottle_;
     bool ignition_;
     bool starterSwitch_;
     int lastKey_;
     std::string lastError_;
+
+    // Logging: owns ConsoleLogger by default, or uses injected logger
+    std::unique_ptr<ConsoleLogger> defaultLogger_;
+    ILogging* logger_;  // Non-null, points to defaultLogger_ or injected logger
 };
 
 } // namespace input

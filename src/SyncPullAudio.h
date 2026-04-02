@@ -7,10 +7,12 @@
 #include <atomic>
 #include <vector>
 #include <cstdint>
+#include <memory>
 
 // Include engine types (needed for EngineSimHandle and EngineSimAPI)
 #include "engine_sim_bridge.h"
 #include "bridge/engine_sim_loader.h"
+#include "ILogging.h"
 
 // Forward declarations
 struct AudioUnitContext;
@@ -22,7 +24,8 @@ struct AudioUnitContext;
 
 class SyncPullAudio {
 public:
-    SyncPullAudio();
+    // Constructor with DI logger (defaults to ConsoleLogger if null)
+    explicit SyncPullAudio(ILogging* logger = nullptr);
     ~SyncPullAudio();
 
     // Initialize with engine handle and API
@@ -57,6 +60,10 @@ private:
     AudioUnitContext* context_;  // For tracking pre-buffer depletion
     std::vector<float> preBuffer_;  // Pre-buffered audio for crackle prevention
     size_t preBufferReadPos_ = 0;   // Read position in pre-buffer
+
+    // Logging: owns ConsoleLogger by default, or uses injected logger
+    std::unique_ptr<ConsoleLogger> defaultLogger_;
+    ILogging* logger_;  // Non-null, points to defaultLogger_ or injected logger
 
 public:
     // Pre-fill buffer with audio before playback starts
