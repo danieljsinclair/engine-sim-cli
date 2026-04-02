@@ -198,3 +198,51 @@ TEST_F(ThreadedRendererTest, CursorChasing_WrapAroundRead) {
 
     freeAudioBufferList(audioBuffer);
 }
+
+TEST_F(ThreadedRendererTest, AddFrames_WritesToCircularBuffer) {
+    // Arrange: Initialize circular buffer
+    initCircularBuffer(DEFAULT_BUFFER_CAPACITY);
+
+    std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
+
+    // Act: Add frames to the buffer
+    bool success = renderer->AddFrames(context.get(), input.data(), TEST_FRAME_COUNT);
+
+    // Assert: Frames were added successfully
+    EXPECT_TRUE(success);
+
+    // Verify write pointer advanced
+    EXPECT_EQ(context->writePointer.load(), TEST_FRAME_COUNT);
+
+    // Verify data is in the buffer
+    std::vector<float> output(TEST_FRAME_COUNT * STEREO_CHANNELS);
+    size_t read = context->circularBuffer->read(output.data(), TEST_FRAME_COUNT);
+    EXPECT_EQ(read, TEST_FRAME_COUNT);
+
+    test::validateExactMatch(output.data(), input.data(), TEST_FRAME_COUNT);
+}
+
+TEST_F(ThreadedRendererTest, AddFrames_WithUninitializedBuffer_ReturnsFalse) {
+    // Arrange: Context with uninitialized circular buffer
+    context->circularBuffer = std::make_unique<CircularBuffer>();
+    // Don't initialize the buffer
+
+    std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
+
+    // Act: Try to add frames
+    bool success = renderer->AddFrames(context.get(), input.data(), TEST_FRAME_COUNT);
+
+    // Assert: Should fail gracefully
+    EXPECT_FALSE(success);
+}
+
+TEST_F(ThreadedRendererTest, AddFrames_WithNullContext_ReturnsFalse) {
+    // Arrange: Null context
+    std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
+
+    // Act: Try to add frames with null context
+    bool success = renderer->AddFrames(nullptr, input.data(), TEST_FRAME_COUNT);
+
+    // Assert: Should fail gracefully
+    EXPECT_FALSE(success);
+}
