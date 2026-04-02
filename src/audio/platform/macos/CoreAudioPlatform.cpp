@@ -1,6 +1,7 @@
 // CoreAudioPlatform.cpp - macOS audio platform implementation
 
 #include "CoreAudioPlatform.h"
+#include "engine_sim_bridge.h"
 
 #include <iostream>
 #include <algorithm>
@@ -201,7 +202,7 @@ OSStatus CoreAudioPlatform::renderAudio(AudioBufferList* ioData, UInt32 numberFr
         for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
             AudioBuffer& buffer = ioData->mBuffers[i];
             float* data = static_cast<float*>(buffer.mData);
-            std::memset(data, 0, buffer.mDataByteSize);
+            EngineSimAudio::fillSilence(data, static_cast<int>(numberFrames));
         }
         return noErr;
     }
@@ -216,7 +217,7 @@ OSStatus CoreAudioPlatform::renderAudio(AudioBufferList* ioData, UInt32 numberFr
         // Fill remaining frames with silence if needed
         if (framesGenerated < static_cast<int>(numberFrames)) {
             int remainingFrames = static_cast<int>(numberFrames) - framesGenerated;
-            std::memset(data + framesGenerated * 2, 0, remainingFrames * 2 * sizeof(float));
+            EngineSimAudio::fillSilence(data + framesGenerated * 2, remainingFrames);
         }
     }
 

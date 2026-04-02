@@ -2,11 +2,11 @@
 // Renders audio from cursor-chasing circular buffer using hardware feedback
 
 #include "audio/renderers/ThreadedRenderer.h"
+#include "engine_sim_bridge.h"
 #include "AudioPlayer.h"
 #include "../common/CircularBuffer.h"
 
 #include <iostream>
-#include <cstring>
 #include <algorithm>
 
 bool ThreadedRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
@@ -58,7 +58,8 @@ bool ThreadedRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberF
         // Handle underrun: fill remaining with silence
         if (framesToRead < static_cast<int>(framesToWrite)) {
             int silenceFrames = framesToWrite - framesToRead;
-            std::memset(data + framesToRead * 2, 0, silenceFrames * 2 * sizeof(float));
+            // Fill from where we left off
+            EngineSimAudio::fillSilence(data + framesToRead * 2, silenceFrames);
             context->bufferStatus = (available < bufferSize / 8) ? 2 : 1;
         } else {
             context->bufferStatus = 0;

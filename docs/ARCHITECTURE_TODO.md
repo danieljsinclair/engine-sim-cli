@@ -527,6 +527,7 @@ These are **client responsibilities** - different platforms implement them diffe
 | KeyboardInput.cpp/h | src/ | **CLI** | Used by KeyboardInputProvider |
 | RPMController.cpp/h | src/ | **DELETE** | DEAD CODE - never used |
 | SyncPullAudio.cpp/h | src/ | **CLI** | Client-side sync-pull rendering |
+| audio/utils/AudioUtils.cpp/h | src/audio/utils/ | **CLI** | DRY helpers (FillSilence, etc.) |
 | CLIMain.cpp/h | src/ | **CLI** | Main entry point |
 | CLIconfig.cpp/h | src/ | **CLI** | CLI argument parsing |
 | SimulationLoop.cpp/h | src/ | **CLI** | Client-side orchestration |
@@ -667,34 +668,22 @@ The CLI is appropriately structured. The bridge is a thin platform-agnostic C AP
 
 ---
 
-### Phase 3: DRY Silence Generation
+### Phase 3: DRY Silence Generation ✅ COMPLETED
 
-**Goal:** Eliminate duplicate silence generation code
+**Status:** ✅ DONE - FillSilence utility in CLI
 
-**Current State:**
-- SilentRenderer: Full class just for memset(..., 0, ...)
-- ThreadedRenderer: Has own memset for underrun silence
-- SyncPullRenderer: Has own memset for underrun silence
+**Implementation:**
+- Created `src/audio/utils/AudioUtils.h` and `AudioUtils.cpp`
+- FillSilence() helpers for float buffers and AudioBufferList
+- ThreadedRenderer uses `audio::utils::FillSilence()` for underrun handling
+- SilentRenderer removed (no longer needed)
+- Unit tests added in `test/unit/AudioUtilsTest.cpp`
 
-**Solution:**
-- Create audio/utils/AudioUtils.h with FillSilence() helper
-- Replace all memset calls with helper
-- Delete SilentRenderer (unnecessary class)
-
-**Implementation Tasks:**
-1. Create src/audio/utils/AudioUtils.h
-2. Create src/audio/utils/AudioUtils.cpp
-3. Add FillSilence(float* buffer, int frames) helper
-4. Add FillSilence(AudioBufferList* ioData) helper
-5. Update ThreadedRenderer to use helper
-6. Update SyncPullRenderer to use helper
-7. Delete SilentRenderer.h/cpp
-8. Remove from CMakeLists.txt
-
-**Success Criteria:**
-- Build succeeds
-- All tests pass
-- Code is DRY (single silence generation implementation)
+**Architecture Note:**
+- FillSilence lives in **CLI** (`src/audio/utils/`), not bridge
+- Both CLI and any future clients use this utility
+- Bridge remains platform-agnostic C API
+- CLI is responsible for all platform-specific audio operations
 
 ---
 
@@ -895,75 +884,10 @@ The CLI is appropriately structured. The bridge is a thin platform-agnostic C AP
      - Supports sync-pull diagnostics, cursor-chasing, buffer health tracking
      - Strategy pattern for rendering modes
 
-   - **IAudioPlatform (abandoned, incomplete)**:
-     - Simple IAudioSource interface (generateAudio only)
-     - Platform-agnostic design
-     - CoreAudioPlatform implemented but not integrated
-     - Does not support stateful diagnostics or advanced features
-
-2. **Why IAudioPlatform Was Abandoned**
-
-   The IAudioPlatform abstraction was created with good intentions (cross-platform support for iOS/ESP32), but:
-
-   - **Functionality Loss**: The simple `IAudioSource::generateAudio()` interface cannot support:
-     - Sync-pull timing diagnostics (render time, headroom, budget %)
-     - Cursor-chasing state (read/write pointers, buffer trends)
-     - Underrun tracking and recovery
-
-   - **Architectural Mismatch**: Current AudioUnitContext is stateful and sophisticated:
-     ```cpp
-     struct AudioUnitContext {
-         EngineSimHandle engineHandle;
-         std::unique_ptr<CircularBuffer> circularBuffer;
-         std::atomic<int> writePointer, readPointer;
-         std::atomic<int> underrunCount;
-         std::atomic<double> lastRenderMs, lastHeadroomMs;
-         // ... 20+ diagnostic fields
-     };
-     ```
-
-   - **Platform-agnostic vs platform-specific trade-off**:
-     - IAudioPlatform would require abandoning these features
-     - OR adding complex platform-specific extensions (defeats the purpose)
-
-   - **Current architecture works**: The IAudioRenderer strategy pattern provides:
-     - Clean separation between sync-pull and threaded modes
-     - All diagnostics preserved
-     - SOLID compliance (OCP via strategy pattern)
-
-3. **Recommended Path Forward**
-
-   **Option A: Keep Current Architecture (RECOMMENDED)**
-   - ✅ Working in production
-   - ✅ All features preserved
-   - ✅ SOLID compliant
-   - ✅ No breaking changes
-   - ⚠️ macOS-only (acceptable for current use case)
-
-   **Option B: Proper Platform Abstraction (SIGNIFICANT WORK)**
-   - Create platform-independent IAudioContext interface
-   - Move diagnostic state to platform-agnostic layer
-   - Implement CoreAudioPlatform with full feature parity
-   - Add iOS platform (AVAudioEngine)
-   - Add ESP32 platform (I2S)
-   - ⚠️ Weeks of work, high risk
-
-   **Option C: Retire IAudioPlatform Code (CLEANUP)**
-   - Delete unused IAudioPlatform.h
-   - Delete unused CoreAudioPlatform.cpp/h
-   - Document why it was abandoned
-   - ✅ Reduces confusion
-   - ⚠️ Loses future cross-platform path
-
-4. **Decision**: Keep Current Architecture
-
-   The current IAudioRenderer/AudioPlayer architecture is:
-   - **Production-tested and working**
-   - **Feature-complete** (all diagnostics preserved)
-   - **SOLID-compliant** (OCP via strategy pattern)
-   - **Maintainable** (clear separation of concerns)
-
-   The IAudioPlatform abstraction, while theoretically sound for cross-platform support, would require significant architectural changes with minimal benefit for the current macOS-only use case.
+   - **IAudioPlatform (future, for iOS/ESP32 cross-platform support)**:
+     - Platform-agnostic design for future cross-platform needs
+     - Will be implemented when iOS/ESP32 support is required (Phase 4)
+     - See Phase 4 tasks below for implementation plan
 
 ### File Organization (Current State)
 
@@ -971,7 +895,7 @@ The CLI is appropriately structured. The bridge is a thin platform-agnostic C AP
 src/audio/
 ├── common/
 │   ├── CircularBuffer.cpp/h          # Circular buffer for cursor-chasing
-│   ├── IAudioSource.h                # Unused (IAudioPlatform leftover)
+│   ├── IAudioSource.h                # Simple audio source interface
 │   └── BridgeAudioSource.cpp/h       # Bridge API wrapper
 ├── modes/
 │   ├── IAudioMode.h                  # Audio mode strategy interface
@@ -980,37 +904,37 @@ src/audio/
 │   └── AudioModeFactory.cpp/h        # Factory for creating modes
 ├── renderers/
 │   ├── IAudioRenderer.h              # Renderer strategy interface
-│   ├── ThreadedRenderer.cpp/h        # Threaded renderer (renamed from CircularBufferRenderer)
-│   ├── SyncPullRenderer.cpp/h        # Sync-pull renderer
-│   └── SilentRenderer.cpp/h          # Silence renderer
+│   ├── ThreadedRenderer.cpp/h        # Threaded renderer (cursor-chasing)
+│   └── SyncPullRenderer.cpp/h        # Sync-pull renderer (on-demand)
+├── utils/
+│   ├── AudioUtils.cpp/h              # DRY helpers (FillSilence, etc.) - CLI utilities
+│   └── (future utilities)
 └── platform/
-    ├── IAudioPlatform.h              # UNUSED - platform abstraction (abandoned)
+    ├── IAudioPlatform.h              # [FUTURE] Platform abstraction for iOS/ESP32 support
     └── macos/
-        └── CoreAudioPlatform.cpp/h   # UNUSED - macOS platform impl (abandoned)
+        └── CoreAudioPlatform.cpp/h   # [FUTURE] macOS platform implementation
 ```
 
-### Action Items
+**IMPORTANT ARCHITECTURE NOTES:**
 
-**Completed:**
-- [x] Rename CircularBufferRenderer → ThreadedRenderer (all files, class names, includes)
-- [x] Update CMakeLists.txt with new filename
-- [x] Add logging DI to all audio components
+1. **FillSilence lives in CLI** - Both CLI and any future clients use `src/audio/utils/AudioUtils.cpp`
+2. **Buffer/frame/sim code belongs in CLI** - CLI is a thin veneer over bridge
+3. **IAudioPlatform is FUTURE iOS/ESP32 support** - NOT abandoned
+   - Required for Phase 4 cross-platform work
+   - See Phase 4 tasks for implementation plan
+4. **Bridge remains platform-agnostic** - Bridge is C API, CLI contains all platform-specific code
 
-**Pending (Decision Required):**
+**SilentRenderer Removal ✅ COMPLETED**
+   - [x] SilentRenderer removed - replaced with AudioUtils::FillSilence()
+   - [x] ThreadedRenderer uses AudioUtils::FillSilence()
+   - [x] SyncPullRenderer uses AudioUtils::FillSilence()
+   - [x] Unit tests added for FillSilence helpers
+   - [x] DRY: Single silence generation implementation
 
-1. **IAudioPlatform Cleanup** (Recommended)
-   - [ ] Decide: Delete or keep IAudioPlatform code?
-   - [ ] If delete: Remove IAudioPlatform.h, CoreAudioPlatform.cpp/h, IAudioSource.h (unused)
-   - [ ] If keep: Add documentation explaining why it's unused
-
-2. **SilentRenderer Consolidation**
-   - [ ] SilentRenderer is a utility class (used internally)
-   - [ ] Consider: Move to private implementation, or keep as-is
-   - [ ] DRY: Use SilentRenderer instead of inline silence generation
-
-3. **Documentation Updates**
-   - [ ] Update AUDIO_MODULE_ARCHITECTURE.md with current architecture
-   - [ ] Document IAudioPlatform decision and rationale
+**Documentation Updates ✅ COMPLETED**
+   - [x] Update AUDIO_MODULE_ARCHITECTURE.md with current architecture
+   - [x] Document IAudioPlatform decision and rationale
+   - [x] Document Bridge Utility Pattern (CLI utilities vs Bridge services)
 
 ### SOLID Assessment (Audio Layer)
 
@@ -1021,5 +945,5 @@ src/audio/
 | LSP | ✅ PASS | Interface contracts honored |
 | ISP | ✅ PASS | Focused interfaces |
 | DIP | ✅ PASS | High-level modules depend on abstractions |
-| DRY | ⚠️ MINOR | Silence generation duplicated (SilentRenderer exists) |
+| DRY | ✅ PASS | Silence generation consolidated (AudioUtils::FillSilence) |
 | YAGNI | ✅ PASS | No unnecessary code |

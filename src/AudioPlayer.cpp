@@ -10,7 +10,6 @@
 
 #include "audio/renderers/SyncPullRenderer.h"
 #include "audio/renderers/ThreadedRenderer.h"
-#include "audio/renderers/SilentRenderer.h"
 
 #include <cstring>
 #include <cmath>

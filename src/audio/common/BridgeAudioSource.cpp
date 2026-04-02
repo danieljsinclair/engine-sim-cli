@@ -1,6 +1,7 @@
 // BridgeAudioSource.cpp - Bridge-backed audio source implementation
 
 #include "BridgeAudioSource.h"
+#include "engine_sim_bridge.h"
 
 #include <cstring>
 
@@ -15,7 +16,7 @@ BridgeAudioSource::BridgeAudioSource(EngineSimHandle handle, const EngineSimAPI&
 int BridgeAudioSource::generateAudio(float* buffer, int frames) {
     if (!handle_) {
         // Return silence if no handle
-        std::memset(buffer, 0, frames * 2 * sizeof(float));
+        EngineSimAudio::fillSilence(buffer, frames);
         return frames;
     }
 
@@ -26,7 +27,7 @@ int BridgeAudioSource::generateAudio(float* buffer, int frames) {
 
     // If render failed or returned 0, fill with silence
     if (result != ESIM_SUCCESS || framesWritten <= 0) {
-        std::memset(buffer, 0, frames * 2 * sizeof(float));
+        EngineSimAudio::fillSilence(buffer, frames);
         return frames;
     }
 

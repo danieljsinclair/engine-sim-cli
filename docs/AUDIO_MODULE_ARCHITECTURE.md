@@ -100,15 +100,17 @@ This document describes the **current production audio architecture** for the ma
 │  │  - getName()                                                    │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                           │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────┐  │
-│  │  ThreadedRenderer   │  │  SyncPullRenderer   │  │  SilentRenderer │  │
-│  │  (cursor-chasing)   │  │  (on-demand)        │  │  (silence)      │  │
-│  │                     │  │                     │  │                 │  │
-│  │ Reads from          │  │ Calls RenderOnDemand│  │ Zeros buffer    │  │
-│  │ circularBuffer      │  │ in audio callback   │  │                 │  │
-│  │ Tracks cursors      │  │ Measures timing     │  │ Utility class   │  │
-│  │ Detects underruns   │  │ Reports budget      │  │                 │  │
-│  └─────────────────────┘  └─────────────────────┘  └─────────────────┘  │
+│  ┌─────────────────────┐  ┌─────────────────────┐                          │
+│  │  ThreadedRenderer   │  │  SyncPullRenderer   │                          │
+│  │  (cursor-chasing)   │  │  (on-demand)        │                          │
+│  │                     │  │                     │                          │
+│  │ Reads from          │  │ Calls RenderOnDemand│                          │
+│  │ circularBuffer      │  │ in audio callback   │                          │
+│  │ Tracks cursors      │  │ Measures timing     │                          │
+│  │ Detects underruns   │  │ Reports budget      │                          │
+│  │ Uses AudioUtils     │  │ Uses AudioUtils     │                          │
+│  │ FillSilence()       │  │ FillSilence()       │                          │
+│  └─────────────────────┘  └─────────────────────┘                          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -122,6 +124,47 @@ This document describes the **current production audio architecture** for the ma
 │  │  Audio: RenderOnDemand, ReadAudioBuffer, GetStats               │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Bridge Utility Pattern
+
+### CLI Utilities vs Bridge Services
+
+**IMPORTANT:** Audio utilities like `FillSilence()` live in the **CLI**, not the bridge.
+
+**Rationale:**
+- Bridge is a platform-agnostic C API for physics and audio generation
+- CLI contains all platform-specific audio operations (CoreAudio, buffering, utilities)
+- Both CLI and any future clients use CLI utilities for common operations
+- Bridge remains focused on simulation and audio synthesis
+
+**CLI Utilities (src/audio/utils/):**
+- `AudioUtils.cpp/h` - DRY helpers for common audio operations
+  - `FillSilence(float* buffer, int frames)` - Zero float buffer
+  - `FillSilence(AudioBufferList* bufferList, int frames)` - Zero AudioBufferList
+- Used by: ThreadedRenderer, SyncPullRenderer
+- Test coverage: `test/unit/AudioUtilsTest.cpp`
+
+**Bridge C API (engine-sim-bridge):**
+- `EngineSimRenderOnDemand()` - Generate audio samples from simulation
+- `EngineSimGetStats()` - Read engine state (RPM, load, etc.)
+- `EngineSimUpdate()` - Advance simulation
+- Platform-agnostic C interface
+
+**Usage Pattern:**
+```cpp
+// CLI (ThreadedRenderer.cpp)
+#include "audio/utils/AudioUtils.h"
+
+void handleUnderrun() {
+    audio::utils::FillSilence(buffer, frames);  // CLI utility
+}
+
+void generateAudio() {
+    EngineSimRenderOnDemand(handle, buffer, frames);  // Bridge API
+}
 ```
 
 ---
@@ -163,7 +206,6 @@ class IAudioMode {
 **Implementations:**
 - `ThreadedRenderer`: Reads from cursor-chasing circular buffer
 - `SyncPullRenderer`: Calls RenderOnDemand in audio callback
-- `SilentRenderer`: Outputs silence (utility)
 
 **Key Methods:**
 ```cpp
@@ -255,29 +297,16 @@ src/audio/
 ├── renderers/
 │   ├── IAudioRenderer.h              # Renderer strategy interface
 │   ├── ThreadedRenderer.cpp/h        # Threaded renderer (cursor-chasing)
-│   ├── SyncPullRenderer.cpp/h        # Sync-pull renderer (on-demand)
-│   └── SilentRenderer.cpp/h          # Silence renderer (utility)
+│   └── SyncPullRenderer.cpp/h        # Sync-pull renderer (on-demand)
+├── utils/
+│   └── AudioUtils.cpp/h              # DRY helpers (FillSilence) - CLI utilities
 └── platform/
-    ├── IAudioPlatform.h              # [UNUSED] Abandoned platform abstraction
+    ├── IAudioPlatform.h              # [FUTURE] Cross-platform abstraction for iOS/ESP32
     └── macos/
-        └── CoreAudioPlatform.cpp/h   # [UNUSED] Unimplemented macOS platform
+        └── CoreAudioPlatform.cpp/h   # [FUTURE] macOS implementation
 ```
 
-**Note:** The `platform/` folder contains abandoned IAudioPlatform code. See ARCHITECTURE_TODO.md for rationale.
-
----
-
-## Historical Note: IAudioPlatform (Abandoned)
-
-An earlier attempt was made to create a platform-agnostic audio abstraction (`IAudioPlatform` interface with `CoreAudioPlatform`, `AVAudioPlatform`, `I2SPlatform` implementations). This was **abandoned** because:
-
-1. **Functionality Loss**: The simple `IAudioSource::generateAudio()` interface could not support the rich diagnostics (sync-pull timing, cursor-chasing state, buffer health tracking)
-
-2. **Complexity vs Benefit**: The current IAudioRenderer strategy provides clean separation with all features preserved. Platform abstraction would require significant work for minimal benefit in the current macOS-only use case.
-
-3. **Working Architecture**: The current architecture is production-tested, SOLID-compliant, and maintainable.
-
-See `docs/ARCHITECTURE_TODO.md` section "Audio Architecture Analysis (2026-04-02)" for detailed analysis.
+**Note:** The `platform/` folder contains IAudioPlatform code for future cross-platform support (iOS/ESP32). This is required for Phase 4 work. See ARCHITECTURE_TODO.md Phase 4 tasks for implementation plan.
 
 ---
 
