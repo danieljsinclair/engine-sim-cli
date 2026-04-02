@@ -4,10 +4,12 @@
 # Unit test executable
 add_executable(unit_tests
     CircularBufferTest.cpp
+    ThreadedRendererTest.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
+    ../../src/audio/renderers/ThreadedRenderer.cpp
+    ../../src/SyncPullAudio.cpp
     # Add more test files here as we implement them:
-    # ThreadedRendererTest.cpp
     # SyncPullRendererTest.cpp
 )
 
@@ -15,6 +17,8 @@ target_link_libraries(unit_tests
     PRIVATE
         gtest
         gtest_main
+        engine-sim-bridge
+        ${AUDIO_LIBRARY}
 )
 
 target_include_directories(unit_tests

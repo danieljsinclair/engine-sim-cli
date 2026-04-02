@@ -11,8 +11,8 @@
 
 bool ThreadedRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
     AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
-    
-    if (!context->circularBuffer || !context->circularBuffer->isInitialized()) {
+
+    if (!context || !context->circularBuffer || !context->circularBuffer->isInitialized()) {
         return false;
     }
 
