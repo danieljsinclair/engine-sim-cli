@@ -6,6 +6,7 @@ add_executable(unit_tests
     CircularBufferTest.cpp
     ThreadedRendererTest.cpp
     SyncPullRendererTest.cpp
+    AudioRegressionTest.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/audio/renderers/ThreadedRenderer.cpp
