@@ -5,7 +5,6 @@
 #include <iomanip>
 
 #include "audio/renderers/SyncPullRenderer.h"
-#include "config/ANSIColors.h"
 #include "AudioPlayer.h"
 
 namespace {

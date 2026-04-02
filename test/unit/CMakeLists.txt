@@ -5,12 +5,12 @@
 add_executable(unit_tests
     CircularBufferTest.cpp
     ThreadedRendererTest.cpp
+    SyncPullRendererTest.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/audio/renderers/ThreadedRenderer.cpp
-    ../../src/SyncPullAudio.cpp
-    # Add more test files here as we implement them:
-    # SyncPullRendererTest.cpp
+    ../../src/audio/renderers/SyncPullRenderer.cpp
+    ../../src/SyncPullAudio.cpp  # Required for AudioUnitContext
 )
 
 target_link_libraries(unit_tests

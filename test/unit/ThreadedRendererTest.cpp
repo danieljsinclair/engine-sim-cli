@@ -84,3 +84,117 @@ TEST_F(ThreadedRendererTest, Render_WithUninitializedBuffer_ReturnsFalse) {
 
     freeAudioBufferList(audioBuffer);
 }
+
+TEST_F(ThreadedRendererTest, CursorChasing_ReadsAvailableFrames) {
+    // Arrange: Buffer with DEFAULT_BUFFER_CAPACITY frames, write pointer at TEST_FRAME_COUNT, read at 0
+    // This simulates cursor-chasing scenario
+    initCircularBuffer(DEFAULT_BUFFER_CAPACITY);
+
+    // Fill buffer to TEST_FRAME_COUNT frames
+    std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
+    context->circularBuffer->write(input.data(), TEST_FRAME_COUNT);
+
+    context->writePointer.store(TEST_FRAME_COUNT);
+    context->readPointer.store(0);
+
+    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+
+    // Act: Request TEST_FRAME_COUNT frames
+    bool success = renderer->render(context.get(), &audioBuffer, TEST_FRAME_COUNT);
+
+    // Assert: Read exactly TEST_FRAME_COUNT frames, no underrun
+    EXPECT_TRUE(success);
+    EXPECT_EQ(context->readPointer.load(), TEST_FRAME_COUNT);
+    EXPECT_EQ(context->underrunCount.load(), 0);
+
+    // Verify the audio data matches what we wrote
+    float* data = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    test::validateExactMatch(data, input.data(), TEST_FRAME_COUNT);
+
+    freeAudioBufferList(audioBuffer);
+}
+
+TEST_F(ThreadedRendererTest, CursorChasing_PartialReadWhenLessAvailable) {
+    // Arrange: Buffer with fewer frames than requested
+    initCircularBuffer(DEFAULT_BUFFER_CAPACITY);
+
+    // Only fill 10 frames
+    constexpr int availableFrames = 10;
+    std::vector<float> input(availableFrames * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
+    context->circularBuffer->write(input.data(), availableFrames);
+
+    context->writePointer.store(availableFrames);
+    context->readPointer.store(0);
+
+    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+
+    // Act: Request TEST_FRAME_COUNT frames (more than available)
+    bool success = renderer->render(context.get(), &audioBuffer, TEST_FRAME_COUNT);
+
+    // Assert: Should succeed but with underrun detected
+    EXPECT_TRUE(success);
+    EXPECT_EQ(context->underrunCount.load(), 1);
+    // Note: bufferStatus is 2 (critical) when available < bufferSize/8 (10 < 12.5)
+    // and 1 (warning) otherwise
+    EXPECT_EQ(context->bufferStatus, 2);  // Critical state due to low buffer
+
+    // Verify read pointer moved only by available frames
+    EXPECT_EQ(context->readPointer.load(), availableFrames);
+
+    // Verify first availableFrames have audio, rest are silence
+    float* data = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    for (int i = 0; i < availableFrames * STEREO_CHANNELS; i++) {
+        EXPECT_FLOAT_EQ(data[i], TEST_SIGNAL_VALUE_1);
+    }
+    for (int i = availableFrames * STEREO_CHANNELS; i < TEST_FRAME_COUNT * STEREO_CHANNELS; i++) {
+        EXPECT_FLOAT_EQ(data[i], SILENCE_VALUE);
+    }
+
+    freeAudioBufferList(audioBuffer);
+}
+
+TEST_F(ThreadedRendererTest, CursorChasing_WrapAroundRead) {
+    // Arrange: Simulate wrap-around scenario where read spans buffer boundary
+    initCircularBuffer(DEFAULT_BUFFER_CAPACITY);
+
+    // Fill buffer to near the end to set up wrap scenario
+    constexpr int initialFill = 90;
+    std::vector<float> initialData(initialFill * STEREO_CHANNELS, 0.0f);
+    context->circularBuffer->write(initialData.data(), initialFill);
+
+    // Read all to advance pointers
+    std::vector<float> consume(initialFill * STEREO_CHANNELS);
+    context->circularBuffer->read(consume.data(), initialFill);
+
+    // Now write frames that will wrap around (90 + 20 = 110 % 100 = 10)
+    constexpr int wrapFrames = 20;
+    std::vector<float> wrapData(wrapFrames * STEREO_CHANNELS, TEST_SIGNAL_VALUE_2);
+    context->circularBuffer->write(wrapData.data(), wrapFrames);
+
+    // Set up context pointers for wrap-around read
+    // We simulate: readPtr at 90, writePtr at 10 (wrapped)
+    // This means data spans from 90-99 (10 frames) and 0-9 (10 frames)
+    context->readPointer.store(90);
+    context->writePointer.store(10);
+
+    // Verify data is available in buffer
+    EXPECT_GT(context->circularBuffer->available(), 0);
+
+    AudioBufferList audioBuffer = createAudioBufferList(wrapFrames);
+
+    // Act: Read wrapFrames frames (should span boundary)
+    bool success = renderer->render(context.get(), &audioBuffer, wrapFrames);
+
+    // Assert: Read succeeded without underrun
+    EXPECT_TRUE(success);
+    EXPECT_EQ(context->underrunCount.load(), 0);
+
+    // Verify the audio data matches what we wrote
+    float* data = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    test::validateExactMatch(data, wrapData.data(), wrapFrames);
+
+    // Verify read pointer advanced correctly (90 + 20 = 110 % 100 = 10)
+    EXPECT_EQ(context->readPointer.load(), 10);
+
+    freeAudioBufferList(audioBuffer);
+}
