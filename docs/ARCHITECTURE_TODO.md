@@ -591,3 +591,435 @@ These are **client responsibilities** - different platforms implement them diffe
 **Corrected plan:** Delete 2 dead files, keep everything else
 
 The CLI is appropriately structured. The bridge is a thin platform-agnostic C API, and the CLI contains platform-specific client code as it should.
+
+---
+
+## Platform Abstraction Refactoring Plan (2026-04-02)
+
+### Goal: Support iOS and ESP32 Platforms
+
+**Current State:**
+- AudioPlayer uses CoreAudio AudioUnit directly (macOS-specific)
+- IAudioPlatform interface exists but is not integrated
+- IAudioMode + IAudioRenderer are coupled (cannot be swapped independently)
+
+**Target State:**
+- AudioPlayer delegates to IAudioPlatform interface
+- Platform implementations: CoreAudioPlatform (macOS), AVAudioPlatform (iOS), I2SPlatform (ESP32)
+- Unified IAudioStrategy combines Mode+Renderer into single strategy
+- Deterministic tests validate buffer math stays correct
+
+### Execution Strategy
+
+**TDD Approach:**
+1. Write RED test for desired behavior
+2. Implement GREEN (make test pass)
+3. REFACTOR to clean, elegant, DRY, SOLID code
+4. Commit only when tests are GREEN
+
+**Incremental Phases (green build after each):**
+
+---
+
+### Phase 1: Logger Default Value ✅ COMPLETED
+
+**Status:** ✅ DONE - Build verified green
+
+**Changes:**
+- CreateSimulationConfig() now takes logger as required parameter
+- Removed all `if (config.logger)` null checks in SimulationLoop.cpp
+- Logger is guaranteed non-null by design
+
+**Files Modified:**
+- src/config/CLIMain.cpp
+- src/simulation/SimulationLoop.cpp
+- src/simulation/SimulationLoop.h
+
+**Verification:**
+- ✅ Build succeeds
+- ✅ Smoke test passes (--sine --duration 0.1 --silent)
+
+---
+
+### Phase 2: Deterministic Audio Tests (NEXT)
+
+**Goal:** Tests using SineWaveSimulator to validate exact byte output
+
+**Why:** SineWaveSimulator generates deterministic audio (RPM → known sine wave). These tests will catch buffer math errors during refactoring.
+
+**Test Requirements:**
+- Test both sync-pull and threaded modes
+- Validate exact byte sequences in circular buffer
+- Test buffer edge cases (underrun, overrun, wrap-around)
+- Test pre-fill and warmup phases
+
+**Implementation Tasks:**
+1. Create test/audio/test_buffer_math.cpp
+2. Test helper to capture and validate audio bytes
+3. Test ThreadedRenderer with known sine values
+4. Test SyncPullRenderer with known sine values
+5. Test circular buffer wrap-around
+
+**Success Criteria:**
+- All tests pass
+- Tests run in < 1 second each
+- Tests validate byte-for-byte correctness
+
+---
+
+### Phase 3: DRY Silence Generation
+
+**Goal:** Eliminate duplicate silence generation code
+
+**Current State:**
+- SilentRenderer: Full class just for memset(..., 0, ...)
+- ThreadedRenderer: Has own memset for underrun silence
+- SyncPullRenderer: Has own memset for underrun silence
+
+**Solution:**
+- Create audio/utils/AudioUtils.h with FillSilence() helper
+- Replace all memset calls with helper
+- Delete SilentRenderer (unnecessary class)
+
+**Implementation Tasks:**
+1. Create src/audio/utils/AudioUtils.h
+2. Create src/audio/utils/AudioUtils.cpp
+3. Add FillSilence(float* buffer, int frames) helper
+4. Add FillSilence(AudioBufferList* ioData) helper
+5. Update ThreadedRenderer to use helper
+6. Update SyncPullRenderer to use helper
+7. Delete SilentRenderer.h/cpp
+8. Remove from CMakeLists.txt
+
+**Success Criteria:**
+- Build succeeds
+- All tests pass
+- Code is DRY (single silence generation implementation)
+
+---
+
+### Phase 4: Extract IAudioPlatform from AudioPlayer
+
+**Goal:** AudioPlayer delegates to IAudioPlatform instead of using AudioUnit directly
+
+**Current State:**
+- AudioPlayer has AudioUnit member
+- CoreAudio calls are in AudioPlayer (setupAudioUnit, audioUnitCallback)
+- IAudioPlatform.h exists but unused
+
+**Target State:**
+- AudioPlayer has IAudioPlatform* member
+- CoreAudioPlatform implements IAudioPlatform
+- AudioPlayer delegates all platform calls to IAudioPlatform
+
+**Implementation Tasks:**
+1. Update IAudioPlatform.h interface (add missing methods)
+2. Update CoreAudioPlatform to have full AudioUnit implementation
+3. Move AudioPlayer::setupAudioUnit() logic to CoreAudioPlatform
+4. Move AudioPlayer::audioUnitCallback() to CoreAudioPlatform
+5. Update AudioPlayer to use IAudioPlatform* instead of AudioUnit
+6. Create PlatformFactory for platform creation
+7. Update CLIMain to create platform via factory
+
+**Success Criteria:**
+- Build succeeds
+- All smoke tests pass
+- No behavior change (audio sounds identical)
+- CoreAudio code is ONLY in CoreAudioPlatform
+
+---
+
+### Phase 5: Fix displayProgress() SRP Violation
+
+**Goal:** Move presentation logic out of AudioSource
+
+**Current State:**
+- IAudioSource::displayProgress() is in audio source interface
+- Direct access to AudioPlayer context for diagnostics
+
+**Target State:**
+- Presentation logic in IPresentation or ConsolePresentation
+- Telemetry passed via struct, not direct object access
+
+**Implementation Tasks:**
+1. Create AudioTelemetry struct with all display data
+2. Add getTelemetry() to IAudioMode
+3. Move displayProgress logic to ConsolePresentation
+4. Remove displayProgress() from IAudioSource
+5. Remove direct AudioPlayer context access
+
+**Success Criteria:**
+- Build succeeds
+- Console output looks identical
+- AudioSource has no presentation logic
+
+---
+
+### Phase 6: Consolidate IAudioMode + IAudioRenderer → IAudioStrategy
+
+**Goal:** Single strategy class instead of coupled mode+renderer pair
+
+**Current State:**
+- ThreadedAudioMode + ThreadedRenderer (coupled pair)
+- SyncPullAudioMode + SyncPullRenderer (coupled pair)
+- Cannot swap renderers independently
+
+**Target State:**
+- ThreadedStrategy (handles lifecycle + rendering)
+- SyncPullStrategy (handles lifecycle + rendering)
+- Clean Strategy pattern (truly swappable)
+
+**Implementation Tasks:**
+1. Create IAudioStrategy interface
+2. Create ThreadedStrategy (merge ThreadedAudioMode + ThreadedRenderer)
+3. Create SyncPullStrategy (merge SyncPullAudioMode + SyncPullRenderer)
+4. Update AudioPlayer to use IAudioStrategy*
+5. Update AudioModeFactory to create strategies
+6. Delete old IAudioMode/IAudioRenderer files
+
+**Success Criteria:**
+- Build succeeds
+- All tests pass
+- Buffer math verified identical via deterministic tests
+- Strategies are truly swappable (theoretical only)
+
+---
+
+### Phase 7: iOS Platform Implementation
+
+**Goal:** First cross-platform target using new architecture
+
+**Prerequisites:** Phases 1-6 complete
+
+**Implementation Tasks:**
+1. Create src/audio/platform/ios/AVAudioPlatform.h/cpp
+2. Implement IAudioPlatform using AVAudioEngine
+3. Add iOS build target to CMake
+4. Test on iOS device/simulator
+
+**Note:** This phase is blocked by iOS device availability
+
+---
+
+### Phase 8: ESP32 Platform Implementation
+
+**Goal:** Second cross-platform target
+
+**Prerequisites:** Phases 1-6 complete
+
+**Implementation Tasks:**
+1. Create src/audio/platform/esp32/I2SPlatform.h/cpp
+2. Implement IAudioPlatform using ESP-IDF I2S driver
+3. Add ESP32 build target to CMake
+4. Test on ESP32 hardware
+
+**Note:** This phase is blocked by ESP32 hardware availability
+
+---
+
+### Team Coordination
+
+**Roles and Briefs:**
+
+| Role | Brief | Responsibility |
+|------|-------|----------------|
+| **Tech Architect** | Writes implementation code | Only team member who writes code |
+| **Solution Architect** | Pedantic SOLID/DRY enforcement | Critiques all code for SOLID violations |
+| **Test Architect** | Test design and value verification | Ensures tests add real business value |
+| **Documentation Writer** | Updates TODO and architecture docs | Keeps documentation accurate |
+| **Audio Architect** | Audio domain expertise | Validates audio-specific concerns |
+
+**Workflow:**
+1. Tech Architect implements per plan (red/green/refactor)
+2. Solution Architect critiques for SOLID/DRY
+3. Test Architect verifies test value
+4. Documentation Writer updates docs
+5. Audio Architect validates audio correctness
+6. Only commit when ALL approve and tests are GREEN
+
+**Current Status:**
+- ✅ Phase 1: Logger Default Value - COMPLETE
+- ⏳ Phase 2: Deterministic Audio Tests - NEXT
+- ⏳ Phase 3: DRY Silence Generation - PENDING
+- ⏳ Phase 4: IAudioPlatform Extraction - PENDING
+- ⏳ Phase 5: displayProgress() SRP Fix - PENDING
+- ⏳ Phase 6: Mode+Renderer Consolidation - PENDING
+- ⏳ Phase 7: iOS Platform - BLOCKED (hardware)
+- ⏳ Phase 8: ESP32 Platform - BLOCKED (hardware)
+
+---
+
+## Audio Architecture Analysis (2026-04-02)
+
+### Current Architecture: Working and Production-Ready
+
+**Completed Refactoring:**
+- [x] Renamed `CircularBufferRenderer` → `ThreadedRenderer` (git mv, class name, all references)
+- [x] Added logging DI to all audio components (KeyboardInputProvider, SyncPullAudio, AudioPlayer, AudioMode classes)
+
+**Architecture Overview:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CLI Audio Layer (macOS)                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  IAudioMode (Strategy)                                                  │
+│  ├─ ThreadedAudioMode ────────► ThreadedRenderer ─────┐                │
+│  │  (cursor-chasing, circular buffer)                  │                │
+│  └─ SyncPullAudioMode ────────► SyncPullRenderer ─────┤                │
+│                                                   (injected)            │
+│  AudioPlayer ────────────────────────────────────────┘                │
+│  │  ├─ AudioUnit (CoreAudio)                                            │
+│  │  ├─ AudioUnitContext (stateful)                                      │
+│  │  └─ IAudioRenderer (strategy)                                        │
+│  └─► playBuffer(), start(), stop(), setVolume()                         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Bridge (engine-sim-bridge)                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│  EngineSimHandle, EngineSimAPI (C API)                                  │
+│  Update(), RenderOnDemand(), GetStats()                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+
+1. **IAudioRenderer vs IAudioPlatform**
+   - **IAudioRenderer (current, in production)**:
+     - Stateful AudioUnitContext with diagnostics
+     - Platform-specific (AudioUnit types in interface)
+     - Supports sync-pull diagnostics, cursor-chasing, buffer health tracking
+     - Strategy pattern for rendering modes
+
+   - **IAudioPlatform (abandoned, incomplete)**:
+     - Simple IAudioSource interface (generateAudio only)
+     - Platform-agnostic design
+     - CoreAudioPlatform implemented but not integrated
+     - Does not support stateful diagnostics or advanced features
+
+2. **Why IAudioPlatform Was Abandoned**
+
+   The IAudioPlatform abstraction was created with good intentions (cross-platform support for iOS/ESP32), but:
+
+   - **Functionality Loss**: The simple `IAudioSource::generateAudio()` interface cannot support:
+     - Sync-pull timing diagnostics (render time, headroom, budget %)
+     - Cursor-chasing state (read/write pointers, buffer trends)
+     - Underrun tracking and recovery
+
+   - **Architectural Mismatch**: Current AudioUnitContext is stateful and sophisticated:
+     ```cpp
+     struct AudioUnitContext {
+         EngineSimHandle engineHandle;
+         std::unique_ptr<CircularBuffer> circularBuffer;
+         std::atomic<int> writePointer, readPointer;
+         std::atomic<int> underrunCount;
+         std::atomic<double> lastRenderMs, lastHeadroomMs;
+         // ... 20+ diagnostic fields
+     };
+     ```
+
+   - **Platform-agnostic vs platform-specific trade-off**:
+     - IAudioPlatform would require abandoning these features
+     - OR adding complex platform-specific extensions (defeats the purpose)
+
+   - **Current architecture works**: The IAudioRenderer strategy pattern provides:
+     - Clean separation between sync-pull and threaded modes
+     - All diagnostics preserved
+     - SOLID compliance (OCP via strategy pattern)
+
+3. **Recommended Path Forward**
+
+   **Option A: Keep Current Architecture (RECOMMENDED)**
+   - ✅ Working in production
+   - ✅ All features preserved
+   - ✅ SOLID compliant
+   - ✅ No breaking changes
+   - ⚠️ macOS-only (acceptable for current use case)
+
+   **Option B: Proper Platform Abstraction (SIGNIFICANT WORK)**
+   - Create platform-independent IAudioContext interface
+   - Move diagnostic state to platform-agnostic layer
+   - Implement CoreAudioPlatform with full feature parity
+   - Add iOS platform (AVAudioEngine)
+   - Add ESP32 platform (I2S)
+   - ⚠️ Weeks of work, high risk
+
+   **Option C: Retire IAudioPlatform Code (CLEANUP)**
+   - Delete unused IAudioPlatform.h
+   - Delete unused CoreAudioPlatform.cpp/h
+   - Document why it was abandoned
+   - ✅ Reduces confusion
+   - ⚠️ Loses future cross-platform path
+
+4. **Decision**: Keep Current Architecture
+
+   The current IAudioRenderer/AudioPlayer architecture is:
+   - **Production-tested and working**
+   - **Feature-complete** (all diagnostics preserved)
+   - **SOLID-compliant** (OCP via strategy pattern)
+   - **Maintainable** (clear separation of concerns)
+
+   The IAudioPlatform abstraction, while theoretically sound for cross-platform support, would require significant architectural changes with minimal benefit for the current macOS-only use case.
+
+### File Organization (Current State)
+
+```
+src/audio/
+├── common/
+│   ├── CircularBuffer.cpp/h          # Circular buffer for cursor-chasing
+│   ├── IAudioSource.h                # Unused (IAudioPlatform leftover)
+│   └── BridgeAudioSource.cpp/h       # Bridge API wrapper
+├── modes/
+│   ├── IAudioMode.h                  # Audio mode strategy interface
+│   ├── ThreadedAudioMode.cpp/h       # Threaded mode (cursor-chasing)
+│   ├── SyncPullAudioMode.cpp/h       # Sync-pull mode (on-demand)
+│   └── AudioModeFactory.cpp/h        # Factory for creating modes
+├── renderers/
+│   ├── IAudioRenderer.h              # Renderer strategy interface
+│   ├── ThreadedRenderer.cpp/h        # Threaded renderer (renamed from CircularBufferRenderer)
+│   ├── SyncPullRenderer.cpp/h        # Sync-pull renderer
+│   └── SilentRenderer.cpp/h          # Silence renderer
+└── platform/
+    ├── IAudioPlatform.h              # UNUSED - platform abstraction (abandoned)
+    └── macos/
+        └── CoreAudioPlatform.cpp/h   # UNUSED - macOS platform impl (abandoned)
+```
+
+### Action Items
+
+**Completed:**
+- [x] Rename CircularBufferRenderer → ThreadedRenderer (all files, class names, includes)
+- [x] Update CMakeLists.txt with new filename
+- [x] Add logging DI to all audio components
+
+**Pending (Decision Required):**
+
+1. **IAudioPlatform Cleanup** (Recommended)
+   - [ ] Decide: Delete or keep IAudioPlatform code?
+   - [ ] If delete: Remove IAudioPlatform.h, CoreAudioPlatform.cpp/h, IAudioSource.h (unused)
+   - [ ] If keep: Add documentation explaining why it's unused
+
+2. **SilentRenderer Consolidation**
+   - [ ] SilentRenderer is a utility class (used internally)
+   - [ ] Consider: Move to private implementation, or keep as-is
+   - [ ] DRY: Use SilentRenderer instead of inline silence generation
+
+3. **Documentation Updates**
+   - [ ] Update AUDIO_MODULE_ARCHITECTURE.md with current architecture
+   - [ ] Document IAudioPlatform decision and rationale
+
+### SOLID Assessment (Audio Layer)
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| SRP | ✅ PASS | Each class has single responsibility |
+| OCP | ✅ PASS | Strategy pattern (IAudioMode, IAudioRenderer) |
+| LSP | ✅ PASS | Interface contracts honored |
+| ISP | ✅ PASS | Focused interfaces |
+| DIP | ✅ PASS | High-level modules depend on abstractions |
+| DRY | ⚠️ MINOR | Silence generation duplicated (SilentRenderer exists) |
+| YAGNI | ✅ PASS | No unnecessary code |

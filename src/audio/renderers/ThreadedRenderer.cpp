@@ -1,7 +1,7 @@
-// CircularBufferRenderer.cpp - Circular buffer renderer implementation
+// ThreadedRenderer.cpp - Threaded renderer implementation
 // Renders audio from cursor-chasing circular buffer using hardware feedback
 
-#include "audio/renderers/CircularBufferRenderer.h"
+#include "audio/renderers/ThreadedRenderer.h"
 #include "AudioPlayer.h"
 #include "../common/CircularBuffer.h"
 
@@ -9,7 +9,7 @@
 #include <cstring>
 #include <algorithm>
 
-bool CircularBufferRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
+bool ThreadedRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) {
     AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
     
     if (!context->circularBuffer || !context->circularBuffer->isInitialized()) {
@@ -73,12 +73,12 @@ bool CircularBufferRenderer::render(void* ctx, AudioBufferList* ioData, UInt32 n
     return true;
 }
 
-bool CircularBufferRenderer::isEnabled() const {
+bool ThreadedRenderer::isEnabled() const {
     // Will be checked via context in actual use
     return true;
 }
 
-bool CircularBufferRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
+bool ThreadedRenderer::AddFrames(void* ctx, float* buffer, int frameCount) {
     AudioUnitContext* context = static_cast<AudioUnitContext*>(ctx);
     
     if (!context || !context->circularBuffer || !context->circularBuffer->isInitialized()) {

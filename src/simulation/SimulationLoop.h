@@ -26,8 +26,21 @@ namespace telemetry { class ITelemetryWriter; }
 // Only contains what runSimulation needs, not CLI args
 // ============================================================================
 
-struct SimulationConfig {
-    // From CLI args - extracted for DI
+class SimulationConfig {
+public:
+    // Constructor ensures logger is never null (creates default if needed)
+    // Other members are initialized to defaults
+    explicit SimulationConfig(ILogging* logger = nullptr);
+
+    // Not copyable due to std::unique_ptr<IAudioMode> member
+    SimulationConfig(const SimulationConfig&) = delete;
+    SimulationConfig& operator=(const SimulationConfig&) = delete;
+
+    // Movable
+    SimulationConfig(SimulationConfig&&) = default;
+    SimulationConfig& operator=(SimulationConfig&&) = default;
+
+    // Public members (for convenient initialization)
     std::string configPath;           // Engine config path
     std::string assetBasePath;        // Asset base path
     double duration = 3.0;
@@ -44,8 +57,12 @@ struct SimulationConfig {
     int preFillMs = 50;  // Pre-fill buffer ms for sync-pull mode
 
     std::unique_ptr<IAudioMode> audioMode;  // Injected - OCP compliance
-    ILogging* logger = nullptr;  // Injected - DI compliance
+    ILogging* logger;                       // Never null (guaranteed by constructor)
     telemetry::ITelemetryWriter* telemetryWriter = nullptr;  // Injected - DI compliance
+
+private:
+    // Default logger instance (used when none provided)
+    static ConsoleLogger& defaultLogger();
 };
 
 // ============================================================================

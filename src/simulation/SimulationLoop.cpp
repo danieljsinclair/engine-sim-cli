@@ -29,6 +29,36 @@
 #include <iomanip>
 #include <filesystem>
 
+// ============================================================================
+// SimulationConfig Implementation
+// ============================================================================
+
+ConsoleLogger& SimulationConfig::defaultLogger() {
+    static ConsoleLogger instance;
+    return instance;
+}
+
+SimulationConfig::SimulationConfig(ILogging* logger)
+    : configPath()
+    , assetBasePath()
+    , duration(3.0)
+    , interactive(false)
+    , playAudio(false)
+    , volume(1.0f)
+    , sineMode(false)
+    , syncPull(true)
+    , targetRPM(0.0)
+    , targetLoad(-1.0)
+    , useDefaultEngine(false)
+    , outputWav(nullptr)
+    , simulationFrequency(10000)
+    , preFillMs(50)
+    , audioMode()
+    , logger(logger ? logger : &defaultLogger())
+    , telemetryWriter(nullptr)
+{
+    // Logger is guaranteed non-null by constructor
+}
 
 // ============================================================================
 // Private Helper Functions - SRP Compliance
@@ -154,7 +184,7 @@ void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
 // runSimulation helpers - ONE thing each
 // ----------------------------------------------------------------------------
 
-EngineSimConfig createDefaultConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
+EngineSimConfig createDefaultEngineSimConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
     return EngineConfig::createDefault(sampleRate, simulationFrequency);
 }
 
@@ -245,7 +275,7 @@ void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle,
 
 void warnWavExportNotSupported(bool outputWavRequested, ILogging* logger) {
     if (outputWavRequested) {
-        if (logger) logger->warning(LogMask::AUDIO, "WAV export not supported in unified mode - use the old engine mode code path");
+        logger->warning(LogMask::AUDIO, "WAV export not supported in unified mode - use the old engine mode code path");
     }
 }
 } // anonymous namespace
@@ -278,7 +308,7 @@ int runUnifiedAudioLoop(
     enableStarterMotor(handle, api);
     double throttle = getThrottle(inputProvider);
 
-    std::cout << "\nStarting main loop...\n";
+    config.logger->info(LogMask::BRIDGE, "runUnifiedAudioLoop starting simulation loop with %s mode", config.sineMode ? "SINE" : "ENGINE");
 
     // Main loop
     while (shouldContinueLoop(currentTime, config.duration, inputProvider)) {
@@ -325,7 +355,7 @@ AudioPlayer *InitAudioPlayback(IAudioMode* audioMode, int sampleRate, EngineSimH
     bool initSuccess = audioPlayer->initialize(*audioMode, sampleRate, handle, &engineAPI);
 
     if (!initSuccess) {
-        if (logger) logger->error(LogMask::AUDIO, "Audio init failed");
+        logger->error(LogMask::AUDIO, "Audio init failed");
         delete audioPlayer;
         return nullptr;
     }
@@ -367,16 +397,12 @@ int runSimulation(
     // Prepare script configuration (handles all mode priority and path validation)
     ScriptConfig scriptConfig = prepareScriptConfig(config);
     if (!scriptConfig.valid) {
-        if (config.logger) config.logger->error(LogMask::BRIDGE, "%s", scriptConfig.errorMessage.c_str());
+        config.logger->error(LogMask::BRIDGE, "%s", scriptConfig.errorMessage.c_str());
         return 1;
     }
     
     // Show what we're loading (after validation)
-    if (config.sineMode) {
-        std::cout << "Loading: " << ANSIColors::CYAN << "[SINE MODE]" << ANSIColors::RESET << "\n";
-    } else {
-        std::cout << "Loading: " << ANSIColors::CYAN << scriptConfig.scriptPath << ANSIColors::RESET << "\n";
-    }
+    config.logger->info(LogMask::BRIDGE, "Loading simulator: %s%s%s", ANSIColors::CYAN.c_str(), config.sineMode ? "[SINE]" : scriptConfig.scriptPath.c_str(), ANSIColors::RESET.c_str());
 
     // Create simulator
     EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
@@ -389,7 +415,7 @@ int runSimulation(
     EngineSimResult result = engineAPI.Create(&engineConfig, &handle);
     if (result != ESIM_SUCCESS || !handle) {
         const char* err = handle ? engineAPI.GetLastError(handle) : "Unknown error";
-        if (config.logger) config.logger->error(LogMask::BRIDGE, "Failed to create simulator: %s", err);
+        config.logger->error(LogMask::BRIDGE, "Failed to create simulator: %s", err);
         return 1;
     }
 
@@ -397,25 +423,23 @@ int runSimulation(
     const char* scriptPathPtr = scriptConfig.scriptPath.empty() ? nullptr : scriptConfig.scriptPath.c_str();
     const char* assetBasePtr = scriptConfig.assetBasePath.empty() ? nullptr : scriptConfig.assetBasePath.c_str();
 
-    result = engineAPI.LoadScript(handle, scriptPathPtr, assetBasePtr);
-    if (result != ESIM_SUCCESS) {
-        if (config.logger) config.logger->error(LogMask::SCRIPT, "Failed to load script: %s", engineAPI.GetLastError(handle));
-        engineAPI.Destroy(handle);
-        return 1;
+    // DI: Inject logging interface into bridge
+    EngineSimResult logResult = engineAPI.SetLogging(handle, config.logger);
+    if (logResult != ESIM_SUCCESS) {
+        config.logger->warning(LogMask::BRIDGE, "Failed to set logging: result=%d", logResult);
     }
 
-    // DI: Inject logging interface into bridge
-    if (config.logger) {
-        EngineSimResult logResult = engineAPI.SetLogging(handle, config.logger);
-        if (logResult != ESIM_SUCCESS) {
-            config.logger->warning(LogMask::BRIDGE, "Failed to set logging: result=%d", logResult);
-        }
+    result = engineAPI.LoadScript(handle, scriptPathPtr, assetBasePtr);
+    if (result != ESIM_SUCCESS) {
+        config.logger->error(LogMask::SCRIPT, "Failed to load script: %s", engineAPI.GetLastError(handle));
+        engineAPI.Destroy(handle);
+        return 1;
     }
 
     // Initialize Audio framework and playback if requested
     AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI, config.logger);
     if (!audioPlayer) {
-        if (config.logger) config.logger->error(LogMask::AUDIO, "Failed to initialize audio player");
+        config.logger->error(LogMask::AUDIO, "Failed to initialize audio player");
         return 1;
     }
     audioPlayer->setVolume(config.volume);

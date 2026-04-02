@@ -10,7 +10,7 @@
 #include "config/ANSIColors.h"
 
 #include "audio/renderers/SyncPullRenderer.h"
-#include "audio/renderers/CircularBufferRenderer.h"
+#include "audio/renderers/ThreadedRenderer.h"
 
 // ============================================================================
 // AudioLoopConfig - Constants for audio loop timing
@@ -24,7 +24,7 @@ namespace AudioLoopConfig {
 
 // ============================================================================
 // ThreadedAudioMode Implementation
-// DI: Creates and injects CircularBufferRenderer into context
+// DI: Creates and injects ThreadedRenderer into context
 // ============================================================================
 
 ThreadedAudioMode::ThreadedAudioMode(ILogging* logger)
@@ -129,10 +129,10 @@ std::unique_ptr<AudioUnitContext> ThreadedAudioMode::createContext(
     context->readPointer.store(0);
     context->totalFramesRead.store(0);
 
-    // DI: Inject CircularBufferRenderer into context (mode knows its own renderer)
+    // DI: Inject ThreadedRenderer into context (mode knows its own renderer)
     // This eliminates conditional branching in AudioPlayer
-    static CircularBufferRenderer circularBufferRenderer;
-    context->setRenderer(&circularBufferRenderer);
+    static ThreadedRenderer threadedRenderer;
+    context->setRenderer(&threadedRenderer);
 
     logger_->info(LogMask::THREADED_AUDIO, "Threaded/cursor-chasing mode initialized");
     return context;

@@ -59,8 +59,9 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
 
 } // anonymous namespace
 
-SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
-    SimulationConfig config;
+SimulationConfig CreateSimulationConfig(const CommandLineArgs& args, ILogging* logger) {
+    // Construct with logger (creates default if null)
+    SimulationConfig config(logger);
 
     // SRP: CLI just passes raw script path - Bridge handles path resolution
     config.configPath = args.engineConfig ? args.engineConfig : "";
@@ -109,8 +110,7 @@ int main(int argc, char* argv[]) {
 
     // SETUP simulator
     const int sampleRate = 44100;
-    SimulationConfig config = CreateSimulationConfig(args);
-    config.logger = cliLogger.get();  // Inject logger into config
+    SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
 
     // Create dependencies with logger injection
     IAudioMode* audioMode = createAudioModeFactory(&engineAPI, config.syncPull, cliLogger.get()).release();
