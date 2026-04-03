@@ -37,12 +37,10 @@ add_executable(engine-sim-cli
     # Input layer
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
-    # Audio layer (already modular)
-    src/audio/modes/ThreadedAudioMode.cpp
-    src/audio/modes/SyncPullAudioMode.cpp
-    src/audio/modes/AudioModeFactory.cpp
+    # Audio layer (refactored: consolidated renderer implementations)
     src/audio/renderers/SyncPullRenderer.cpp
     src/audio/renderers/ThreadedRenderer.cpp
+    src/audio/renderers/AudioRendererFactory.cpp
     src/audio/common/CircularBuffer.cpp
     src/audio/common/BridgeAudioSource.cpp
     src/audio/platform/macos/CoreAudioPlatform.cpp

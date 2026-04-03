@@ -13,7 +13,7 @@
 
 class AudioPlayer;
 class IAudioSource;
-class IAudioMode;
+class IAudioRenderer;
 
 // Forward declarations for injectable interfaces
 namespace input { class IInputProvider; }
@@ -32,7 +32,7 @@ public:
     // Other members are initialized to defaults
     explicit SimulationConfig(ILogging* logger = nullptr);
 
-    // Not copyable due to std::unique_ptr<IAudioMode> member
+    // Not copyable due to std::unique_ptr<IAudioRenderer> member
     SimulationConfig(const SimulationConfig&) = delete;
     SimulationConfig& operator=(const SimulationConfig&) = delete;
 
@@ -56,7 +56,7 @@ public:
     int simulationFrequency = 10000;  // Physics Hz - lower for faster sync-pull
     int preFillMs = 50;  // Pre-fill buffer ms for sync-pull mode
 
-    std::unique_ptr<IAudioMode> audioMode;  // Injected - OCP compliance
+    std::unique_ptr<IAudioRenderer> audioMode;  // Injected - OCP compliance
     ILogging* logger;                       // Never null (guaranteed by constructor)
     telemetry::ITelemetryWriter* telemetryWriter = nullptr;  // Injected - DI compliance
 
@@ -77,7 +77,7 @@ int runUnifiedAudioLoop(
     IAudioSource& audioSource,
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
-    IAudioMode& audioMode,
+    IAudioRenderer& audioMode,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
     telemetry::ITelemetryWriter* telemetryWriter);
@@ -102,7 +102,7 @@ struct EngineLoaderResult {
 int runSimulation(
     const SimulationConfig& config,
     EngineSimAPI& engineAPI,
-    IAudioMode* audioMode,
+    IAudioRenderer* audioMode,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation
 );

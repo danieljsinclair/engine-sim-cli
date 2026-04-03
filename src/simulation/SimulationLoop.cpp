@@ -7,7 +7,7 @@
 #include "config/CLIconfig.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
-#include "audio/modes/IAudioMode.h"
+#include "audio/renderers/IAudioRenderer.h"
 #include "input/IInputProvider.h"
 #include "presentation/IPresentation.h"
 #include "simulation/EngineConfig.h"
@@ -134,7 +134,7 @@ double updateInputAndGetThrottle(input::IInputProvider* inputProvider, double cu
 /// ============================================================================
 void updatePresentation(presentation::IPresentation* presentation, double currentTime,
                         const EngineSimStats& stats, double throttle,
-                        int underrunCount, IAudioMode& audioMode,
+                        int underrunCount, IAudioRenderer& audioMode,
                         input::IInputProvider* inputProvider) {
     if (presentation) {
         presentation::EngineState state;
@@ -291,7 +291,7 @@ int runUnifiedAudioLoop(
     IAudioSource& audioSource,
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
-    IAudioMode& audioMode,
+    IAudioRenderer& audioMode,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
     telemetry::ITelemetryWriter* telemetryWriter)
@@ -347,7 +347,7 @@ int runUnifiedAudioLoop(
     return 0;
 }
 
-AudioPlayer *InitAudioPlayback(IAudioMode* audioMode, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, ILogging* logger) {
+AudioPlayer *InitAudioPlayback(IAudioRenderer* audioMode, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, ILogging* logger) {
     // This must happen AFTER the simulator is created and configured
     auto* audioPlayer = new AudioPlayer(nullptr, logger);
 
@@ -362,7 +362,7 @@ AudioPlayer *InitAudioPlayback(IAudioMode* audioMode, int sampleRate, EngineSimH
     return audioPlayer;
 }
 
-void StartAudioMode(IAudioMode* audioMode, EngineSimHandle handle, EngineSimAPI& engineAPI, AudioPlayer* audioPlayer) {
+void StartAudioMode(IAudioRenderer* audioMode, EngineSimHandle handle, EngineSimAPI& engineAPI, AudioPlayer* audioPlayer) {
     if (!audioMode) {
         if (audioPlayer) {
             delete audioPlayer;
@@ -389,7 +389,7 @@ void StartAudioMode(IAudioMode* audioMode, EngineSimHandle handle, EngineSimAPI&
 int runSimulation(
     const SimulationConfig& config,
     EngineSimAPI& engineAPI,
-    IAudioMode* audioMode,
+    IAudioRenderer* audioMode,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation) {
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;

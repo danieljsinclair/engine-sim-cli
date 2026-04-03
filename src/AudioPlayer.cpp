@@ -3,7 +3,7 @@
 // OCP: Uses renderer strategy, no boolean flags
 
 #include "AudioPlayer.h"
-#include "audio/modes/IAudioMode.h"
+#include "audio/renderers/IAudioRenderer.h"
 #include "audio/common/CircularBuffer.h"
 #include "SyncPullAudio.h"
 #include "config/ANSIColors.h"
@@ -26,7 +26,7 @@
 // ============================================================================
 
 // Constructor with optional injected IAudioRenderer and logger (DI pattern)
-// If provided, can override the mode's renderer; otherwise context's renderer is used
+// If provided, can override the renderer; otherwise context's renderer is used
 AudioPlayer::AudioPlayer(IAudioRenderer* renderer, ILogging* logger)
     : audioUnit(nullptr), deviceID(0),
       isPlaying(false), sampleRate(0),
@@ -39,12 +39,12 @@ AudioPlayer::~AudioPlayer() {
     cleanup();
 }
 
-bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle handle, const EngineSimAPI* api) {
+bool AudioPlayer::initialize(IAudioRenderer& audioRenderer, int sr, EngineSimHandle handle, const EngineSimAPI* api) {
     sampleRate = sr;
 
-    // Use IAudioMode to create the appropriate context
-    // DI: IAudioMode injects its own renderer into the context
-    context = audioMode.createContext(sr, handle, api).release();
+    // Use IAudioRenderer to create the appropriate context
+    // DI: IAudioRenderer injects itself into the context
+    context = audioRenderer.createContext(sr, handle, api).release();
 
     if (!context) {
         logger_->error(LogMask::AUDIO, "Failed to create audio context");
@@ -52,7 +52,7 @@ bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle hand
     }
 
     // OCP: No conditional branching - use injected renderer from constructor
-    // if provided, otherwise use the one already injected by IAudioMode into context
+    // if provided, otherwise use the one already injected by IAudioRenderer into context
     if (renderer) {
         // Constructor-provided renderer takes precedence
         context->setRenderer(renderer);
@@ -68,7 +68,7 @@ bool AudioPlayer::initialize(IAudioMode& audioMode, int sr, EngineSimHandle hand
         return false;
     }
 
-    logger_->info(LogMask::AUDIO, "Initialized via factory: %s", audioMode.getModeName().c_str());
+    logger_->info(LogMask::AUDIO, "Initialized via factory: %s", audioRenderer.getModeName().c_str());
     return true;
 }
 

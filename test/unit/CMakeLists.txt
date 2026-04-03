@@ -11,7 +11,10 @@ add_executable(unit_tests
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/audio/renderers/ThreadedRenderer.cpp
     ../../src/audio/renderers/SyncPullRenderer.cpp
+    ../../src/AudioSource.cpp  # Required for BufferOps
+    ../../src/AudioPlayer.cpp  # Required by renderers
     ../../src/SyncPullAudio.cpp  # Required for AudioUnitContext
+    ../../src/config/ANSIColors.cpp  # Required for display
 )
 
 target_link_libraries(unit_tests

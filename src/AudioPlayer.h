@@ -24,7 +24,6 @@
 #include "audio/renderers/ThreadedRenderer.h"
 
 // Forward declarations
-class IAudioMode;
 
 // ============================================================================
 // AudioUnit Context - stores engine simulator handle for rendering
@@ -116,9 +115,9 @@ public:
     AudioPlayer(IAudioRenderer* renderer, ILogging* logger = nullptr);
     ~AudioPlayer();
 
-    // Initialize using IAudioMode (DI pattern)
-    // IAudioMode creates the appropriate AudioUnitContext
-    bool initialize(IAudioMode& audioMode, int sr, EngineSimHandle handle, 
+    // Initialize using IAudioRenderer (DI pattern)
+    // IAudioRenderer creates the appropriate AudioUnitContext
+    bool initialize(IAudioRenderer& audioRenderer, int sr, EngineSimHandle handle,
                     const EngineSimAPI* api);
     
     void cleanup();

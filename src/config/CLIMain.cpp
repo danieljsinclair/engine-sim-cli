@@ -5,7 +5,7 @@
 
 #include "CLIconfig.h"
 #include "AudioPlayer.h"
-#include "audio/modes/IAudioMode.h"
+#include "audio/renderers/IAudioRenderer.h"
 #include "simulation/SimulationLoop.h"
 #include "input/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
@@ -113,15 +113,15 @@ int main(int argc, char* argv[]) {
     SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
 
     // Create dependencies with logger injection
-    IAudioMode* audioMode = createAudioModeFactory(&engineAPI, config.syncPull, cliLogger.get()).release();
+    IAudioRenderer* audioRenderer = createAudioRendererFactory(&engineAPI, config.syncPull, cliLogger.get()).release();
     input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
     presentation::IPresentation* presentation = createPresentation(args);
 
     // MAIN LOOP - runs the simulation with injected dependencies
-    int result = runSimulation(config, engineAPI, audioMode, inputProvider, presentation);
+    int result = runSimulation(config, engineAPI, audioRenderer, inputProvider, presentation);
 
     // Cleanup dependencies we injected
-    delete audioMode;
+    delete audioRenderer;
     delete inputProvider;
     delete presentation;
 
