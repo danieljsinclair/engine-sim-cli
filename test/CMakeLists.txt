@@ -1,5 +1,10 @@
 # Test CMakeLists.txt for engine-sim-cli
-# CLI smoke tests + unit tests (bridge tests managed by bridge CMakeLists)
+# CLI smoke tests + unit tests + integration tests (bridge tests managed by bridge CMakeLists)
+
+# -----------------------------------------------------------------------------
+# Integration tests (Simulator-level audio tests)
+# -----------------------------------------------------------------------------
+add_subdirectory(integration)
 
 # -----------------------------------------------------------------------------
 # Unit tests (deterministic audio tests - TDD)
