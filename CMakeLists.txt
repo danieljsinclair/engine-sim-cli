@@ -43,7 +43,10 @@ add_executable(engine-sim-cli
     src/audio/renderers/AudioRendererFactory.cpp
     src/audio/common/CircularBuffer.cpp
     src/audio/common/BridgeAudioSource.cpp
-    src/audio/platform/macos/CoreAudioPlatform.cpp
+    # Audio strategies (new: IAudioStrategy interface implementations)
+    src/audio/strategies/IAudioStrategyFactory.cpp
+    src/audio/strategies/ThreadedStrategy.cpp
+    src/audio/strategies/SyncPullStrategy.cpp
     # Legacy files (to be refactored)
     src/AudioPlayer.cpp
     src/AudioSource.cpp

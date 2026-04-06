@@ -46,6 +46,12 @@
 ---
 
 ## Completed ✅
+- [x] Remove deprecated IAudioMode interface (consolidated into IAudioRenderer)
+- [x] Remove deprecated AudioModeFactory (replaced by AudioRendererFactory)
+- [x] Remove deprecated IAudioPlatform interface (never integrated)
+- [x] Remove deprecated CoreAudioPlatform implementation (never used)
+- [x] Remove deprecated test files (ThreadedRendererTest, SyncPullRendererTest)
+- [x] Update CMakeLists.txt to remove dead code references
 - [x] Git mv AudioMode.cpp → audio/modes/ThreadedAudioMode.cpp (history preserved)
 - [x] Extract renderers to audio/renderers/ folder
 - [x] Extract mode classes to audio/modes/ folder

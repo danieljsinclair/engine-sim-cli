@@ -4,13 +4,11 @@
 # Unit test executable
 add_executable(unit_tests
     CircularBufferTest.cpp
-    ThreadedRendererTest.cpp
-    SyncPullRendererTest.cpp
     AudioRegressionTest.cpp
+    IAudioStrategyTest.cpp
+    AudioTestConstants.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
-    ../../src/audio/renderers/ThreadedRenderer.cpp
-    ../../src/audio/renderers/SyncPullRenderer.cpp
     ../../src/AudioSource.cpp  # Required for BufferOps
     ../../src/AudioPlayer.cpp  # Required by renderers
     ../../src/SyncPullAudio.cpp  # Required for AudioUnitContext
@@ -23,6 +21,14 @@ target_link_libraries(unit_tests
         gtest_main
         engine-sim-bridge
         ${AUDIO_LIBRARY}
+)
+
+# Add the strategy implementations to be compiled with the unit tests
+target_sources(unit_tests
+    PRIVATE
+        ../../src/audio/strategies/IAudioStrategyFactory.cpp
+        ../../src/audio/strategies/ThreadedStrategy.cpp
+        ../../src/audio/strategies/SyncPullStrategy.cpp
 )
 
 target_include_directories(unit_tests
