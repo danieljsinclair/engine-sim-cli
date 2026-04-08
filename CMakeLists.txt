@@ -47,6 +47,12 @@ add_executable(engine-sim-cli
     src/audio/strategies/IAudioStrategyFactory.cpp
     src/audio/strategies/ThreadedStrategy.cpp
     src/audio/strategies/SyncPullStrategy.cpp
+    # Audio hardware providers (new: IAudioHardwareProvider interface implementations)
+    src/audio/hardware/IAudioHardwareProvider.h
+    src/audio/hardware/CoreAudioHardwareProvider.cpp
+    src/audio/hardware/AudioHardwareProviderFactory.cpp
+    # Audio adapters (bridge new architecture to old interface)
+    src/audio/adapters/StrategyAdapter.cpp
     # Legacy files (to be refactored)
     src/AudioPlayer.cpp
     src/AudioSource.cpp

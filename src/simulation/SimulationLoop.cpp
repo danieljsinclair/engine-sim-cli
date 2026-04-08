@@ -16,18 +16,9 @@
 #include "ILogging.h"
 #include "ITelemetryProvider.h"
 
-#include <iostream>
-#include <fstream>
 #include <cstring>
-#include <cmath>
-#include <vector>
-#include <thread>
-#include <chrono>
 #include <atomic>
 #include <csignal>
-#include <algorithm>
-#include <iomanip>
-#include <filesystem>
 
 // ============================================================================
 // SimulationConfig Implementation
@@ -304,8 +295,8 @@ int runUnifiedAudioLoop(
     double baselineLoad = interactiveLoad;
     bool wKeyPressed = false;
 
-    // Initialize - enable starter motor (simulator logic)
-    enableStarterMotor(handle, api);
+    // Note: Starter motor is already enabled in runSimulation() before warmup phase
+    // This ensures the engine is running before warmup audio draining
     double throttle = getThrottle(inputProvider);
 
     config.logger->info(LogMask::BRIDGE, "runUnifiedAudioLoop starting simulation loop with %s mode", config.sineMode ? "SINE" : "ENGINE");
@@ -445,6 +436,10 @@ int runSimulation(
     audioPlayer->setVolume(config.volume);
     StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
     audioMode->configure(config);
+
+    // CRITICAL: Enable starter motor BEFORE warmup phase
+    // Otherwise, warmup will hang because RenderOnDemand returns 0 frames (engine not running)
+    enableStarterMotor(handle, engineAPI);
 
     // REORDER: Warmup FIRST, then pre-fill buffer
     // This ensures engine is warm when RenderOnDemand is called during pre-fill

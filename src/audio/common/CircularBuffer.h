@@ -32,6 +32,11 @@ public:
     // Returns number of frames actually read
     size_t read(float* output, size_t frameCount);
 
+    // Read frames from buffer starting at specific position (for cursor-chasing)
+    // This allows reading from arbitrary positions without updating internal read pointer
+    // Returns number of frames actually read
+    size_t readFromPosition(float* output, size_t frameCount, int position) const;
+
     // Get available frames in buffer (data waiting to be read)
     size_t available() const;
 

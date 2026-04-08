@@ -2,12 +2,20 @@
 # Tests at Simulator interface level using SineWaveSimulator
 # TDD: Tests real audio bugs at the right abstraction level
 
+# Mock objects for DI injection
+set(MOCK_SOURCES
+    ../mocks/MockDataSimulator.cpp
+    ../mocks/MockAudioUnit.cpp
+)
+
 # Integration test executable
 add_executable(integration_tests
     SimulatorLevelAudioTest.cpp
+    ${MOCK_SOURCES}
     # Source files under test (Simulator-level integration)
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/audio/renderers/SyncPullRenderer.cpp
+    ../../src/audio/renderers/ThreadedRenderer.cpp
     ../../src/SyncPullAudio.cpp
     ../../src/AudioPlayer.cpp
     ../../src/AudioSource.cpp
@@ -27,6 +35,7 @@ target_include_directories(integration_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/test/unit
+        ${CMAKE_SOURCE_DIR}/test/mocks
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/include
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include
 )

@@ -32,6 +32,7 @@
 
 struct AudioUnitContext {
     EngineSimHandle engineHandle;         // Engine simulator handle
+    const EngineSimAPI* engineAPI;       // Engine simulator API (for RenderOnDemand)
     std::atomic<bool> isPlaying;         // Playback state
 
     // Strategy pattern: injected rendering mode
@@ -78,7 +79,7 @@ struct AudioUnitContext {
     // Master volume
     float volume;
 
-    AudioUnitContext() : engineHandle(nullptr), isPlaying(false),
+    AudioUnitContext() : engineHandle(nullptr), engineAPI(nullptr), isPlaying(false),
                         audioRenderer(nullptr),
                         writePointer(0), readPointer(0),
                         underrunCount(0), bufferStatus(0),

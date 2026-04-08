@@ -25,7 +25,11 @@ constexpr float FLOAT_TOLERANCE = 0.0001f;
 // Test signal values
 constexpr float TEST_SIGNAL_VALUE_1 = 1.0f;
 constexpr float TEST_SIGNAL_VALUE_2 = 2.0f;
+constexpr float TEST_SIGNAL_VALUE_3 = 3.0f;
 constexpr float SILENCE_VALUE = 0.0f;
+
+// Test signal buffers
+extern const float TEST_SIGNAL_BUFFER[];
 
 } // namespace constants
 } // namespace test

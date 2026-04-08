@@ -6,6 +6,7 @@
 #include "CLIconfig.h"
 #include "AudioPlayer.h"
 #include "audio/renderers/IAudioRenderer.h"
+#include "audio/adapters/StrategyAdapterFactory.h"  // New: Use adapter factory
 #include "simulation/SimulationLoop.h"
 #include "input/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
@@ -113,7 +114,8 @@ int main(int argc, char* argv[]) {
     SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
 
     // Create dependencies with logger injection
-    IAudioRenderer* audioRenderer = createAudioRendererFactory(&engineAPI, config.syncPull, cliLogger.get()).release();
+    // Using StrategyAdapterFactory to bridge new IAudioStrategy to old IAudioRenderer interface
+    IAudioRenderer* audioRenderer = createStrategyAdapter(config.syncPull, cliLogger.get()).release();
     input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
     presentation::IPresentation* presentation = createPresentation(args);
 

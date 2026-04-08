@@ -388,7 +388,7 @@ OSStatus AudioPlayer::audioUnitCallback(
 ) {
     // Retrieve the audio context from the referencecon
     AudioUnitContext* ctx = static_cast<AudioUnitContext*>(refCon);
-    
+
     // Suppress unused parameter warnings (required by AudioUnit API)
     (void)actionFlags;
     (void)timeStamp;

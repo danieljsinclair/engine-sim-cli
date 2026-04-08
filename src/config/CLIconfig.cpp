@@ -33,7 +33,7 @@ void printUsage(const char* progName) {
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
-    std::cout << "  --threaded           Use threaded circular buffer (default: sync-pull)\n";
+    std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineConstants::DEFAULT_SIMULATION_FREQUENCY 
@@ -44,7 +44,7 @@ void printUsage(const char* progName) {
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
     std::cout << "  Use --rpm for RPM control mode (throttle auto-adjusts)\n";
     std::cout << "  Default mode is sync-pull (synchronous render in audio callback)\n";
-    std::cout << "  Use --threaded for cursor-chasing circular buffer mode (recommended)\n";
+    std::cout << "  Use --threaded for cursor-chasing circular buffer mode\n";
     std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n\n";
     std::cout << "Interactive Controls:\n";
     std::cout << "  A                      Toggle ignition on/off (starts ON)\n";
