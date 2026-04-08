@@ -1,7 +1,7 @@
 # Audio Module Architecture
 
-**Document Version:** 2.0
-**Date:** 2026-04-02
+**Document Version:** 3.0
+**Date:** 2026-04-08
 **Status:** Current Architecture (Production)
 **Author:** Audio Systems Architect
 
@@ -9,17 +9,19 @@
 
 ## Executive Summary
 
-This document describes the **current production audio architecture** for the macOS CLI. The architecture uses a Strategy pattern for audio modes (threaded vs sync-pull) and rendering strategies, providing clean separation of concerns while preserving all diagnostic features.
+This document describes the **current production audio architecture** for the macOS CLI. The architecture uses a unified Strategy pattern that consolidates the previous IAudioMode and IAudioRenderer interfaces into a single IAudioStrategy interface, providing clean separation of concerns while preserving all diagnostic features.
 
-### Key Architectural Decisions
+### Key Architectural Decisions (Updated for v3.0)
 
 | Decision | Rationale |
 |----------|-----------|
-| **IAudioRenderer strategy** | Abstracts rendering mode (sync-pull vs threaded/cursor-chasing) |
-| **IAudioMode strategy** | Abstracts audio mode behavior (buffer management, warmup) |
-| **AudioPlayer as orchestrator** | Manages AudioUnit lifecycle, delegates to injected renderer |
+| **IAudioStrategy unified interface** | Single strategy class replaces coupled mode+renderer pair |
+| **StrategyContext composed state** | Separates AudioState, BufferState, Diagnostics for SRP compliance |
+| **IAudioHardwareProvider abstraction** | Platform-specific audio hardware (CoreAudio, AVAudioEngine, I2S) |
+| **AudioPlayer as orchestrator** | Manages AudioUnit lifecycle, delegates to injected strategy |
 | **Platform-specific** | macOS CoreAudio - optimized for current use case |
-| **Rich diagnostics** | Stateful AudioUnitContext tracks timing, buffer health, underruns |
+| **Rich diagnostics** | Stateful StrategyContext tracks timing, buffer health, underruns |
+| **SOLID compliance** | Improved SRP, OCP, LSP, ISP, DIP through composition and abstraction |
 
 ---
 
@@ -30,7 +32,7 @@ This document describes the **current production audio architecture** for the ma
 │                           CLI Application                               │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │  CLIMain.cpp - Entry point, DI wiring                          │    │
-│  │  Creates: IAudioMode, IInputProvider, IPresentation             │    │
+│  │  Creates: IAudioStrategy, IInputProvider, IPresentation         │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                    │                                     │
 │                                    ▼                                     │
@@ -42,18 +44,19 @@ This document describes the **current production audio architecture** for the ma
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Audio Mode Strategy Layer                         │
+│                     Audio Strategy Layer (IAudioStrategy)                 │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  IAudioMode Interface                                           │    │
-│  │  - updateSimulation()                                           │    │
-│  │  - generateAudio()                                              │    │
-│  │  - startAudioThread()                                           │    │
-│  │  - prepareBuffer() / resetBufferAfterWarmup()                   │    │
-│  │  - createContext() - DI: injects renderer into context          │    │
+│  │  IAudioStrategy Interface (Unified)                           │    │
+│  │  - getName() / isEnabled() / getModeString()                    │    │
+│  │  - render(context, ioData, numberFrames)                        │    │
+│  │  - AddFrames(context, buffer, frameCount)                       │    │
+│  │  - configure() / reset()                                        │    │
+│  │  - shouldDrainDuringWarmup()                                    │    │
+│  │  - getDiagnostics() / getProgressDisplay()                        │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                           │
 │  ┌─────────────────────────────┐  ┌─────────────────────────────┐        │
-│  │   ThreadedAudioMode        │  │   SyncPullAudioMode         │        │
+│  │   ThreadedStrategy        │  │   SyncPullStrategy         │        │
 │  │   (cursor-chasing)         │  │   (on-demand rendering)     │        │
 │  │                            │  │                             │        │
 │  │ • Pre-fill buffer          │  │ • No pre-buffer             │        │
@@ -61,7 +64,9 @@ This document describes the **current production audio architecture** for the ma
 │  │ • Cursor-chasing logic     │  │ • Low latency               │        │
 │  │ • Robust to physics spikes │  │ • Sensitive to timing       │        │
 │  │                            │  │                             │        │
-│  │ DI: ThreadedRenderer       │  │ DI: SyncPullRenderer        │        │
+│  │ Reads from CircularBuffer  │  │ Calls RenderOnDemand       │        │
+│  │ Tracks cursors            │  │ Measures timing            │        │
+│  │ Detects underruns         │  │ Reports budget             │        │
 │  └─────────────────────────────┘  └─────────────────────────────┘        │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -70,47 +75,42 @@ This document describes the **current production audio architecture** for the ma
 │                        AudioPlayer (Orchestrator)                         │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │  AudioPlayer                                                    │    │
-│  │  - initialize(IAudioMode&, ...)                                 │    │
+│  │  - initialize(IAudioStrategy*, ...)                           │    │
 │  │  - start() / stop()                                            │    │
 │  │  - setVolume(float)                                            │    │
-│  │  - addToCircularBuffer()                                       │    │
+│  │  - playBuffer() / addToCircularBuffer()                         │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                           │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  AudioUnitContext (Stateful, injected to renderer)              │    │
-│  │  - engineHandle (bridge simulator)                              │    │
-│  │  - circularBuffer (for ThreadedRenderer)                        │    │
-│  │  - syncPullAudio (for SyncPullRenderer)                         │    │
-│  │  - writePointer, readPointer (cursor tracking)                  │    │
-│  │  - underrunCount (diagnostics)                                  │    │
-│  │  - lastRenderMs, lastHeadroomMs (timing diagnostics)            │    │
-│  │  - lastBudgetPct, lastBufferTrendPct (performance tracking)     │    │
-│  │  - audioRenderer (DI: injected renderer strategy)               │    │
+│  │  StrategyContext (Composed State - SRP Compliant)             │    │
+│  │  - AudioState: isPlaying, sampleRate, volume                  │    │
+│  │  - BufferState: readPointer, writePointer, frameCount           │    │
+│  │  - Diagnostics: timing, buffer health, underruns               │    │
+│  │  - CircularBuffer*: Non-owning pointer to audio data           │    │
+│  │  - strategy*: Current rendering strategy                          │    │
+│  │  - engineHandle, engineAPI: Bridge access                        │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Renderer Strategy Layer                             │
+│                    Audio Hardware Layer (IAudioHardwareProvider)            │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  IAudioRenderer Interface                                       │    │
-│  │  - render(ctx, ioData, numberFrames)                            │    │
-│  │  - AddFrames(ctx, buffer, frameCount)                           │    │
-│  │  - isEnabled()                                                  │    │
-│  │  - getName()                                                    │    │
+│  │  IAudioHardwareProvider Interface                               │    │
+│  │  - initialize() / shutdown()                                   │    │
+│  │  - start() / stop()                                            │    │
+│  │  - setVolume(float)                                            │    │
+│  │  - setCallback(renderCallback)                                   │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                           │
-│  ┌─────────────────────┐  ┌─────────────────────┐                          │
-│  │  ThreadedRenderer   │  │  SyncPullRenderer   │                          │
-│  │  (cursor-chasing)   │  │  (on-demand)        │                          │
-│  │                     │  │                     │                          │
-│  │ Reads from          │  │ Calls RenderOnDemand│                          │
-│  │ circularBuffer      │  │ in audio callback   │                          │
-│  │ Tracks cursors      │  │ Measures timing     │                          │
-│  │ Detects underruns   │  │ Reports budget      │                          │
-│  │ Uses AudioUtils     │  │ Uses AudioUtils     │                          │
-│  │ FillSilence()       │  │ FillSilence()       │                          │
-│  └─────────────────────┘  └─────────────────────┘                          │
+│  ┌─────────────────────────────┐                                        │
+│  │  CoreAudioHardwareProvider │                                        │
+│  │  (macOS implementation)  │                                        │
+│  │                            │                                        │
+│  │ • AudioUnit setup         │                                        │
+│  │ • Audio callback wiring   │                                        │
+│  │ • Volume control         │                                        │
+│  └─────────────────────────────┘                                        │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -122,6 +122,7 @@ This document describes the **current production audio architecture** for the ma
 │  │  Lifecycle: Create, LoadScript, SetLogging, Destroy            │    │
 │  │  Control: SetThrottle, SetIgnition, Update                      │    │
 │  │  Audio: RenderOnDemand, ReadAudioBuffer, GetStats               │    │
+│  │  Telemetry: ITelemetryWriter integration (C++)                    │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -169,92 +170,211 @@ void generateAudio() {
 
 ---
 
-## Component Details
+## Platform Abstraction Layer (Phase 4)
 
-### IAudioMode Strategy
+### IAudioHardwareProvider Interface
 
-**Purpose:** Abstracts audio mode behavior (buffer management, threading, warmup)
+**Purpose:** Abstracts platform-specific audio hardware for cross-platform support
 
-**Implementations:**
-- `ThreadedAudioMode`: Cursor-chasing mode with pre-filled buffer
-- `SyncPullAudioMode`: On-demand rendering in audio callback
+**Architectural Decision:**
+- **OCP Compliance:** New platforms can be added without modifying existing code
+- **DIP Compliance:** Strategies and AudioPlayer depend on abstraction, not concrete implementations
+- **Cross-Platform:** Enables iOS (AVAudioEngine) and ESP32 (I2S) implementations
+- **Clean Separation:** Platform-specific code isolated in hardware layer
 
-**Key Methods:**
-```cpp
-class IAudioMode {
-    virtual std::string getModeName() const = 0;
-    virtual std::string getModeString() const = 0;
-    virtual void updateSimulation(EngineSimHandle, const EngineSimAPI&, AudioPlayer*) = 0;
-    virtual void generateAudio(IAudioSource&, AudioPlayer*) = 0;
-    virtual bool startAudioThread(EngineSimHandle, const EngineSimAPI&, AudioPlayer*) = 0;
-    virtual void prepareBuffer(AudioPlayer*) = 0;
-    virtual void resetBufferAfterWarmup(AudioPlayer*) = 0;
-    virtual void startPlayback(AudioPlayer*) = 0;
-    virtual bool shouldDrainDuringWarmup() const = 0;
+**Current Implementation:**
+- `CoreAudioHardwareProvider`: macOS CoreAudio implementation (production)
+- Uses AudioUnit for real-time audio playback
+- Handles CoreAudio-specific setup, callbacks, and lifecycle
 
-    // DI: Creates context with renderer pre-injected
-    virtual std::unique_ptr<AudioUnitContext> createContext(
-        int sampleRate, EngineSimHandle, const EngineSimAPI*
-    ) = 0;
-};
-```
-
-### IAudioRenderer Strategy
-
-**Purpose:** Abstracts audio rendering strategy (how audio gets to CoreAudio callback)
-
-**Implementations:**
-- `ThreadedRenderer`: Reads from cursor-chasing circular buffer
-- `SyncPullRenderer`: Calls RenderOnDemand in audio callback
+**Future Implementations:**
+- `AVAudioPlatform`: iOS AVAudioEngine implementation
+- `I2SPlatform`: ESP32 I2S driver implementation
 
 **Key Methods:**
 ```cpp
-class IAudioRenderer {
-    virtual bool render(void* ctx, AudioBufferList* ioData, UInt32 numberFrames) = 0;
-    virtual bool AddFrames(void* ctx, float* buffer, int frameCount) = 0;
-    virtual bool isEnabled() const = 0;
+class IAudioHardwareProvider {
+    virtual bool initialize(int sampleRate) = 0;
+    virtual void shutdown() = 0;
+    virtual bool start() = 0;
+    virtual void stop() = 0;
+    virtual void setVolume(float volume) = 0;
+    virtual void setCallback(AudioCallback callback, void* context) = 0;
     virtual const char* getName() const = 0;
 };
 ```
 
-### AudioUnitContext (State Container)
-
-**Purpose:** Holds all audio state, passed to renderer via `void* ctx`
-
-**Key Members:**
+**Integration with AudioPlayer:**
 ```cpp
-struct AudioUnitContext {
-    // Engine
-    EngineSimHandle engineHandle;
+// AudioPlayer uses IAudioHardwareProvider abstraction
+class AudioPlayer {
+    IAudioHardwareProvider* hardware_;
+    IAudioStrategy* strategy_;
 
-    // Strategy
-    IAudioRenderer* audioRenderer;
+    void initialize() {
+        hardware_->initialize(sampleRate);
+        hardware_->setCallback(audioCallback, this);
+    }
 
-    // Threaded mode
-    std::unique_ptr<CircularBuffer> circularBuffer;
-    std::atomic<int> writePointer;
+    void startPlayback() {
+        hardware_->start();
+    }
+
+    void setVolume(float volume) {
+        hardware_->setVolume(volume);
+    }
+};
+```
+
+**Benefits:**
+1. **Cross-Platform:** Single codebase supports macOS, iOS, ESP32
+2. **Testability:** Mock hardware providers for unit testing
+3. **Maintainability:** Platform-specific code isolated and focused
+4. **Extensibility:** New platforms added by implementing IAudioHardwareProvider
+
+---
+
+## Component Details
+
+### IAudioStrategy (Unified Strategy Interface)
+
+**Purpose:** Unified audio generation strategy interface - replaces previous IAudioMode + IAudioRenderer split
+
+**Architectural Improvement:**
+- **SRP Compliance:** Single interface replaces two coupled interfaces
+- **OCP Compliance:** New strategies can be added without modifying existing code
+- **SOLID Principles:** Clean separation of concerns through composition
+
+**Implementations:**
+- `ThreadedStrategy`: Cursor-chasing mode with pre-filled circular buffer
+- `SyncPullStrategy`: On-demand rendering in audio callback
+
+**Key Methods:**
+```cpp
+class IAudioStrategy {
+    // Core strategy methods
+    virtual const char* getName() const = 0;
+    virtual bool isEnabled() const = 0;
+    virtual bool render(StrategyContext* context, AudioBufferList* ioData, UInt32 numberFrames) = 0;
+    virtual bool AddFrames(StrategyContext* context, float* buffer, int frameCount) = 0;
+
+    // Strategy-specific behavior
+    virtual bool shouldDrainDuringWarmup() const = 0;
+    virtual std::string getDiagnostics() const = 0;
+    virtual std::string getProgressDisplay() const = 0;
+    virtual std::string getModeString() const = 0;
+
+    // Lifecycle
+    virtual void configure(const AudioStrategyConfig& config) = 0;
+    virtual void reset() = 0;
+};
+```
+
+### StrategyContext (Composed State Model)
+
+**Purpose:** Composed context containing focused state components for audio strategies
+
+**Architectural Improvement:**
+- **SRP Compliance:** Replaces massive AudioUnitContext with focused state structs
+- **Composition:** AudioState, BufferState, Diagnostics composed together
+- **Testability:** Individual state components can be tested independently
+
+**Composition:**
+```cpp
+struct StrategyContext {
+    AudioState audioState;           // Core playback state (isPlaying, sampleRate, volume)
+    BufferState bufferState;         // Buffer management (pointers, counters)
+    Diagnostics diagnostics;           // Performance metrics and timing
+    CircularBuffer* circularBuffer;   // Non-owning pointer to audio data
+    IAudioStrategy* strategy;        // Current rendering strategy
+    EngineSimHandle engineHandle;     // Bridge simulator handle
+    const EngineSimAPI* engineAPI;  // Bridge API for sync-pull mode
+};
+```
+
+### State Components (Focused SRP-Compliant Structs)
+
+**AudioState:**
+```cpp
+struct AudioState {
+    bool isPlaying;
+    int sampleRate;
+    float volume;
+    void reset();
+};
+```
+
+**BufferState:**
+```cpp
+struct BufferState {
     std::atomic<int> readPointer;
+    std::atomic<int> writePointer;
+    std::atomic<int> frameCount;
+    void reset();
+};
+```
 
-    // Sync-pull mode
-    std::unique_ptr<SyncPullAudio> syncPullAudio;
-
-    // Diagnostics (shared)
+**Diagnostics:**
+```cpp
+struct Diagnostics {
     std::atomic<int> underrunCount;
     std::atomic<double> lastRenderMs;
     std::atomic<double> lastHeadroomMs;
     std::atomic<double> lastBudgetPct;
     std::atomic<double> lastBufferTrendPct;
-
-    // Lifecycle
-    std::atomic<bool> isPlaying;
-    int sampleRate;
-    float volume;
+    void reset();
 };
 ```
 
+### IAudioHardwareProvider (Platform Abstraction)
+
+**Purpose:** Abstracts platform-specific audio hardware for cross-platform support
+
+**Architectural Improvement:**
+- **OCP Compliance:** New platforms can be added without modifying existing code
+- **DIP Compliance:** Strategies depend on abstraction, not concrete hardware
+- **Cross-Platform:** Enables iOS (AVAudioEngine) and ESP32 (I2S) implementations
+
+**Implementations:**
+- `CoreAudioHardwareProvider`: macOS CoreAudio implementation (current)
+- `AVAudioPlatform`: iOS AVAudioEngine implementation (future)
+- `I2SPlatform`: ESP32 I2S driver implementation (future)
+
+**Key Methods:**
+```cpp
+class IAudioHardwareProvider {
+    virtual bool initialize(int sampleRate) = 0;
+    virtual void shutdown() = 0;
+    virtual bool start() = 0;
+    virtual void stop() = 0;
+    virtual void setVolume(float volume) = 0;
+    virtual void setCallback(AudioCallback callback, void* context) = 0;
+    virtual const char* getName() const = 0;
+};
+```
+
+### Legacy Components (Deprecated)
+
+**Note:** The following components have been replaced by the new strategy architecture:
+
+**IAudioMode (Deprecated):**
+- Replaced by `IAudioStrategy`
+- Previous split between IAudioMode and IAudioRenderer was SRP violation
+- New unified interface provides cleaner separation of concerns
+
+**IAudioRenderer (Deprecated):**
+- Functionality consolidated into `IAudioStrategy`
+- Previous coupling with IAudioMode prevented independent swapping
+- New architecture allows true strategy pattern implementation
+
+**AudioUnitContext (Deprecated):**
+- Replaced by `StrategyContext` composed state model
+- Previous monolithic context was SRP violation
+- New composition enables focused, testable state components
+
 ---
 
-## Mode Behavior Comparison
+## Strategy Behavior Comparison
 
 | Aspect | Threaded Mode | Sync-Pull Mode |
 |--------|--------------|----------------|
@@ -272,41 +392,97 @@ struct AudioUnitContext {
 
 | Principle | Implementation |
 |-----------|----------------|
-| **SRP** | Each class has single responsibility: AudioPlayer (lifecycle), IAudioMode (mode behavior), IAudioRenderer (rendering strategy) |
-| **OCP** | Strategy pattern allows adding new modes/renderers without modifying existing code |
+| **SRP** | Each class has single responsibility: AudioPlayer (lifecycle), IAudioStrategy (unified rendering), StrategyContext (state composition), IAudioHardwareProvider (platform abstraction) |
+| **OCP** | Strategy pattern allows adding new modes/renderers without modifying existing code. Platform abstraction allows adding new platforms (iOS, ESP32) without modifying AudioPlayer |
 | **LSP** | All implementations honor their interface contracts |
-| **ISP** | Interfaces are focused and minimal |
-| **DIP** | High-level modules (AudioPlayer) depend on abstractions (IAudioRenderer, IAudioMode) |
-| **DI** | Dependencies injected via createContext(), constructor injection |
+| **ISP** | Interfaces are focused and minimal: IAudioStrategy, IAudioHardwareProvider, ITelemetryWriter/Reader |
+| **DIP** | High-level modules (AudioPlayer) depend on abstractions (IAudioStrategy, IAudioHardwareProvider) |
+| **DI** | Dependencies injected via constructor and factory patterns |
+| **DRY** | Single IAudioStrategy interface replaces previous IAudioMode + IAudioRenderer split |
+| **YAGNI** | Deprecated code removed, no unnecessary abstractions |
+
+### SRP Improvements (v3.0)
+- **Before:** AudioUnitContext was a monolithic struct with mixed responsibilities (audio state, buffer management, diagnostics)
+- **After:** StrategyContext composes focused AudioState, BufferState, Diagnostics structs
+- **Benefit:** Each state component has single responsibility, easier to test and maintain
+
+### OCP Improvements (v3.0)
+- **Before:** Adding new platforms required modifying AudioPlayer directly
+- **After:** IAudioHardwareProvider enables adding platforms without modifying existing code
+- **Benefit:** iOS and ESP32 can be added by implementing IAudioHardwareProvider interface
+
+### ISP Improvements (v3.0)
+- **Before:** IAudioMode and IAudioRenderer had overlapping responsibilities
+- **After:** Single IAudioStrategy interface provides focused, minimal contract
+- **Benefit:** Clients depend only on methods they use
 
 ---
 
-## File Organization
+## File Organization (Updated for v3.0)
 
 ```
 src/audio/
 ├── common/
 │   ├── CircularBuffer.cpp/h          # Thread-safe ring buffer
-│   ├── BridgeAudioSource.cpp/h       # Bridge API wrapper (for IAudioSource interface - unused)
-│   └── SyncPullAudio.cpp/h           # Sync-pull state and diagnostics
-├── modes/
-│   ├── IAudioMode.h                  # Audio mode strategy interface
-│   ├── ThreadedAudioMode.cpp/h       # Threaded mode implementation
-│   ├── SyncPullAudioMode.cpp/h       # Sync-pull mode implementation
-│   └── AudioModeFactory.cpp/h        # Factory for creating modes
-├── renderers/
-│   ├── IAudioRenderer.h              # Renderer strategy interface
-│   ├── ThreadedRenderer.cpp/h        # Threaded renderer (cursor-chasing)
-│   └── SyncPullRenderer.cpp/h        # Sync-pull renderer (on-demand)
+│   └── IAudioSource.h              # Simple audio source interface
+├── state/                         # NEW: Focused state components (SRP)
+│   ├── StrategyContext.cpp/h         # Composed context for strategies
+│   ├── AudioState.cpp/h            # Core playback state
+│   ├── BufferState.cpp/h           # Buffer management state
+│   └── Diagnostics.cpp/h           # Performance and timing metrics
+├── strategies/
+│   ├── IAudioStrategy.h            # Unified strategy interface
+│   ├── ThreadedStrategy.cpp/h      # Cursor-chasing implementation
+│   ├── SyncPullStrategy.cpp/h      # On-demand rendering implementation
+│   └── StrategyAdapterFactory.cpp/h # Factory for creating strategies
+├── hardware/                      # NEW: Platform abstraction (OCP)
+│   ├── IAudioHardwareProvider.h    # Platform-agnostic hardware interface
+│   └── CoreAudioHardwareProvider.cpp/h # macOS CoreAudio implementation
+├── adapters/
+│   ├── StrategyAdapter.cpp/h        # Legacy compatibility adapter
+│   └── StrategyAdapterFactory.cpp/h # Factory for adapters
 ├── utils/
-│   └── AudioUtils.cpp/h              # DRY helpers (FillSilence) - CLI utilities
-└── platform/
-    ├── IAudioPlatform.h              # [FUTURE] Cross-platform abstraction for iOS/ESP32
-    └── macos/
-        └── CoreAudioPlatform.cpp/h   # [FUTURE] macOS implementation
+│   └── AudioUtils.cpp/h          # DRY helpers (FillSilence) - CLI utilities
+└── renderers/                     # DEPRECATED: Merged into strategies/
+    └── IAudioRenderer.h           # Legacy interface (deprecated)
 ```
 
-**Note:** The `platform/` folder contains IAudioPlatform code for future cross-platform support (iOS/ESP32). This is required for Phase 4 work. See ARCHITECTURE_TODO.md Phase 4 tasks for implementation plan.
+**Architecture Notes:**
+- **state/** folder contains focused, SRP-compliant state components
+- **strategies/** folder contains unified IAudioStrategy implementations
+- **hardware/** folder contains platform abstraction for cross-platform support
+- **adapters/** folder provides legacy compatibility with old IAudioRenderer interface
+- **renderers/** folder contains deprecated IAudioRenderer interface (kept for compatibility)
+
+**Cross-Platform Support:**
+- IAudioHardwareProvider enables iOS (AVAudioEngine) and ESP32 (I2S) implementations
+- Current implementation: CoreAudioHardwareProvider (macOS)
+- Future implementations: AVAudioPlatform (iOS), I2SPlatform (ESP32)
+
+---
+
+## SOLID Compliance (Updated for v3.0)
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| **SRP** | ✅ PASS | StrategyContext composition separates AudioState, BufferState, Diagnostics |
+| **OCP** | ✅ PASS | IAudioStrategy and IAudioHardwareProvider enable extension without modification |
+| **LSP** | ✅ PASS | All implementations honor interface contracts |
+| **ISP** | ✅ PASS | Focused interfaces (IAudioStrategy, IAudioHardwareProvider) |
+| **DIP** | ✅ PASS | High-level modules depend on abstractions, not concrete implementations |
+| **DI** | ✅ PASS | Dependencies injected via constructor and factory patterns |
+| **DRY** | ✅ PASS | No duplicate code, single strategy interface |
+| **YAGNI** | ✅ PASS | No unnecessary abstractions, deprecated code removed |
+
+### SRP Improvements (v3.0)
+- **Before:** AudioUnitContext was a monolithic struct with mixed responsibilities
+- **After:** StrategyContext composes focused AudioState, BufferState, Diagnostics structs
+- **Benefit:** Each state component has single responsibility, easier to test and maintain
+
+### OCP Improvements (v3.0)
+- **Before:** Adding new platforms required modifying AudioPlayer directly
+- **After:** IAudioHardwareProvider enables adding platforms without modifying existing code
+- **Benefit:** iOS and ESP32 can be added by implementing IAudioHardwareProvider
 
 ---
 

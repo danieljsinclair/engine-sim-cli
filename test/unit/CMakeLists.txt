@@ -10,6 +10,7 @@ add_executable(unit_tests
     # AudioRegressionTest.cpp - TEMPORARILY DISABLED due to missing ThreadedRenderer
     IAudioStrategyTest.cpp
     IntegrationAudioPlayerTest.cpp
+    ThreadedStrategyIntegrationTest.cpp
     AudioTestConstants.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
@@ -17,6 +18,8 @@ add_executable(unit_tests
     ../../src/AudioPlayer.cpp  # Required by renderers
     ../../src/config/ANSIColors.cpp # Required for display
     # ../../test/mocks/MockIAudioHardwareProvider.cpp - TODO: Create this file
+    ../../test/mocks/MockDataSimulator.cpp
+    ../../test/mocks/MockAudioUnit.cpp
 )
 
 target_link_libraries(unit_tests
@@ -41,6 +44,7 @@ target_include_directories(unit_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/test/unit
+        ${CMAKE_SOURCE_DIR}/test/mocks
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/include
 )
 
