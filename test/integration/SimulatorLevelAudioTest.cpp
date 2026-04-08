@@ -16,9 +16,7 @@
 #include "ILogging.h"
 
 // Audio includes
-#include "audio/renderers/SyncPullRenderer.h"
 #include "AudioPlayer.h"
-#include "SyncPullAudio.h"
 #include "AudioTestConstants.h"
 
 using namespace test::constants;
@@ -133,11 +131,11 @@ namespace {
 
             sampleRate_ = sampleRate;
 
-            // Start audio rendering thread (required for readAudioOutput)
-            simulator_->startAudioRenderingThread();
-
-            // Wait a bit for audio rendering thread to start
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // NOTE: Do NOT start audio rendering thread for sync-pull tests
+            // We use on-demand rendering (renderAudioOnDemand()) directly
+            // Starting the background thread would create a race condition
+            // where both the thread and test code consume audio non-deterministically
+            // This caused SineWave_SyncPull_DeterministicRepeatability to fail
 
             return true;
         }

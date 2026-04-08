@@ -5,11 +5,7 @@
 #include "AudioPlayer.h"
 #include "audio/renderers/IAudioRenderer.h"
 #include "audio/common/CircularBuffer.h"
-#include "SyncPullAudio.h"
 #include "config/ANSIColors.h"
-
-#include "audio/renderers/SyncPullRenderer.h"
-#include "audio/renderers/ThreadedRenderer.h"
 
 #include <cstring>
 #include <cmath>
@@ -334,30 +330,34 @@ int AudioPlayer::calculateCursorChasingSamples(int defaultFrames) {
     if (!context || !context->circularBuffer) {
         return defaultFrames;
     }
-    
+
+    // Read directly from circular buffer's available() method
+    // This is the authoritative source for buffer state
+    size_t available = context->circularBuffer->available();
     int bufferSize = static_cast<int>(context->circularBuffer->capacity());
-    int writePtr = context->writePointer.load();
-    int readPtr = context->readPointer.load();
-    
-    int available;
-    if (writePtr >= readPtr) {
-        available = writePtr - readPtr;
-    } else {
-        available = (bufferSize - readPtr) + writePtr;
-    }
-    
+
     // Target: maintain ~100ms lead
     int targetLead = static_cast<int>(context->sampleRate * 0.1);
-    
-    if (available < targetLead) {
+
+    int framesToWrite;
+    if (static_cast<int>(available) < targetLead) {
         // Behind target - request more frames
-        return std::min(defaultFrames + (targetLead - available), bufferSize);
-    } else if (available > targetLead * 2) {
+        framesToWrite = defaultFrames + (targetLead - static_cast<int>(available));
+    } else if (static_cast<int>(available) > targetLead * 2) {
         // Too far ahead - reduce frames
-        return std::max(defaultFrames - (available - targetLead), 0);
+        framesToWrite = std::max(defaultFrames - (static_cast<int>(available) - targetLead), 0);
+    } else {
+        framesToWrite = defaultFrames;
     }
-    
-    return defaultFrames;
+
+    // CRITICAL: Limit to maximum frames that can be read from engine's audio buffer
+    // The engine's conversion buffer is 4096 frames (4096 * 2 samples = 8192)
+    // ReadAudioBuffer() will fail with ESIM_ERROR_AUDIO_BUFFER if we request more
+    constexpr int MAX_FRAMES_PER_READ = 4096;  // Match engine's conversion buffer size
+    framesToWrite = std::min(framesToWrite, MAX_FRAMES_PER_READ);
+
+    // Also limit by buffer capacity (to avoid requesting more than can fit)
+    return std::min(framesToWrite, bufferSize);
 }
 
 // ============================================================================

@@ -38,11 +38,7 @@ add_executable(engine-sim-cli
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
     # Audio layer (refactored: consolidated renderer implementations)
-    src/audio/renderers/SyncPullRenderer.cpp
-    src/audio/renderers/ThreadedRenderer.cpp
-    src/audio/renderers/AudioRendererFactory.cpp
     src/audio/common/CircularBuffer.cpp
-    src/audio/common/BridgeAudioSource.cpp
     # Audio strategies (new: IAudioStrategy interface implementations)
     src/audio/strategies/IAudioStrategyFactory.cpp
     src/audio/strategies/ThreadedStrategy.cpp
@@ -53,10 +49,9 @@ add_executable(engine-sim-cli
     src/audio/hardware/AudioHardwareProviderFactory.cpp
     # Audio adapters (bridge new architecture to old interface)
     src/audio/adapters/StrategyAdapter.cpp
-    # Legacy files (to be refactored)
+    # Legacy files (AudioPlayer and AudioSource still needed)
     src/AudioPlayer.cpp
     src/AudioSource.cpp
-    src/SyncPullAudio.cpp
 )
 
 target_link_libraries(engine-sim-cli

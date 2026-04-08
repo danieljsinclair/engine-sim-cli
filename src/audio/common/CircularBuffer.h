@@ -55,7 +55,7 @@ public:
     // Get current write position
     int getWritePointer() const { return writePointer_.load(); }
 
-    // Get current read position  
+    // Get current read position
     int getReadPointer() const { return readPointer_.load(); }
 
     // Get raw buffer pointer for direct access

@@ -18,10 +18,7 @@
 #include "ILogging.h"
 
 #include "audio/common/CircularBuffer.h"
-#include "SyncPullAudio.h"
 #include "audio/renderers/IAudioRenderer.h"
-#include "audio/renderers/SyncPullRenderer.h"
-#include "audio/renderers/ThreadedRenderer.h"
 
 // Forward declarations
 
@@ -51,9 +48,6 @@ struct AudioUnitContext {
     // Cursor-chasing state
     std::atomic<int64_t> totalFramesRead; // Total frames read by callback (for cursor tracking)
     int sampleRate;                       // Sample rate for calculations
-
-    // Sync pull model: now uses SyncPullAudio class
-    std::unique_ptr<SyncPullAudio> syncPullAudio;  // Managed by SyncPullAudio class
 
     // Sync-pull timing diagnostics (collected in audio callback, read by main loop)
     std::atomic<int> lastReqFrames;       // Last frame count requested by callback

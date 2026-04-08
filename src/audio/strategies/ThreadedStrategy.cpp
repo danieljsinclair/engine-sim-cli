@@ -72,14 +72,18 @@ bool ThreadedStrategy::render(
         return true;
     }
 
-    // Read frames from circular buffer (managed internally by CircularBuffer)
+    // Read frames from circular buffer using regular read() with physical pointer
     size_t framesRead = context->circularBuffer->read(static_cast<float*>(ioData->mBuffers[0].mData), framesToRead);
 
     // Calculate target lead (100ms at current sample rate)
     int targetLead = static_cast<int>(context->audioState.sampleRate * 0.1);
 
-    // Update diagnostics
+    // Update diagnostics with buffer status
     updateDiagnostics(context, availableFrames, numberFrames);
+
+    // Update logical read pointer for cursor-chasing
+    // The physical read pointer was updated by CircularBuffer::read()
+    context->bufferState.readPointer.store(context->circularBuffer->getReadPointer());
 
     return true;
 }
@@ -103,7 +107,7 @@ bool ThreadedStrategy::AddFrames(
         return false;
     }
 
-    // Write frames to circular buffer (managed internally by CircularBuffer)
+    // Write frames to circular buffer using regular write() with physical pointer
     size_t framesWritten = context->circularBuffer->write(buffer, frameCount);
 
     if (framesWritten != static_cast<size_t>(frameCount)) {
@@ -112,6 +116,10 @@ bool ThreadedStrategy::AddFrames(
                           framesWritten, frameCount);
         }
     }
+
+    // Update logical write pointer for cursor-chasing
+    // The physical write pointer was updated by CircularBuffer::write()
+    context->bufferState.writePointer.store(context->circularBuffer->getWritePointer());
 
     return true;
 }

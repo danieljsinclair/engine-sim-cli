@@ -88,6 +88,4 @@ public:
     virtual bool AddFrames(void* context, float* buffer, int frameCount) = 0;
 };
 
-std::unique_ptr<IAudioRenderer> createAudioRendererFactory(const EngineSimAPI* engineAPI, bool preferSyncPull = true, ILogging* logger = nullptr);
-
 #endif // IAUDIO_RENDERER_H

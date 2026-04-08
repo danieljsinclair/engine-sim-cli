@@ -14,9 +14,6 @@ add_executable(integration_tests
     ${MOCK_SOURCES}
     # Source files under test (Simulator-level integration)
     ../../src/audio/common/CircularBuffer.cpp
-    ../../src/audio/renderers/SyncPullRenderer.cpp
-    ../../src/audio/renderers/ThreadedRenderer.cpp
-    ../../src/SyncPullAudio.cpp
     ../../src/AudioPlayer.cpp
     ../../src/AudioSource.cpp
     ../../src/config/ANSIColors.cpp
