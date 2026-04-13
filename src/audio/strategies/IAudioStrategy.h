@@ -89,6 +89,60 @@ public:
      */
     virtual bool AddFrames(StrategyContext* context, float* buffer, int frameCount) = 0;
 
+    // === Lifecycle Methods ===
+
+    /**
+     * Initialize the strategy with context and configuration
+     * @param context Strategy context containing all audio state
+     * @param config Strategy configuration parameters
+     * @return true if initialization succeeded, false otherwise
+     *
+     * This is called once during AudioPlayer initialization.
+     * Strategies should set up their internal state and prepare for operation.
+     */
+    virtual bool initialize(StrategyContext* context, const AudioStrategyConfig& config) = 0;
+
+    /**
+     * Prepare audio buffer for playback
+     * @param context Strategy context containing all audio state
+     *
+     * ThreadedStrategy: Pre-fills circular buffer for smooth playback
+     * SyncPullStrategy: No-op (no pre-fill needed)
+     */
+    virtual void prepareBuffer(StrategyContext* context) = 0;
+
+    /**
+     * Start playback and any necessary threads
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     * @return true if playback started successfully, false otherwise
+     *
+     * ThreadedStrategy: Starts engine's audio thread for buffer generation
+     * SyncPullStrategy: No-op (no thread needed, renders on-demand)
+     */
+    virtual bool startPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) = 0;
+
+    /**
+     * Stop playback and cleanup
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     *
+     * ThreadedStrategy: Stops engine's audio thread
+     * SyncPullStrategy: No-op (no thread to stop)
+     */
+    virtual void stopPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) = 0;
+
+    /**
+     * Reset buffer state after warmup
+     * @param context Strategy context containing all audio state
+     *
+     * ThreadedStrategy: Resets circular buffer pointers after draining warmup audio
+     * SyncPullStrategy: No-op (no buffer to reset)
+     */
+    virtual void resetBufferAfterWarmup(StrategyContext* context) = 0;
+
     // === Strategy-Specific Methods ===
 
     /**
@@ -132,6 +186,18 @@ public:
      * @return Mode string for user display
      */
     virtual std::string getModeString() const = 0;
+
+    /**
+     * Update simulation state
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     * @param deltaTimeMs Time since last update in milliseconds
+     *
+     * ThreadedStrategy: Updates simulation in main loop
+     * SyncPullStrategy: No-op (simulation updates during render)
+     */
+    virtual void updateSimulation(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) = 0;
 };
 
 /**

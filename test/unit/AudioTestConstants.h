@@ -13,6 +13,7 @@ constexpr int SMALL_BUFFER_CAPACITY = 16;
 constexpr int TINY_BUFFER_CAPACITY = 10;
 
 // Frame counts for test operations
+constexpr int DEFAULT_FRAME_COUNT = 30;
 constexpr int STANDARD_FRAME_COUNT = 50;
 constexpr int LARGE_FRAME_COUNT = 90;
 constexpr int TEST_FRAME_COUNT = 30;

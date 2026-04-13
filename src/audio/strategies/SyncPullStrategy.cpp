@@ -39,6 +39,110 @@ bool SyncPullStrategy::shouldDrainDuringWarmup() const {
     return false;
 }
 
+// ============================================================================
+// Lifecycle Method Implementations
+// ============================================================================
+
+bool SyncPullStrategy::initialize(StrategyContext* context, const AudioStrategyConfig& config) {
+    if (!context) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "SyncPullStrategy::initialize: Invalid context");
+        }
+        return false;
+    }
+
+    // Initialize audio state
+    context->audioState.sampleRate = config.sampleRate;
+    context->audioState.isPlaying = false;
+
+    // Sync-pull mode doesn't need circular buffer
+    // Audio is generated on-demand from engine simulator
+
+    if (logger_) {
+        logger_->info(LogMask::AUDIO,
+                      "SyncPullStrategy initialized: sampleRate=%dHz, channels=%d",
+                      config.sampleRate, config.channels);
+    }
+
+    return true;
+}
+
+void SyncPullStrategy::prepareBuffer(StrategyContext* context) {
+    // Sync-pull mode doesn't pre-fill buffer
+    // Audio is generated on-demand during render callback
+    (void)context;  // Suppress unused parameter warning
+
+    if (logger_) {
+        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::prepareBuffer: No-op for sync-pull mode");
+    }
+}
+
+bool SyncPullStrategy::startPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+    if (!context) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "SyncPullStrategy::startPlayback: Invalid context");
+        }
+        return false;
+    }
+
+    // Sync-pull mode doesn't need to start a thread
+    // Audio is generated on-demand during render callback
+
+    // Mark playback as started
+    context->audioState.isPlaying.store(true);
+
+    if (logger_) {
+        logger_->info(LogMask::AUDIO, "SyncPullStrategy::startPlayback: On-demand rendering started");
+    }
+
+    return true;
+}
+
+void SyncPullStrategy::stopPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+    if (!context) {
+        if (logger_) {
+            logger_->warning(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: Invalid context");
+        }
+        return;
+    }
+
+    // Sync-pull mode doesn't have a thread to stop
+    // Audio generation stops when render callbacks stop
+
+    // Mark playback as stopped
+    context->audioState.isPlaying.store(false);
+
+    if (logger_) {
+        logger_->info(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: On-demand rendering stopped");
+    }
+
+    (void)handle;  // Suppress unused parameter warning
+    (void)api;     // Suppress unused parameter warning
+}
+
+void SyncPullStrategy::resetBufferAfterWarmup(StrategyContext* context) {
+    // Sync-pull mode doesn't have a buffer to reset
+    // Audio is generated on-demand during render callback
+    (void)context;  // Suppress unused parameter warning
+
+    if (logger_) {
+        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::resetBufferAfterWarmup: No-op for sync-pull mode");
+    }
+}
+
+void SyncPullStrategy::updateSimulation(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
+    // Sync-pull mode updates simulation during render callback
+    // No explicit simulation update needed in main loop
+    (void)context;  // Suppress unused parameter warning
+    (void)handle;   // Suppress unused parameter warning
+    (void)api;      // Suppress unused parameter warning
+    (void)deltaTimeMs;  // Suppress unused parameter warning
+
+    if (logger_) {
+        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::updateSimulation: No-op for sync-pull mode");
+    }
+}
+
 bool SyncPullStrategy::render(
     StrategyContext* context,
     AudioBufferList* ioData,

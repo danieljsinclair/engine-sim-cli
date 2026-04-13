@@ -12,6 +12,8 @@ add_executable(unit_tests
     IntegrationAudioPlayerTest.cpp
     ThreadedStrategyIntegrationTest.cpp
     AudioTestConstants.cpp
+    DebugTest.cpp
+    MockSimulatorDebugTest.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/AudioSource.cpp  # Required for BufferOps

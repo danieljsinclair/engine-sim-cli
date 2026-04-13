@@ -5,9 +5,11 @@
 #define MOCK_DATA_SIMULATOR_H
 
 #include "engine_sim_bridge.h"
+#include <cstring>
 #include <vector>
 #include <atomic>
 #include <mutex>
+#include <memory>
 
 // ============================================================================
 // MockDataSimulatorContext - Mock context mimicking EngineSimContext
@@ -46,17 +48,6 @@ public:
     // Render on-demand - for sync-pull callbacks
     EngineSimResult renderOnDemand(float* buffer, int32_t frames, int32_t* outSamplesWritten);
 
-    // Control functions
-    EngineSimResult setThrottle(double position);
-    EngineSimResult setSpeedControl(double position);
-    EngineSimResult update(double deltaTime);
-    EngineSimResult startAudioThread();
-    EngineSimResult getStats(EngineSimStats* outStats);
-    const char* getLastError();
-
-    // Get current frame number (for generating deterministic samples)
-    int getCurrentFrame() const { return m_currentFrame; }
-
     // Reset state for test isolation
     void reset();
 
@@ -65,6 +56,11 @@ public:
     size_t getWritePosition() const { return m_writePosition; }
     size_t getBufferSize() const { return m_audioBuffer.size(); }
 
+    // Control functions
+    EngineSimResult setThrottle(double position);
+    EngineSimResult setSpeedControl(double position);
+    const char* getLastError();
+
 private:
     // Generate fixed known sample for given frame and channel
     int16_t generateFixedSample(int frame, int channel) const;
@@ -72,34 +68,31 @@ private:
     // Convert int16 sample to float [-1.0, 1.0]
     float int16ToFloat(int16_t sample) const;
 
-    // Fill buffer with fixed known audio
-    void fillAudioBuffer(int framesToGenerate);
+    // Get current frame number (for generating deterministic samples)
+    int getCurrentFrame() const { return m_currentFrame; }
 
-    // State
-    std::vector<int16_t> m_audioBuffer;      // Internal audio buffer (int16 stereo)
-    std::atomic<size_t> m_writePosition{0}; // Write pointer
-    std::atomic<size_t> m_readPosition{0};   // Read pointer
-    std::atomic<int> m_currentFrame{0};      // Current frame for deterministic generation
+    // Update simulation state
+    EngineSimResult update(double deltaTime);
 
-    // Control state
+    // Start audio thread (mock)
+    EngineSimResult startAudioThread();
+
+    // Get simulation statistics
+    EngineSimResult getStats(EngineSimStats* outStats);
+
+    // Member variables
+    EngineSimStats m_stats;
+    EngineSimConfig m_config;
+    std::vector<int16_t> m_audioBuffer;
+    std::vector<float> m_conversionBuffer;
+    std::atomic<std::size_t> m_readPosition{0};
+    std::atomic<std::size_t> m_writePosition{0};
+    std::atomic<int> m_currentFrame{0};
     std::atomic<double> m_throttle{0.0};
     std::atomic<double> m_speedControl{0.0};
-
-    // Configuration
-    EngineSimConfig m_config;
-
-    // Statistics
-    EngineSimStats m_stats;
-
-    // Error handling
-    std::string m_lastError;
-    std::mutex m_mutex;  // Protect buffer access
-
-    // Thread management
     std::atomic<bool> m_audioThreadRunning{false};
-
-    // Conversion buffer
-    std::vector<int16_t> m_conversionBuffer;
+    std::string m_lastError;
+    std::mutex m_mutex;
 };
 
 // ============================================================================
@@ -107,5 +100,32 @@ private:
 // ============================================================================
 
 using MockDataSimulatorHandle = MockDataSimulatorContext*;
+
+// ============================================================================
+// MockDataSimulator - Test-friendly wrapper for MockDataSimulatorContext
+// Provides convenient interface for unit tests
+// Note: Basic ThreadedStrategy tests don't need engine API
+// ============================================================================
+
+class MockDataSimulator {
+public:
+    MockDataSimulator();
+    ~MockDataSimulator();
+
+    // Initialize the simulator
+    void initialize(const EngineSimConfig* config = nullptr);
+
+    // Get context handle (for StrategyContext)
+    MockDataSimulatorHandle getContext() const { return m_context.get(); }
+
+    // Note: Basic tests don't need engine API, returning nullptr
+    // For advanced tests that need engine API, we can add proper mocking later
+
+    // Reset state for test isolation
+    void reset() { m_context->reset(); }
+
+private:
+    std::unique_ptr<MockDataSimulatorContext> m_context;
+};
 
 #endif // MOCK_DATA_SIMULATOR_H

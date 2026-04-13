@@ -99,6 +99,56 @@ public:
         int frameCount
     ) override;
 
+    // === Lifecycle Methods ===
+
+    /**
+     * Initialize the strategy with context and configuration
+     * @param context Strategy context containing all audio state
+     * @param config Strategy configuration parameters
+     * @return true if initialization succeeded, false otherwise
+     */
+    bool initialize(StrategyContext* context, const AudioStrategyConfig& config) override;
+
+    /**
+     * Prepare audio buffer for playback (pre-fill circular buffer)
+     * @param context Strategy context containing all audio state
+     */
+    void prepareBuffer(StrategyContext* context) override;
+
+    /**
+     * Start playback and the engine's audio thread
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     * @return true if playback started successfully, false otherwise
+     */
+    bool startPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
+
+    /**
+     * Stop playback and the engine's audio thread
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     */
+    void stopPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
+
+    /**
+     * Reset buffer state after warmup
+     * @param context Strategy context containing all audio state
+     */
+    void resetBufferAfterWarmup(StrategyContext* context) override;
+
+    /**
+     * Update simulation state
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     * @param deltaTimeMs Time since last update in milliseconds
+     */
+    void updateSimulation(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
+
+    // === Strategy-Specific Methods ===
+
     /**
      * Return whether to drain buffer during warmup phase
      *

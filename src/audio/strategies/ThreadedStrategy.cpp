@@ -39,6 +39,181 @@ bool ThreadedStrategy::shouldDrainDuringWarmup() const {
     return true;
 }
 
+// ============================================================================
+// Lifecycle Method Implementations
+// ============================================================================
+
+bool ThreadedStrategy::initialize(StrategyContext* context, const AudioStrategyConfig& config) {
+    if (!context) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "ThreadedStrategy::initialize: Invalid context");
+        }
+        return false;
+    }
+
+    // Initialize circular buffer with appropriate capacity
+    // Using 2-second buffer at configured sample rate for 100ms target lead
+    int bufferCapacity = config.sampleRate * 2;
+    if (!context->circularBuffer) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "ThreadedStrategy::initialize: Circular buffer not provided in context");
+        }
+        return false;
+    }
+
+    if (!context->circularBuffer->initialize(bufferCapacity)) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "ThreadedStrategy::initialize: Failed to initialize circular buffer");
+        }
+        return false;
+    }
+
+    // Initialize audio state
+    context->audioState.sampleRate = config.sampleRate;
+    context->audioState.isPlaying = false;
+
+    // Initialize buffer state
+    context->bufferState.writePointer.store(0);
+    context->bufferState.readPointer.store(0);
+    context->bufferState.underrunCount.store(0);
+    context->bufferState.fillLevel = 0;
+
+    if (logger_) {
+        logger_->info(LogMask::AUDIO,
+                      "ThreadedStrategy initialized: bufferCapacity=%d frames (%.2f seconds)",
+                      bufferCapacity, bufferCapacity / static_cast<double>(config.sampleRate));
+    }
+
+    return true;
+}
+
+void ThreadedStrategy::prepareBuffer(StrategyContext* context) {
+    if (!context || !context->circularBuffer) {
+        if (logger_) {
+            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::prepareBuffer: Invalid context or buffer");
+        }
+        return;
+    }
+
+    // Pre-fill circular buffer with silence for smooth playback start
+    // Fill ~100ms of silence (about 4800 frames at 48kHz)
+    int preFillFrames = static_cast<int>(context->audioState.sampleRate * 0.1);
+    int capacity = static_cast<int>(context->circularBuffer->capacity());
+    preFillFrames = std::min(preFillFrames, capacity);
+
+    // Stereo audio = 2 channels per frame
+    std::vector<float> silence(preFillFrames * 2);
+    std::fill(silence.begin(), silence.end(), 0.0f);
+
+    size_t framesWritten = context->circularBuffer->write(silence.data(), preFillFrames);
+    context->bufferState.writePointer.store(context->circularBuffer->getWritePointer());
+
+    if (logger_) {
+        logger_->debug(LogMask::AUDIO, "ThreadedStrategy::prepareBuffer: Pre-filled %d frames with silence", static_cast<int>(framesWritten));
+    }
+}
+
+bool ThreadedStrategy::startPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+    if (!context) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Invalid context");
+        }
+        return false;
+    }
+
+    // Start the engine's audio thread for threaded mode
+    if (!api || !handle) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Invalid engine API or handle");
+        }
+        return false;
+    }
+
+    EngineSimResult result = api->StartAudioThread(handle);
+    if (result != ESIM_SUCCESS) {
+        if (logger_) {
+            logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Failed to start audio thread (result=%d)", result);
+        }
+        return false;
+    }
+
+    // Mark playback as started
+    context->audioState.isPlaying.store(true);
+
+    if (logger_) {
+        logger_->info(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Audio thread started");
+    }
+
+    return true;
+}
+
+void ThreadedStrategy::stopPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+    if (!context) {
+        if (logger_) {
+            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Invalid context");
+        }
+        return;
+    }
+
+    // Stop the engine's audio thread
+    if (api && handle) {
+        // Note: EngineSim API doesn't have a StopAudioThread method
+        // The thread will naturally stop when the simulation ends
+        if (logger_) {
+            logger_->debug(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Audio thread will stop with simulation");
+        }
+    }
+
+    // Mark playback as stopped
+    context->audioState.isPlaying.store(false);
+
+    if (logger_) {
+        logger_->info(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Playback stopped");
+    }
+}
+
+void ThreadedStrategy::resetBufferAfterWarmup(StrategyContext* context) {
+    if (!context || !context->circularBuffer) {
+        if (logger_) {
+            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::resetBufferAfterWarmup: Invalid context or buffer");
+        }
+        return;
+    }
+
+    // Reset circular buffer to eliminate warmup latency
+    // Drain any pre-filled audio and reset pointers
+    context->circularBuffer->reset();
+    context->bufferState.writePointer.store(0);
+    context->bufferState.readPointer.store(0);
+    context->bufferState.fillLevel = 0;
+
+    if (logger_) {
+        logger_->info(LogMask::AUDIO, "ThreadedStrategy::resetBufferAfterWarmup: Buffer reset complete");
+    }
+}
+
+void ThreadedStrategy::updateSimulation(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
+    if (!context) {
+        if (logger_) {
+            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::updateSimulation: Invalid context");
+        }
+        return;
+    }
+
+    // Threaded mode updates simulation in main loop
+    // This is typically called by the main simulation loop
+    if (handle && context->audioState.isPlaying.load()) {
+        // Call engine API to advance simulation
+        // Using fixed update interval for consistency
+        constexpr double UPDATE_INTERVAL_MS = 10.0;
+        EngineSimResult result = api.Update(handle, UPDATE_INTERVAL_MS);
+
+        if (result != ESIM_SUCCESS && logger_) {
+            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::updateSimulation: Engine update failed (result=%d)", result);
+        }
+    }
+}
+
 bool ThreadedStrategy::render(
     StrategyContext* context,
     AudioBufferList* ioData,
@@ -69,6 +244,8 @@ bool ThreadedStrategy::render(
             logger_->warning(LogMask::AUDIO, "ThreadedStrategy::render: No frames available, outputting silence");
         }
         std::memset(ioData->mBuffers[0].mData, 0, ioData->mBuffers[0].mDataByteSize);
+        // Update diagnostics to increment underrun count
+        updateDiagnostics(context, 0, static_cast<int>(numberFrames));
         return true;
     }
 

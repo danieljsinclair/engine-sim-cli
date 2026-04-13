@@ -55,6 +55,54 @@ public:
         int frameCount
     ) override;
 
+    // === Lifecycle Methods ===
+
+    /**
+     * Initialize the strategy with context and configuration
+     * @param context Strategy context containing all audio state
+     * @param config Strategy configuration parameters
+     * @return true if initialization succeeded, false otherwise
+     */
+    bool initialize(StrategyContext* context, const AudioStrategyConfig& config) override;
+
+    /**
+     * Prepare audio buffer for playback (no-op for sync-pull)
+     * @param context Strategy context containing all audio state
+     */
+    void prepareBuffer(StrategyContext* context) override;
+
+    /**
+     * Start playback (no-op for sync-pull, renders on-demand)
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     * @return true (no thread to start)
+     */
+    bool startPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
+
+    /**
+     * Stop playback (no-op for sync-pull, no thread to stop)
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     */
+    void stopPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
+
+    /**
+     * Reset buffer state after warmup (no-op for sync-pull)
+     * @param context Strategy context containing all audio state
+     */
+    void resetBufferAfterWarmup(StrategyContext* context) override;
+
+    /**
+     * Update simulation state (no-op for sync-pull, updates during render)
+     * @param context Strategy context containing all audio state
+     * @param handle Engine simulator handle
+     * @param api Engine simulator API
+     * @param deltaTimeMs Time since last update in milliseconds
+     */
+    void updateSimulation(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
+
     std::string getDiagnostics() const override;
     std::string getProgressDisplay() const override;
 

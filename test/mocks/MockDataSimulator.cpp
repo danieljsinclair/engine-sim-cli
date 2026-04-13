@@ -2,9 +2,6 @@
 
 #include "MockDataSimulator.h"
 #include <cstring>
-#include <cmath>
-#include <thread>
-#include <chrono>
 
 // ============================================================================
 // MockDataSimulatorContext Implementation
@@ -73,12 +70,7 @@ EngineSimResult MockDataSimulatorContext::renderAudio(float* buffer, int32_t fra
     if (newPos >= m_audioBuffer.size()) {
         newPos %= m_audioBuffer.size(); // Wrap around
     }
-    m_readPosition.store(newPos);
-
-    // Fill remainder with silence if partial read
-    if (samplesWritten < frames * 2) {
-        std::memset(buffer + samplesWritten, 0, (frames * 2 - samplesWritten) * sizeof(float));
-    }
+    m_readPosition.store(newPos, std::memory_order_release);
 
     if (outSamplesWritten) {
         *outSamplesWritten = samplesWritten / 2; // Frames, not samples
@@ -87,15 +79,11 @@ EngineSimResult MockDataSimulatorContext::renderAudio(float* buffer, int32_t fra
     return ESIM_SUCCESS;
 }
 
-EngineSimResult MockDataSimulatorContext::readAudioBuffer(float* buffer, int32_t frames, int32_t* outSamplesRead) {
-    return renderAudio(buffer, frames, outSamplesRead);
-}
-
 EngineSimResult MockDataSimulatorContext::renderOnDemand(float* buffer, int32_t frames, int32_t* outSamplesWritten) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Generate audio on-demand (for sync-pull mode)
-    // This simulates the synthesizer generating audio as needed
+    // This simulates synthesizer generating audio as requested
 
     int framesToGenerate = frames;
     int samplesGenerated = 0;
@@ -108,10 +96,11 @@ EngineSimResult MockDataSimulatorContext::renderOnDemand(float* buffer, int32_t 
         }
     }
 
+    // Update current frame counter
     m_currentFrame += framesToGenerate;
 
     if (outSamplesWritten) {
-        *outSamplesWritten = samplesGenerated / 2; // Frames, not samples
+        *outSamplesWritten = samplesGenerated / 2; // Convert samples to frames
     }
 
     return ESIM_SUCCESS;
@@ -124,7 +113,6 @@ EngineSimResult MockDataSimulatorContext::setThrottle(double position) {
     }
 
     m_throttle.store(position, std::memory_order_relaxed);
-    m_speedControl.store(position, std::memory_order_relaxed);
 
     // Update RPM based on throttle (deterministic mapping)
     // RPM = 800 + throttle * 5200
@@ -137,35 +125,6 @@ EngineSimResult MockDataSimulatorContext::setThrottle(double position) {
 
 EngineSimResult MockDataSimulatorContext::setSpeedControl(double position) {
     return setThrottle(position); // Delegates to throttle
-}
-
-EngineSimResult MockDataSimulatorContext::update(double deltaTime) {
-    (void)deltaTime; // Not needed for mock
-
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    // Fill audio buffer with fixed samples if running
-    if (m_audioThreadRunning) {
-        fillAudioBuffer(1000); // Generate 1000 frames per update
-    }
-
-    return ESIM_SUCCESS;
-}
-
-EngineSimResult MockDataSimulatorContext::startAudioThread() {
-    m_audioThreadRunning.store(true, std::memory_order_release);
-    return ESIM_SUCCESS;
-}
-
-EngineSimResult MockDataSimulatorContext::getStats(EngineSimStats* outStats) {
-    if (!outStats) {
-        return ESIM_ERROR_INVALID_PARAMETER;
-    }
-
-    std::lock_guard<std::mutex> lock(m_mutex);
-    *outStats = m_stats;
-
-    return ESIM_SUCCESS;
 }
 
 const char* MockDataSimulatorContext::getLastError() {
@@ -207,21 +166,43 @@ float MockDataSimulatorContext::int16ToFloat(int16_t sample) const {
     return static_cast<float>(sample) * scale;
 }
 
-void MockDataSimulatorContext::fillAudioBuffer(int framesToGenerate) {
-    // Fill audio buffer with fixed known samples
-    for (int i = 0; i < framesToGenerate; ++i) {
-        int frame = m_currentFrame + i;
-        for (int ch = 0; ch < 2; ++ch) {
-            size_t writeIdx = (m_writePosition + (i * 2) + ch) % m_audioBuffer.size();
-            m_audioBuffer[writeIdx] = generateFixedSample(frame, ch);
-        }
+// ============================================================================
+// MockDataSimulator Implementation
+// ============================================================================
+
+MockDataSimulator::MockDataSimulator() {
+    m_context = std::make_unique<MockDataSimulatorContext>();
+
+    // Initialize with default config
+    EngineSimConfig defaultConfig;
+    defaultConfig.sampleRate = 48000;  // MockDataSimulatorContext::SAMPLE_RATE
+    defaultConfig.audioBufferSize = 96000;  // MockDataSimulatorContext::AUDIO_BUFFER_SIZE
+    m_context->initialize(&defaultConfig);
+}
+
+MockDataSimulator::~MockDataSimulator() = default;
+
+void MockDataSimulator::initialize(const EngineSimConfig* config) {
+    m_context->initialize(config);
+}
+
+EngineSimResult MockDataSimulatorContext::update(double deltaTime) {
+    (void)deltaTime; // Not needed for mock
+    return ESIM_SUCCESS;
+}
+
+EngineSimResult MockDataSimulatorContext::startAudioThread() {
+    m_audioThreadRunning.store(true, std::memory_order_release);
+    return ESIM_SUCCESS;
+}
+
+EngineSimResult MockDataSimulatorContext::getStats(EngineSimStats* outStats) {
+    if (!outStats) {
+        return ESIM_ERROR_INVALID_PARAMETER;
     }
 
-    size_t newWritePos = m_writePosition + framesToGenerate * 2;
-    if (newWritePos >= m_audioBuffer.size()) {
-        newWritePos %= m_audioBuffer.size();
-    }
-    m_writePosition.store(newWritePos);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    *outStats = m_stats;
 
-    m_currentFrame += framesToGenerate;
+    return ESIM_SUCCESS;
 }
