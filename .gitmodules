@@ -2,3 +2,6 @@
 	path = engine-sim-bridge
 	url = https://github.com/danieljsinclair/engine-sim-bridge.git
 	branch = master
+[submodule "vehicle-sim"]
+	path = vehicle-sim
+	url = https://github.com/danieljsinclair/vehicle-sim.git
