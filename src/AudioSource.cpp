@@ -67,43 +67,26 @@ void EngineAudioSource::displayProgress(double currentTime, double duration, boo
 
     // Append SYNC-PULL timing data if available
     if (audioPlayer && audioPlayer->getContext()) {
-        const AudioUnitContext* ctx = audioPlayer->getContext();
+        const BufferContext* ctx = audioPlayer->getContext();
 
-        // Check if pre-buffer was depleted
-        if (ctx->preBufferDepleted.load()) {
-            prefix << " [SYNC-PULL] Pre-buffer depleted - ";
-        }
+        // Read diagnostics from BufferContext (populated by SyncPullStrategy::render)
+        double renderMs = ctx->diagnostics.lastRenderMs.load();
+        double headroomMs = ctx->diagnostics.lastHeadroomMs.load();
+        double timeBudgetPct = ctx->diagnostics.lastBudgetPct.load();
 
-        // Get timing data
-        int reqFrames = ctx->lastReqFrames.load();
-        if (reqFrames > 0) {
-            int gotFrames = ctx->lastGotFrames.load();
-            double renderMs = ctx->lastRenderMs.load();
-            double headroomMs = ctx->lastHeadroomMs.load();
-            double timeBudgetPct = ctx->lastBudgetPct.load();
-            double frameBudgetPct = ctx->lastFrameBudgetPct.load();
-            double bufferTrendPct = ctx->lastBufferTrendPct.load();
-            double callbackIntervalMs = ctx->lastCallbackIntervalMs.load();
+        if (renderMs > 0.0) {
+            double bufferTrendPct = 0.0;
+            double callbackIntervalMs = 250.0;
 
-            // Calculate callback rate and fps
             double callbackRateHz = (callbackIntervalMs > 0.0) ? (1000.0 / callbackIntervalMs) : 0.0;
-            double neededFps = callbackRateHz * reqFrames;
-            double generatingFps = (callbackIntervalMs > 0.0) ? (gotFrames * 1000.0 / callbackIntervalMs) : 0.0;
 
-            // Color code based on metrics
-            std::string reqGotColor = ANSIColors::getDispositionColour(reqFrames == gotFrames);
             std::string budgetColor = ANSIColors::getDispositionColour(timeBudgetPct < 80, timeBudgetPct < 100);
             std::string trendColor = ANSIColors::getDispositionColour(bufferTrendPct >= 0, bufferTrendPct < 0, bufferTrendPct < -1.0);
 
-            // Fixed-width formatting for column alignment
-            prefix << "[SYNC-PULL] req=" << std::setw(3) << reqFrames
-                    << " got=" << std::setw(3) << gotFrames
-                    << " rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << renderMs << "ms"
+            prefix << "[SYNC-PULL] rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << renderMs << "ms"
                     << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms"
                     << " (" << budgetColor << std::setw(3) << std::setprecision(0) << timeBudgetPct << "% of budget" << ANSIColors::RESET << ")"
                     << " callbacks=" << std::setw(6) << std::setprecision(0) << callbackRateHz << "Hz"
-                    << " needed=" << std::setw(5) << std::setprecision(1) << neededFps / 1000.0 << "kfps"
-                    << " generating=" << std::setw(5) << std::setprecision(1) << generatingFps / 1000.0 << "kfps"
                     << " trend=" << trendColor << std::showpos << std::setw(4) << std::setprecision(1) << bufferTrendPct << "%" << std::noshowpos << ANSIColors::RESET;
         }
     }

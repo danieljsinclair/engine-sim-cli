@@ -1,13 +1,13 @@
 // SimulationLoop.cpp - Simulation loop implementation
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
-// Refactored to use Strategy pattern for audio mode behavior
+// Uses IAudioStrategy directly (no adapter, no IAudioRenderer)
 
 #include "SimulationLoop.h"
 
 #include "config/CLIconfig.h"
 #include "AudioPlayer.h"
 #include "AudioSource.h"
-#include "audio/renderers/IAudioRenderer.h"
+#include "audio/strategies/IAudioStrategy.h"
 #include "input/IInputProvider.h"
 #include "presentation/IPresentation.h"
 #include "simulation/EngineConfig.h"
@@ -44,23 +44,16 @@ SimulationConfig::SimulationConfig(ILogging* logger)
     , outputWav(nullptr)
     , simulationFrequency(10000)
     , preFillMs(50)
-    , audioMode()
     , logger(logger ? logger : &defaultLogger())
     , telemetryWriter(nullptr)
 {
-    // Logger is guaranteed non-null by constructor
 }
 
 // ============================================================================
 // Private Helper Functions - SRP Compliance
-// Each function does ONE thing
 // ============================================================================
 
 namespace {
-
-// ----------------------------------------------------------------------------
-// runUnifiedAudioLoop helpers - ONE thing each
-// ----------------------------------------------------------------------------
 
 void enableStarterMotor(EngineSimHandle handle, const EngineSimAPI& api) {
     api.SetStarterMotor(handle, 1);
@@ -76,20 +69,12 @@ bool checkStarterMotorRPM(EngineSimHandle handle, const EngineSimAPI& api, doubl
     return false;
 }
 
-double calculateThrottle(bool interactive, double currentTime, double interactiveLoad) {
-    if (interactive) {
-        return interactiveLoad;
-    }
-    return currentTime < 0.5 ? currentTime / 0.5 : 1.0;
-}
-
-
 int getUnderrunCount(AudioPlayer* audioPlayer) {
     if (!audioPlayer) {
         return 0;
     }
     auto* context = audioPlayer->getContext();
-    return context ? context->underrunCount.load() : 0;
+    return context ? context->bufferState.underrunCount.load() : 0;
 }
 
 void performTimingControl(TimingOps::LoopTimer& timer) {
@@ -97,11 +82,9 @@ void performTimingControl(TimingOps::LoopTimer& timer) {
 }
 
 bool shouldContinueLoop(double currentTime, double duration, input::IInputProvider* inputProvider) {
-    // Check input provider first (knows about keyboard quit, upstream disconnect)
     if (inputProvider) {
         return inputProvider->ShouldContinue();
     }
-    // For non-interactive (no inputProvider), check duration
     return currentTime < duration;
 }
 
@@ -120,12 +103,9 @@ double updateInputAndGetThrottle(input::IInputProvider* inputProvider, double cu
     return currentTime < 0.5 ? currentTime / 0.5 : 1.0;
 }
 
-/// ============================================================================
-/// Presentation Update
-/// ============================================================================
 void updatePresentation(presentation::IPresentation* presentation, double currentTime,
                         const EngineSimStats& stats, double throttle,
-                        int underrunCount, IAudioRenderer& audioMode,
+                        int underrunCount, IAudioStrategy& audioStrategy,
                         input::IInputProvider* inputProvider) {
     if (presentation) {
         presentation::EngineState state;
@@ -135,7 +115,7 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
         state.load = stats.currentLoad;
         state.speed = 0;
         state.underrunCount = underrunCount;
-        state.audioMode = audioMode.getModeString();
+        state.audioMode = audioStrategy.getModeString();
         state.ignition = inputProvider ? inputProvider->GetIgnition() : true;
         state.starterMotor = false;
         state.exhaustFlow = stats.exhaustFlow;
@@ -144,9 +124,6 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
     }
 }
 
-/// ============================================================================
-/// Telemetry Write
-/// ============================================================================
 void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
                     const EngineSimStats& stats,
                     double currentTime,
@@ -162,28 +139,19 @@ void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
         data.activeChannels = stats.activeChannels;
         data.processingTimeMs = stats.processingTimeMs;
         data.underrunCount = underrunCount;
-        data.bufferHealthPct = 0.0;  // TODO: Calculate from audio player if available
+        data.bufferHealthPct = 0.0;
         data.throttlePosition = throttle;
         data.ignitionOn = ignition;
-        data.starterMotorEngaged = false;  // TODO: Track starter motor state
+        data.starterMotorEngaged = false;
         data.timestamp = currentTime;
         telemetryWriter->write(data);
     }
 }
 
-// ----------------------------------------------------------------------------
-// runSimulation helpers - ONE thing each
-// ----------------------------------------------------------------------------
-
 EngineSimConfig createDefaultEngineSimConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
     return EngineConfig::createDefault(sampleRate, simulationFrequency);
 }
 
-/**
- * Script configuration result from path resolution.
- * For sine mode: scriptPath and assetBasePath are empty (no script needed).
- * For other modes: paths are validated and converted to absolute.
- */
 struct ScriptConfig {
     std::string scriptPath;
     std::string assetBasePath;
@@ -191,26 +159,14 @@ struct ScriptConfig {
     std::string errorMessage;
 };
 
-/**
- * Prepare script configuration based on mode priority.
- * PRIORITY ORDER: --sine > --default-engine > --script
- *
- * This is the ONLY place that checks mode and determines which script to load.
- * Path resolution and validation is handled by the bridge (SRP compliance).
- *
- * @param config Simulation configuration with mode flags
- * @return ScriptConfig with paths for bridge to process
- */
 ScriptConfig prepareScriptConfig(const SimulationConfig& config) {
     ScriptConfig result;
 
-    // Sine mode: no script needed, SineWaveSimulator creates dummy engine
     if (config.sineMode) {
         result.valid = true;
         return result;
     }
 
-    // Determine which path to use
     if (config.useDefaultEngine) {
         result.scriptPath = "engine-sim-bridge/engine-sim/assets/main.mr";
     } else if (!config.configPath.empty()) {
@@ -220,40 +176,21 @@ ScriptConfig prepareScriptConfig(const SimulationConfig& config) {
         return result;
     }
 
-    // Path resolution, validation, and asset base path derivation handled by bridge
-    // (SRP: CLI provides input, bridge processes it)
     result.valid = true;
-
     return result;
 }
 
-/// @brief Run the warmup phase of the simulation
-/// @param handle Engine simulation handle
-/// @param engineAPI Engine simulation API
-/// @param audioPlayer Audio player instance
-/// @param drainDuringWarmup Whether to drain audio during warmup
 void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
                    AudioPlayer* audioPlayer, bool drainDuringWarmup) {
     WarmupOps::runWarmup(handle, engineAPI, audioPlayer, drainDuringWarmup);
 }
 
-/**
- * Create audio source for simulation.
- * Always uses EngineAudioSource - the bridge handles whether it's using
- * PistonEngineSimulator or SineWaveSimulator based on config.sineMode (DI pattern).
- * 
- * @param handle Engine simulation handle
- * @param engineAPI Engine simulation API
- * @return Audio source instance (always EngineAudioSource)
- */
 std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle,
                                                 EngineSimAPI& engineAPI) {
-    // Bridge created the right simulator type during Create() based on config.sineMode
-    // No need to check mode here - just use the handle polymorphically
     return std::make_unique<EngineAudioSource>(handle, engineAPI);
 }
 
-void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle, 
+void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle,
                        EngineSimAPI& engineAPI, int exitCode) {
     if (audioPlayer) {
         audioPlayer->stop();
@@ -269,11 +206,31 @@ void warnWavExportNotSupported(bool outputWavRequested, ILogging* logger) {
         logger->warning(LogMask::AUDIO, "WAV export not supported in unified mode - use the old engine mode code path");
     }
 }
+
+/**
+ * Generate audio frames via engine API and write to the player's circular buffer.
+ * Used for threaded mode where the main loop generates audio proactively.
+ */
+void generateAudioForThreadedMode(EngineSimHandle handle, const EngineSimAPI& api,
+                                  IAudioSource& audioSource, AudioPlayer* audioPlayer) {
+    if (!audioPlayer) return;
+
+    int defaultFrames = AudioLoopConfig::FRAMES_PER_UPDATE;
+    int framesToGenerate = audioPlayer->calculateCursorChasingSamples(defaultFrames);
+
+    std::vector<float> buffer(framesToGenerate * 2);
+    int totalRead = 0;
+    api.ReadAudioBuffer(handle, buffer.data(), framesToGenerate, &totalRead);
+
+    if (totalRead > 0) {
+        audioPlayer->addToCircularBuffer(buffer.data(), totalRead);
+    }
+}
+
 } // anonymous namespace
 
 // ============================================================================
 // Unified Main Loop Implementation
-// Now uses IInputProvider and IPresentation for SRP compliance
 // ============================================================================
 
 int runUnifiedAudioLoop(
@@ -282,7 +239,7 @@ int runUnifiedAudioLoop(
     IAudioSource& audioSource,
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
-    IAudioRenderer& audioMode,
+    IAudioStrategy& audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
     telemetry::ITelemetryWriter* telemetryWriter)
@@ -291,17 +248,11 @@ int runUnifiedAudioLoop(
     TimingOps::LoopTimer timer;
 
     const double minSustainedRPM = 550.0;
-    double interactiveLoad = 0.1;
-    double baselineLoad = interactiveLoad;
-    bool wKeyPressed = false;
 
-    // Note: Starter motor is already enabled in runSimulation() before warmup phase
-    // This ensures the engine is running before warmup audio draining
     double throttle = getThrottle(inputProvider);
 
     config.logger->info(LogMask::BRIDGE, "runUnifiedAudioLoop starting simulation loop with %s mode", config.sineMode ? "SINE" : "ENGINE");
 
-    // Main loop
     while (shouldContinueLoop(currentTime, config.duration, inputProvider)) {
         checkStarterMotorRPM(handle, api, minSustainedRPM);
 
@@ -311,39 +262,43 @@ int runUnifiedAudioLoop(
         bool ignition = inputProvider ? inputProvider->GetIgnition() : true;
         api.SetIgnition(handle, ignition ? 1 : 0);
 
-        audioMode.updateSimulation(handle, api, audioPlayer);
-
+        // Update simulation via strategy (threaded mode updates here; sync-pull is no-op)
+        BufferContext* ctx = audioPlayer ? audioPlayer->getContext() : nullptr;
+        if (ctx) {
+            audioStrategy.updateSimulation(ctx, handle, api, AudioLoopConfig::UPDATE_INTERVAL * 1000.0);
+        }
 
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
 
-        // Update audio source with latest stats (needed for threaded sine mode)
         audioSource.updateStats(stats);
-        audioMode.generateAudio(audioSource, audioPlayer);
+
+        // For threaded mode: generate audio proactively and add to buffer
+        // For sync-pull mode: no generation needed (render callback handles it)
+        if (audioPlayer) {
+            generateAudioForThreadedMode(handle, api, audioSource, audioPlayer);
+        }
 
         int underrunCount = getUnderrunCount(audioPlayer);
 
-        // Write telemetry data
         writeTelemetry(telemetryWriter, stats, currentTime, throttle, ignition, underrunCount);
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
-        // Show audio source specific output (Frequency for sine, Flow for engine)
         audioSource.displayProgress(currentTime, config.duration, config.interactive, stats, throttle, underrunCount, audioPlayer);
 
-        // Maintain 60hz timing with sleeps :(
+        updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider);
+
         performTimingControl(timer);
     }
 
     return 0;
 }
 
-AudioPlayer *InitAudioPlayback(IAudioRenderer* audioMode, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, ILogging* logger) {
-    // This must happen AFTER the simulator is created and configured
-    auto* audioPlayer = new AudioPlayer(nullptr, logger);
+AudioPlayer* InitAudioPlayback(IAudioStrategy* strategy, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, ILogging* logger) {
+    auto* audioPlayer = new AudioPlayer(strategy, logger);
 
-    // Use the provided audioMode (DI - don't create a new one!)
-    bool initSuccess = audioPlayer->initialize(*audioMode, sampleRate, handle, &engineAPI);
+    bool initSuccess = audioPlayer->initialize(sampleRate, handle, &engineAPI);
 
     if (!initSuccess) {
         logger->error(LogMask::AUDIO, "Audio init failed");
@@ -353,54 +308,48 @@ AudioPlayer *InitAudioPlayback(IAudioRenderer* audioMode, int sampleRate, Engine
     return audioPlayer;
 }
 
-void StartAudioMode(IAudioRenderer* audioMode, EngineSimHandle handle, EngineSimAPI& engineAPI, AudioPlayer* audioPlayer) {
-    if (!audioMode) {
+void StartAudioMode(IAudioStrategy* strategy, EngineSimHandle handle, EngineSimAPI& engineAPI, AudioPlayer* audioPlayer) {
+    if (!strategy) {
         if (audioPlayer) {
             delete audioPlayer;
         }
         engineAPI.Destroy(handle);
-        throw std::runtime_error(std::string(ANSIColors::RED) + "ERROR: audioMode must be injected" + ANSIColors::RESET + "\n");
+        throw std::runtime_error(std::string(ANSIColors::RED) + "ERROR: audioStrategy must be injected" + ANSIColors::RESET + "\n");
     }
 
-    // Strategy pattern: Start audio thread based on audio mode
-    if (!audioMode->startAudioThread(handle, engineAPI, audioPlayer)) {
+    BufferContext* ctx = audioPlayer ? audioPlayer->getContext() : nullptr;
+    if (!strategy->startPlayback(ctx, handle, &engineAPI)) {
         if (audioPlayer) {
             delete audioPlayer;
         }
         engineAPI.Destroy(handle);
-        throw std::runtime_error("ERROR: Failed to start audio thread\n");
+        throw std::runtime_error("ERROR: Failed to start audio playback\n");
     }
 }
 
 // ============================================================================
-// Main Simulation Entry Point - UNIFIED for both modes
-// Now uses injectable IInputProvider and IPresentation
+// Main Simulation Entry Point
 // ============================================================================
 
 int runSimulation(
     const SimulationConfig& config,
     EngineSimAPI& engineAPI,
-    IAudioRenderer* audioMode,
+    IAudioStrategy* audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation) {
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
 
-    // Prepare script configuration (handles all mode priority and path validation)
     ScriptConfig scriptConfig = prepareScriptConfig(config);
     if (!scriptConfig.valid) {
         config.logger->error(LogMask::BRIDGE, "%s", scriptConfig.errorMessage.c_str());
         return 1;
     }
-    
-    // Show what we're loading (after validation)
+
     config.logger->info(LogMask::BRIDGE, "Loading simulator: %s%s%s", ANSIColors::CYAN.c_str(), config.sineMode ? "[SINE]" : scriptConfig.scriptPath.c_str(), ANSIColors::RESET.c_str());
 
-    // Create simulator
     EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
-    
-    // Set sineMode in config so bridge creates correct simulator type (DI at creation)
     engineConfig.sineMode = config.sineMode ? 1 : 0;
-    
+
     EngineSimHandle handle = nullptr;
 
     EngineSimResult result = engineAPI.Create(&engineConfig, &handle);
@@ -410,11 +359,9 @@ int runSimulation(
         return 1;
     }
 
-    // Load script (nullptr for sine mode since scriptPath will be empty)
     const char* scriptPathPtr = scriptConfig.scriptPath.empty() ? nullptr : scriptConfig.scriptPath.c_str();
     const char* assetBasePtr = scriptConfig.assetBasePath.empty() ? nullptr : scriptConfig.assetBasePath.c_str();
 
-    // DI: Inject logging interface into bridge
     EngineSimResult logResult = engineAPI.SetLogging(handle, config.logger);
     if (logResult != ESIM_SUCCESS) {
         config.logger->warning(LogMask::BRIDGE, "Failed to set logging: result=%d", logResult);
@@ -427,44 +374,40 @@ int runSimulation(
         return 1;
     }
 
-    // Initialize Audio framework and playback if requested
-    AudioPlayer* audioPlayer = InitAudioPlayback(audioMode, sampleRate, handle, engineAPI, config.logger);
+    AudioPlayer* audioPlayer = InitAudioPlayback(audioStrategy, sampleRate, handle, engineAPI, config.logger);
     if (!audioPlayer) {
         config.logger->error(LogMask::AUDIO, "Failed to initialize audio player");
         return 1;
     }
     audioPlayer->setVolume(config.volume);
-    StartAudioMode(audioMode, handle, engineAPI, audioPlayer);
-    audioMode->configure(config);
+    StartAudioMode(audioStrategy, handle, engineAPI, audioPlayer);
 
-    // CRITICAL: Enable starter motor BEFORE warmup phase
-    // Otherwise, warmup will hang because RenderOnDemand returns 0 frames (engine not running)
+    AudioStrategyConfig strategyConfig;
+    strategyConfig.sampleRate = sampleRate;
+    strategyConfig.channels = 2;
+    audioStrategy->configure(strategyConfig);
+
     enableStarterMotor(handle, engineAPI);
 
-    // REORDER: Warmup FIRST, then pre-fill buffer
-    // This ensures engine is warm when RenderOnDemand is called during pre-fill
-    // Check if drain is needed during warmup
-    bool drainDuringWarmup = config.playAudio && audioPlayer && audioMode->shouldDrainDuringWarmup();
+    bool drainDuringWarmup = config.playAudio && audioPlayer && audioStrategy->shouldDrainDuringWarmup();
     runWarmupPhase(handle, engineAPI, audioPlayer, drainDuringWarmup);
 
-    // Now pre-fill buffer with WARM engine
-    audioMode->prepareBuffer(audioPlayer);
+    // Prepare buffer via strategy (threaded: pre-fills, sync-pull: no-op)
+    BufferContext* ctx = audioPlayer->getContext();
+    audioStrategy->prepareBuffer(ctx);
 
-    // Reset buffer after warmup based on audio mode
-    audioMode->resetBufferAfterWarmup(audioPlayer);
-    
-    // Start playback based on audio mode
-    audioMode->startPlayback(audioPlayer);
+    // Reset buffer after warmup via strategy
+    audioStrategy->resetBufferAfterWarmup(ctx);
+
+    // Start AudioUnit playback via AudioPlayer
+    audioPlayer->start();
+
     std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI);
-    
-    // Run MAIN loop - now uses injectable input provider and presentation
-    // Some input providers enable ignition by default which will allow the engine to fire during the cranking phase otherwise it will crank endlessly huffing and puffing
-    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, config, audioPlayer, *audioMode, inputProvider, presentation, config.telemetryWriter);
-    
-    // EXIT
+
+    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, config, audioPlayer, *audioStrategy, inputProvider, presentation, config.telemetryWriter);
+
     cleanupSimulation(audioPlayer, handle, engineAPI, exitCode);
 
-    // If WAV export was requested, warn that it's not supported in unified mode (since it requires a different audio thread setup)
     warnWavExportNotSupported(config.outputWav, config.logger);
 
     return exitCode;

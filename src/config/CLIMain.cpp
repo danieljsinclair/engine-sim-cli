@@ -1,12 +1,11 @@
 // CLIMain.cpp - Main entry point implementation
-// Refactored with dependency injection
+// Uses IAudioStrategyFactory directly (no adapter layer)
 
 #include "CLIMain.h"
 
 #include "CLIconfig.h"
-#include "AudioPlayer.h"
-#include "audio/renderers/IAudioRenderer.h"
-#include "audio/adapters/StrategyAdapterFactory.h"  // New: Use adapter factory
+
+#include "audio/strategies/IAudioStrategy.h"
 #include "simulation/SimulationLoop.h"
 #include "input/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
@@ -50,7 +49,7 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
     config.interactive = args.interactive;
     config.duration = args.duration;
     config.showDiagnostics = true;
-    
+
     auto pres = std::make_unique<presentation::ConsolePresentation>();
     if (pres->Initialize(config)) {
         return pres.release();
@@ -61,12 +60,10 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
 } // anonymous namespace
 
 SimulationConfig CreateSimulationConfig(const CommandLineArgs& args, ILogging* logger) {
-    // Construct with logger (creates default if null)
     SimulationConfig config(logger);
 
-    // SRP: CLI just passes raw script path - Bridge handles path resolution
     config.configPath = args.engineConfig ? args.engineConfig : "";
-    config.assetBasePath = "";  // Empty - Bridge will derive from configPath
+    config.assetBasePath = "";
 
     config.duration = args.duration;
     config.interactive = args.interactive;
@@ -92,38 +89,32 @@ int main(int argc, char* argv[]) {
     std::cout << "Engine Simulator CLI v2.0\n";
     std::cout << "========================\n\n";
 
-    // Setup signal handler
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
-    // Create CLI logger for internal logging
     auto cliLogger = std::make_unique<ConsoleLogger>();
 
-    // Parse command line arguments
     CommandLineArgs args;
     if (!parseArguments(argc, argv, args)) {
         return 1;
     }
 
-    // Load engine-sim library dynamically
     EngineSimAPI engineAPI = {};
     ShowConfigHeader(args, engineAPI.GetVersion());
 
-    // SETUP simulator
     const int sampleRate = 44100;
     SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
 
-    // Create dependencies with logger injection
-    // Using StrategyAdapterFactory to bridge new IAudioStrategy to old IAudioRenderer interface
-    IAudioRenderer* audioRenderer = createStrategyAdapter(config.syncPull, cliLogger.get()).release();
+    // Create strategy via factory - no adapter, no IAudioRenderer
+    AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+    std::unique_ptr<IAudioStrategy> audioStrategy = IAudioStrategyFactory::createStrategy(mode, cliLogger.get());
+
     input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
     presentation::IPresentation* presentation = createPresentation(args);
 
-    // MAIN LOOP - runs the simulation with injected dependencies
-    int result = runSimulation(config, engineAPI, audioRenderer, inputProvider, presentation);
+    // Run simulation with IAudioStrategy directly
+    int result = runSimulation(config, engineAPI, audioStrategy.get(), inputProvider, presentation);
 
-    // Cleanup dependencies we injected
-    delete audioRenderer;
     delete inputProvider;
     delete presentation;
 

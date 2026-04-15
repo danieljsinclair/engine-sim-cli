@@ -5,7 +5,7 @@
 #include "audio/strategies/IAudioStrategy.h"
 #include "audio/strategies/ThreadedStrategy.h"
 #include "audio/strategies/SyncPullStrategy.h"
-#include "audio/state/StrategyContext.h"
+#include "audio/state/BufferContext.h"
 #include "audio/common/CircularBuffer.h"
 #include "AudioPlayer.h"
 #include "AudioTestHelpers.h"
@@ -22,7 +22,7 @@ protected:
     void SetUp() override {
         threadedStrategy = std::make_unique<ThreadedStrategy>();
         syncPullStrategy = std::make_unique<SyncPullStrategy>();
-        context = std::make_unique<StrategyContext>();
+        context = std::make_unique<BufferContext>();
     }
 
     void TearDown() override {
@@ -62,7 +62,7 @@ protected:
 
     std::unique_ptr<IAudioStrategy> threadedStrategy;
     std::unique_ptr<IAudioStrategy> syncPullStrategy;
-    std::unique_ptr<StrategyContext> context;
+    std::unique_ptr<BufferContext> context;
     std::unique_ptr<CircularBuffer> circularBuffer;  // Owns the circular buffer
 };
 

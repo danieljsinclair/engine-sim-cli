@@ -1,4 +1,4 @@
-// SyncPullStrategy.cpp - Lock-step audio strategy (NEW STATE MODEL)
+// SyncPullStrategy.cpp - Lock-step audio strategy
 // Implements synchronous audio generation where simulation advances with audio playback
 // SRP: Single responsibility - only implements synchronous lock-step rendering
 // OCP: New strategies can be added without modifying existing code
@@ -6,8 +6,7 @@
 
 #include "audio/strategies/SyncPullStrategy.h"
 #include "audio/strategies/IAudioStrategy.h"
-#include "audio/state/StrategyContext.h"
-#include "AudioPlayer.h"  // For AudioUnitContext forward declaration
+#include "audio/state/BufferContext.h"
 #include "ILogging.h"
 #include "config/ANSIColors.h"
 #include <sstream>
@@ -19,7 +18,6 @@
 
 SyncPullStrategy::SyncPullStrategy(ILogging* logger)
     : logger_(logger)
-    , audioUnitContext_(nullptr)
 {
 }
 
@@ -43,7 +41,7 @@ bool SyncPullStrategy::shouldDrainDuringWarmup() const {
 // Lifecycle Method Implementations
 // ============================================================================
 
-bool SyncPullStrategy::initialize(StrategyContext* context, const AudioStrategyConfig& config) {
+bool SyncPullStrategy::initialize(BufferContext* context, const AudioStrategyConfig& config) {
     if (!context) {
         if (logger_) {
             logger_->error(LogMask::AUDIO, "SyncPullStrategy::initialize: Invalid context");
@@ -51,12 +49,8 @@ bool SyncPullStrategy::initialize(StrategyContext* context, const AudioStrategyC
         return false;
     }
 
-    // Initialize audio state
     context->audioState.sampleRate = config.sampleRate;
     context->audioState.isPlaying = false;
-
-    // Sync-pull mode doesn't need circular buffer
-    // Audio is generated on-demand from engine simulator
 
     if (logger_) {
         logger_->info(LogMask::AUDIO,
@@ -67,17 +61,14 @@ bool SyncPullStrategy::initialize(StrategyContext* context, const AudioStrategyC
     return true;
 }
 
-void SyncPullStrategy::prepareBuffer(StrategyContext* context) {
-    // Sync-pull mode doesn't pre-fill buffer
-    // Audio is generated on-demand during render callback
-    (void)context;  // Suppress unused parameter warning
-
+void SyncPullStrategy::prepareBuffer(BufferContext* context) {
+    (void)context;
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "SyncPullStrategy::prepareBuffer: No-op for sync-pull mode");
     }
 }
 
-bool SyncPullStrategy::startPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+bool SyncPullStrategy::startPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
     if (!context) {
         if (logger_) {
             logger_->error(LogMask::AUDIO, "SyncPullStrategy::startPlayback: Invalid context");
@@ -85,10 +76,6 @@ bool SyncPullStrategy::startPlayback(StrategyContext* context, EngineSimHandle h
         return false;
     }
 
-    // Sync-pull mode doesn't need to start a thread
-    // Audio is generated on-demand during render callback
-
-    // Mark playback as started
     context->audioState.isPlaying.store(true);
 
     if (logger_) {
@@ -98,7 +85,7 @@ bool SyncPullStrategy::startPlayback(StrategyContext* context, EngineSimHandle h
     return true;
 }
 
-void SyncPullStrategy::stopPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+void SyncPullStrategy::stopPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
     if (!context) {
         if (logger_) {
             logger_->warning(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: Invalid context");
@@ -106,45 +93,33 @@ void SyncPullStrategy::stopPlayback(StrategyContext* context, EngineSimHandle ha
         return;
     }
 
-    // Sync-pull mode doesn't have a thread to stop
-    // Audio generation stops when render callbacks stop
-
-    // Mark playback as stopped
     context->audioState.isPlaying.store(false);
 
     if (logger_) {
         logger_->info(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: On-demand rendering stopped");
     }
 
-    (void)handle;  // Suppress unused parameter warning
-    (void)api;     // Suppress unused parameter warning
+    (void)handle;
+    (void)api;
 }
 
-void SyncPullStrategy::resetBufferAfterWarmup(StrategyContext* context) {
-    // Sync-pull mode doesn't have a buffer to reset
-    // Audio is generated on-demand during render callback
-    (void)context;  // Suppress unused parameter warning
-
+void SyncPullStrategy::resetBufferAfterWarmup(BufferContext* context) {
+    (void)context;
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "SyncPullStrategy::resetBufferAfterWarmup: No-op for sync-pull mode");
     }
 }
 
-void SyncPullStrategy::updateSimulation(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
+void SyncPullStrategy::updateSimulation(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
+    (void)context;
+    (void)handle;
+    (void)api;
+    (void)deltaTimeMs;
     // Sync-pull mode updates simulation during render callback
-    // No explicit simulation update needed in main loop
-    (void)context;  // Suppress unused parameter warning
-    (void)handle;   // Suppress unused parameter warning
-    (void)api;      // Suppress unused parameter warning
-    (void)deltaTimeMs;  // Suppress unused parameter warning
-
-    if (logger_) {
-        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::updateSimulation: No-op for sync-pull mode");
-    }
 }
 
 bool SyncPullStrategy::render(
-    StrategyContext* context,
+    BufferContext* context,
     AudioBufferList* ioData,
     UInt32 numberFrames
 ) {
@@ -162,17 +137,11 @@ bool SyncPullStrategy::render(
         return false;
     }
 
-    // Measure render time for real timing metrics
     auto callbackStart = std::chrono::high_resolution_clock::now();
 
-    // For sync-pull mode, we render audio on-demand from engine simulator
-    // Use the engine API to render audio directly
     int framesToGenerate = static_cast<int>(numberFrames);
     int framesRendered = 0;
 
-    // Loop until we get all requested frames
-    // RenderOnDemand may return fewer frames than requested if the synthesizer
-    // doesn't have enough audio buffered, so we need to keep calling it
     float* audioData = static_cast<float*>(ioData->mBuffers[0].mData);
     int remainingFrames = framesToGenerate;
 
@@ -185,7 +154,7 @@ bool SyncPullStrategy::render(
             &framesWritten
         );
 
-        if (result != 0) {  // ESIM_SUCCESS = 0
+        if (result != 0) {
             if (logger_) {
                 logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand failed (result=%d)", result);
             }
@@ -195,7 +164,6 @@ bool SyncPullStrategy::render(
         framesRendered += framesWritten;
         remainingFrames -= framesWritten;
 
-        // Safety: prevent infinite loop if we're not making progress
         if (framesWritten == 0 && remainingFrames > 0) {
             if (logger_) {
                 logger_->warning(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand returned 0 frames, breaking loop");
@@ -208,20 +176,13 @@ bool SyncPullStrategy::render(
     auto callbackEnd = std::chrono::high_resolution_clock::now();
     double renderMs = std::chrono::duration<double, std::milli>(callbackEnd - callbackStart).count();
 
-    // Constants for timing calculations
-    constexpr double BUFFER_PERIOD_MS = 16.0;  // 16ms hardware buffer period
-
-    // Calculate timing metrics
+    constexpr double BUFFER_PERIOD_MS = 16.0;
     double timeBudgetPct = (renderMs * 100.0) / BUFFER_PERIOD_MS;
     double headroomMs = BUFFER_PERIOD_MS - renderMs;
     double frameBudgetPct = 100.0 * framesRendered / framesToGenerate;
-
-    // For callback interval, use a reasonable estimate (4Hz = 250ms)
-    // In a real implementation, we'd track the actual callback intervals
     double callbackIntervalMs = 250.0;
-    double bufferTrendPct = 0.0;  // No buffer trend for sync-pull mode
+    double bufferTrendPct = 0.0;
 
-    // Store timing metrics for progress display
     lastRenderMs_.store(renderMs);
     lastHeadroomMs_.store(headroomMs);
     lastBudgetPct_.store(timeBudgetPct);
@@ -229,35 +190,26 @@ bool SyncPullStrategy::render(
     lastBufferTrendPct_.store(bufferTrendPct);
     lastCallbackIntervalMs_.store(callbackIntervalMs);
 
-    // Update AudioUnitContext metrics for legacy compatibility
-    // These are read by AudioSource::displayProgress() for SYNC-PULL output
-    if (audioUnitContext_) {
-        audioUnitContext_->lastReqFrames.store(framesToGenerate);
-        audioUnitContext_->lastGotFrames.store(framesRendered);
-        audioUnitContext_->lastRenderMs.store(renderMs);
-        audioUnitContext_->lastHeadroomMs.store(headroomMs);
-        audioUnitContext_->lastBudgetPct.store(timeBudgetPct);
-        audioUnitContext_->lastFrameBudgetPct.store(frameBudgetPct);
-        audioUnitContext_->lastBufferTrendPct.store(bufferTrendPct);
-        audioUnitContext_->lastCallbackIntervalMs.store(callbackIntervalMs);
-    }
+    // Also store in BufferContext diagnostics for consumers that read from there
+    context->diagnostics.lastRenderMs.store(renderMs);
+    context->diagnostics.lastHeadroomMs.store(headroomMs);
+    context->diagnostics.lastBudgetPct.store(timeBudgetPct);
+    context->diagnostics.lastFrameBudgetPct.store(frameBudgetPct);
 
     return true;
 }
 
 bool SyncPullStrategy::AddFrames(
-    StrategyContext* context,
+    BufferContext* context,
     float* buffer,
     int frameCount
 ) {
-    // For sync-pull mode, AddFrames is a no-op since audio is
-    // generated on-demand by the engine simulator.
-    (void)context;  // Suppress unused parameter warning
-    (void)buffer;  // Suppress unused parameter warning
-    (void)frameCount;  // Suppress unused parameter warning
+    (void)context;
+    (void)buffer;
+    (void)frameCount;
 
     if (logger_) {
-        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::AddFrames: Called but no-op for sync-pull mode");
+        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::AddFrames: No-op for sync-pull mode");
     }
     return true;
 }
@@ -273,23 +225,18 @@ std::string SyncPullStrategy::getDiagnostics() const {
 }
 
 std::string SyncPullStrategy::getProgressDisplay() const {
-    // Get real timing metrics
     double renderMs = lastRenderMs_.load();
     double headroomMs = lastHeadroomMs_.load();
     double timeBudgetPct = lastBudgetPct_.load();
-    double frameBudgetPct = lastFrameBudgetPct_.load();
     double bufferTrendPct = lastBufferTrendPct_.load();
     double callbackIntervalMs = lastCallbackIntervalMs_.load();
 
-    // Calculate callback rate and fps
     double callbackRateHz = (callbackIntervalMs > 0.0) ? (1000.0 / callbackIntervalMs) : 0.0;
-    double generatingFps = (callbackIntervalMs > 0.0) ? (callbackRateHz * 100.0) : 0.0;  // frames per second
+    double generatingFps = (callbackIntervalMs > 0.0) ? (callbackRateHz * 100.0) : 0.0;
 
-    // Color code based on metrics
     std::string budgetColor = ANSIColors::getDispositionColour(timeBudgetPct < 80, timeBudgetPct < 100);
     std::string trendColor = ANSIColors::getDispositionColour(bufferTrendPct >= 0, bufferTrendPct < 0, bufferTrendPct < -1.0);
 
-    // Build progress display string
     std::ostringstream output;
     output << "[SYNC-PULL] rendered=" << std::fixed << std::setprecision(1) << renderMs << "ms"
            << " headroom=" << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms"
@@ -301,17 +248,14 @@ std::string SyncPullStrategy::getProgressDisplay() const {
     return output.str();
 }
 
-void SyncPullStrategy::configure(const ::AudioStrategyConfig& config) {
-    // Sync pull strategy doesn't need pre-fill configuration
-    // The buffer is filled on-demand from the simulator
-    (void)config;  // Suppress unused parameter warning
+void SyncPullStrategy::configure(const AudioStrategyConfig& config) {
+    (void)config;
     if (logger_) {
         logger_->info(LogMask::AUDIO, "SyncPullStrategy configured: No pre-fill buffer");
     }
 }
 
 void SyncPullStrategy::reset() {
-    // Sync pull strategy doesn't have much state to reset
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "SyncPullStrategy reset: No-op for sync-pull mode");
     }
@@ -319,8 +263,4 @@ void SyncPullStrategy::reset() {
 
 std::string SyncPullStrategy::getModeString() const {
     return "Sync-pull (lock-step) mode";
-}
-
-void SyncPullStrategy::setAudioUnitContext(struct AudioUnitContext* audioUnitContext) {
-    audioUnitContext_ = audioUnitContext;
 }

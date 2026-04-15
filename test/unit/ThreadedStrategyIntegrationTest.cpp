@@ -5,7 +5,7 @@
 
 #include "audio/strategies/ThreadedStrategy.h"
 #include "audio/strategies/SyncPullStrategy.h"
-#include "audio/state/StrategyContext.h"
+#include "audio/state/BufferContext.h"
 #include "audio/common/CircularBuffer.h"
 #include "../mocks/MockDataSimulator.h"
 #include "../mocks/MockAudioUnit.h"
@@ -29,7 +29,7 @@ protected:
         // logger_ = nullptr;  // Commented out to avoid potential issues
 
         // Create strategy context
-        context_ = std::make_unique<StrategyContext>();
+        context_ = std::make_unique<BufferContext>();
 
         // Initialize circular buffer for threaded mode
         circularBuffer_ = std::make_unique<CircularBuffer>();
@@ -119,7 +119,7 @@ protected:
 
     std::unique_ptr<ConsoleLogger> logger_;
     // std::unique_ptr<MockDataSimulator> mockSimulator_;  // Not used in basic tests
-    std::unique_ptr<StrategyContext> context_;
+    std::unique_ptr<BufferContext> context_;
     std::unique_ptr<CircularBuffer> circularBuffer_;
     std::unique_ptr<ThreadedStrategy> strategy_;
 };
@@ -465,7 +465,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_DifferentOutputFromSync
     auto syncPullStrategy = std::make_unique<SyncPullStrategy>(logger_.get());
 
     // Create separate context for SyncPullStrategy
-    auto syncPullContext = std::make_unique<StrategyContext>();
+    auto syncPullContext = std::make_unique<BufferContext>();
     syncPullContext->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
     syncPullContext->audioState.isPlaying = false;
     syncPullContext->engineHandle = nullptr;  // No mock simulator for basic tests

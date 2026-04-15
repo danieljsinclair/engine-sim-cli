@@ -1,12 +1,11 @@
 // ThreadedStrategy.cpp - Cursor-chasing audio strategy (NEW STATE MODEL)
-// Implements IAudioStrategy using new StrategyContext state model
+// Implements IAudioStrategy using BufferContext state model
 // SRP: Single responsibility - only implements threaded cursor-chasing rendering
 // OCP: New strategies can be added without modifying existing code
 // DIP: Depends on state abstractions, not concrete implementations
 
 #include "audio/strategies/ThreadedStrategy.h"
 #include "ILogging.h"
-#include "config/ANSIColors.h"
 
 #include <cstring>
 #include <algorithm>
@@ -43,7 +42,7 @@ bool ThreadedStrategy::shouldDrainDuringWarmup() const {
 // Lifecycle Method Implementations
 // ============================================================================
 
-bool ThreadedStrategy::initialize(StrategyContext* context, const AudioStrategyConfig& config) {
+bool ThreadedStrategy::initialize(BufferContext* context, const AudioStrategyConfig& config) {
     if (!context) {
         if (logger_) {
             logger_->error(LogMask::AUDIO, "ThreadedStrategy::initialize: Invalid context");
@@ -87,7 +86,7 @@ bool ThreadedStrategy::initialize(StrategyContext* context, const AudioStrategyC
     return true;
 }
 
-void ThreadedStrategy::prepareBuffer(StrategyContext* context) {
+void ThreadedStrategy::prepareBuffer(BufferContext* context) {
     if (!context || !context->circularBuffer) {
         if (logger_) {
             logger_->warning(LogMask::AUDIO, "ThreadedStrategy::prepareBuffer: Invalid context or buffer");
@@ -113,7 +112,7 @@ void ThreadedStrategy::prepareBuffer(StrategyContext* context) {
     }
 }
 
-bool ThreadedStrategy::startPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+bool ThreadedStrategy::startPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
     if (!context) {
         if (logger_) {
             logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Invalid context");
@@ -147,7 +146,7 @@ bool ThreadedStrategy::startPlayback(StrategyContext* context, EngineSimHandle h
     return true;
 }
 
-void ThreadedStrategy::stopPlayback(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
+void ThreadedStrategy::stopPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
     if (!context) {
         if (logger_) {
             logger_->warning(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Invalid context");
@@ -172,7 +171,7 @@ void ThreadedStrategy::stopPlayback(StrategyContext* context, EngineSimHandle ha
     }
 }
 
-void ThreadedStrategy::resetBufferAfterWarmup(StrategyContext* context) {
+void ThreadedStrategy::resetBufferAfterWarmup(BufferContext* context) {
     if (!context || !context->circularBuffer) {
         if (logger_) {
             logger_->warning(LogMask::AUDIO, "ThreadedStrategy::resetBufferAfterWarmup: Invalid context or buffer");
@@ -192,7 +191,7 @@ void ThreadedStrategy::resetBufferAfterWarmup(StrategyContext* context) {
     }
 }
 
-void ThreadedStrategy::updateSimulation(StrategyContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
+void ThreadedStrategy::updateSimulation(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
     if (!context) {
         if (logger_) {
             logger_->warning(LogMask::AUDIO, "ThreadedStrategy::updateSimulation: Invalid context");
@@ -215,7 +214,7 @@ void ThreadedStrategy::updateSimulation(StrategyContext* context, EngineSimHandl
 }
 
 bool ThreadedStrategy::render(
-    StrategyContext* context,
+    BufferContext* context,
     AudioBufferList* ioData,
     UInt32 numberFrames
 ) {
@@ -266,7 +265,7 @@ bool ThreadedStrategy::render(
 }
 
 bool ThreadedStrategy::AddFrames(
-    StrategyContext* context,
+    BufferContext* context,
     float* buffer,
     int frameCount
 ) {
@@ -348,7 +347,7 @@ std::string ThreadedStrategy::getModeString() const {
 // Private Helper Methods
 // ============================================================================
 
-int ThreadedStrategy::getAvailableFrames(const StrategyContext* context) const {
+int ThreadedStrategy::getAvailableFrames(const BufferContext* context) const {
     if (!context || !context->circularBuffer) {
         return 0;
     }
@@ -358,7 +357,7 @@ int ThreadedStrategy::getAvailableFrames(const StrategyContext* context) const {
 }
 
 void ThreadedStrategy::updateDiagnostics(
-    StrategyContext* context,
+    BufferContext* context,
     int availableFrames,
     int requestedFrames
 ) {

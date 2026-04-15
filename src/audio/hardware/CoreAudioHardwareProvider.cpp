@@ -3,11 +3,8 @@
 // Thread-safe callback handling with proper resource management
 
 #include "audio/hardware/CoreAudioHardwareProvider.h"
-#include "AudioPlayer.h"  // For AudioUnitContext
-#include "config/ANSIColors.h"
 
 #include <cstring>
-#include <stdexcept>
 #include <AudioUnit/AudioComponent.h>
 #include <AudioUnit/AudioUnit.h>
 
@@ -51,6 +48,13 @@ bool CoreAudioHardwareProvider::initialize(const AudioStreamFormat& format) {
     // Register callback
     if (!registerCallbackWithAudioUnit()) {
         logger_->error(LogMask::AUDIO, "Failed to register audio callback");
+        return false;
+    }
+
+    // Initialize AudioUnit (required before AudioOutputUnitStart)
+    OSStatus initStatus = AudioUnitInitialize(audioUnit);
+    if (initStatus != noErr) {
+        logCoreAudioError("AudioUnitInitialize", initStatus, nullptr);
         return false;
     }
 

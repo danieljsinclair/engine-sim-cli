@@ -17,6 +17,13 @@ add_executable(integration_tests
     ../../src/AudioPlayer.cpp
     ../../src/AudioSource.cpp
     ../../src/config/ANSIColors.cpp
+    # Audio strategies
+    ../../src/audio/strategies/IAudioStrategyFactory.cpp
+    ../../src/audio/strategies/ThreadedStrategy.cpp
+    ../../src/audio/strategies/SyncPullStrategy.cpp
+    # Audio hardware providers
+    ../../src/audio/hardware/CoreAudioHardwareProvider.cpp
+    ../../src/audio/hardware/AudioHardwareProviderFactory.cpp
 )
 
 target_link_libraries(integration_tests

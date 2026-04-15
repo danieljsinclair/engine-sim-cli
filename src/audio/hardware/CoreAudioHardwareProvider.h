@@ -15,7 +15,7 @@
 #include <memory>
 
 // Forward declarations
-class AudioUnitContext;
+struct BufferContext;
 
 /**
  * CoreAudioHardwareProvider - macOS CoreAudio implementation of IAudioHardwareProvider
@@ -87,7 +87,7 @@ private:
     // ================================================================
 
     AudioCallback audioCallback_;     // Registered audio callback
-    AudioUnitContext* context_;        // Context passed to callback
+    BufferContext* context_;           // Context passed to callback
 
     // ================================================================
     // Private Helper Methods

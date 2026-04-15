@@ -1,7 +1,7 @@
 // DebugTest.cpp - Simple debug test to isolate the hanging issue
 
 #include "audio/strategies/ThreadedStrategy.h"
-#include "audio/state/StrategyContext.h"
+#include "audio/state/BufferContext.h"
 #include "audio/common/CircularBuffer.h"
 #include "../mocks/MockDataSimulator.h"
 #include "AudioTestConstants.h"
@@ -23,8 +23,8 @@ TEST(DebugTest, SimpleInitialization) {
     std::cout << "CircularBuffer initialized..." << std::endl;
 
     // Create strategy context
-    auto context = std::make_unique<StrategyContext>();
-    std::cout << "StrategyContext created..." << std::endl;
+    auto context = std::make_unique<BufferContext>();
+    std::cout << "BufferContext created..." << std::endl;
 
     context->circularBuffer = circularBuffer.get();
     std::cout << "CircularBuffer assigned to context..." << std::endl;
@@ -67,8 +67,8 @@ TEST(DebugTest, InitializationWithMockSimulator) {
     std::cout << "CircularBuffer initialized..." << std::endl;
 
     // Create strategy context
-    auto context = std::make_unique<StrategyContext>();
-    std::cout << "StrategyContext created..." << std::endl;
+    auto context = std::make_unique<BufferContext>();
+    std::cout << "BufferContext created..." << std::endl;
 
     context->circularBuffer = circularBuffer.get();
     std::cout << "CircularBuffer assigned to context..." << std::endl;

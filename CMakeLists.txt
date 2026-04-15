@@ -1,5 +1,3 @@
-# This file replaces CMakeLists.txt with the refactored version
-
 cmake_minimum_required(VERSION 3.20)
 project(engine-sim-cli VERSION 1.0.0 LANGUAGES C CXX)
 
@@ -12,18 +10,15 @@ find_package(Threads REQUIRED)
 
 # Platform-specific audio libraries
 if(APPLE)
-    # macOS/iOS: Use CoreAudio AudioQueue (built-in framework)
     set(AUDIO_LIBRARY "-framework AudioToolbox -framework CoreAudio -framework CoreFoundation")
 else()
     message(FATAL_ERROR "engine-sim-cli only supports macOS with AudioQueue. Linux/Windows support has been removed.")
 endif()
 
 # Add engine-sim-bridge submodule
-# The bridge now handles engine-sim as its own nested submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 
 # CLI executable - refactored into modular folder structure
-# Organized by concern: config, simulation, presentation, input, logging, audio, bridge
 add_executable(engine-sim-cli
     # Config layer
     src/config/CLIconfig.cpp
@@ -37,19 +32,16 @@ add_executable(engine-sim-cli
     # Input layer
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
-    # Audio layer (refactored: consolidated renderer implementations)
+    # Audio layer
     src/audio/common/CircularBuffer.cpp
-    # Audio strategies (new: IAudioStrategy interface implementations)
+    # Audio strategies
     src/audio/strategies/IAudioStrategyFactory.cpp
     src/audio/strategies/ThreadedStrategy.cpp
     src/audio/strategies/SyncPullStrategy.cpp
-    # Audio hardware providers (new: IAudioHardwareProvider interface implementations)
-    src/audio/hardware/IAudioHardwareProvider.h
+    # Audio hardware providers
     src/audio/hardware/CoreAudioHardwareProvider.cpp
     src/audio/hardware/AudioHardwareProviderFactory.cpp
-    # Audio adapters (bridge new architecture to old interface)
-    src/audio/adapters/StrategyAdapter.cpp
-    # Legacy files (AudioPlayer and AudioSource still needed)
+    # Audio player and source
     src/AudioPlayer.cpp
     src/AudioSource.cpp
 )
@@ -79,8 +71,6 @@ if(APPLE)
 endif()
 
 # Post-build: Copy engine-sim libraries from bridge build directory
-# Bridge builds both engine-sim-bridge (self-contained dependency)
-# Parent just copies what it needs - no intrinsic knowledge of bridge internals
 add_custom_command(TARGET engine-sim-cli POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -89,14 +79,12 @@ add_custom_command(TARGET engine-sim-cli POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_BINARY_DIR}/engine-sim-bridge/libenginesim.1.dylib
         ${CMAKE_BINARY_DIR}/libenginesim.1.dylib
-    # Copy engine-sim assets so bridge can find them when running from build dir
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim
         ${CMAKE_BINARY_DIR}/engine-sim-bridge/engine-sim
     COMMENT "Copying engine-sim libraries from bridge build directory"
 )
 
-# Ensure engine-sim-bridge and dependencies are built before engine-sim-cli
 add_dependencies(engine-sim-cli engine-sim-bridge)
 
 # Installation
@@ -106,12 +94,9 @@ install(TARGETS engine-sim-cli
 
 # -----------------------------------------------------------------------------
 # Tests
-# Bridge owns its own tests (BridgeUnitTests); CLI owns its own tests (smoke_tests)
-# `make test` from CLI runs both; `make run_tests` shows real-time output
 # -----------------------------------------------------------------------------
 option(BUILD_TESTS "Build engine-sim-cli unit tests" ON)
 if(BUILD_TESTS)
-    # Download GoogleTest if not found
     include(FetchContent)
     FetchContent_Declare(
         googletest
@@ -119,18 +104,13 @@ if(BUILD_TESTS)
         GIT_TAG release-1.12.1
     )
 
-    # For Windows: Prevent overriding parent project's compiler/linker settings
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
 
-    # Enable testing
     enable_testing()
 
-    # Add CLI smoke tests
     add_subdirectory(test)
 
-    # Custom 'run_tests' target: runs all tests with real-time output
-    # Bridge tests its own code; CLI tests its own code
     add_custom_target(run_tests
         DEPENDS engine-sim-cli smoke_tests bridge_unit_tests
         COMMAND ${CMAKE_COMMAND} -E echo "=== Bridge Unit Tests ==========================================="

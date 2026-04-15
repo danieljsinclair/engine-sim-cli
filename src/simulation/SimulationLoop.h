@@ -4,16 +4,13 @@
 #ifndef SIMULATION_LOOP_H
 #define SIMULATION_LOOP_H
 
-#include "config/CLIconfig.h"
 #include "engine_sim_bridge.h"
 #include "simulation/EngineConfig.h"
 #include "bridge/engine_sim_loader.h"
 
-#include <memory>
-
 class AudioPlayer;
 class IAudioSource;
-class IAudioRenderer;
+class IAudioStrategy;
 
 // Forward declarations for injectable interfaces
 namespace input { class IInputProvider; }
@@ -23,52 +20,44 @@ namespace telemetry { class ITelemetryWriter; }
 
 // ============================================================================
 // SimulationConfig - Minimal config for simulation (OCP compliance)
-// Only contains what runSimulation needs, not CLI args
 // ============================================================================
 
 class SimulationConfig {
 public:
-    // Constructor ensures logger is never null (creates default if needed)
-    // Other members are initialized to defaults
     explicit SimulationConfig(ILogging* logger = nullptr);
 
-    // Not copyable due to std::unique_ptr<IAudioRenderer> member
     SimulationConfig(const SimulationConfig&) = delete;
     SimulationConfig& operator=(const SimulationConfig&) = delete;
 
-    // Movable
     SimulationConfig(SimulationConfig&&) = default;
     SimulationConfig& operator=(SimulationConfig&&) = default;
 
-    // Public members (for convenient initialization)
-    std::string configPath;           // Engine config path
-    std::string assetBasePath;        // Asset base path
+    // Public members
+    std::string configPath;
+    std::string assetBasePath;
     double duration = 3.0;
     bool interactive = false;
     bool playAudio = false;
     float volume = 1.0f;
-    bool sineMode = false;             // Generate sine wave test tone
-    bool syncPull = true;              // Use sync pull audio mode
+    bool sineMode = false;
+    bool syncPull = true;
     double targetRPM = 0.0;
     double targetLoad = -1.0;
     bool useDefaultEngine = false;
     const char* outputWav = nullptr;
-    int simulationFrequency = 10000;  // Physics Hz - lower for faster sync-pull
-    int preFillMs = 50;  // Pre-fill buffer ms for sync-pull mode
+    int simulationFrequency = 10000;
+    int preFillMs = 50;
 
-    std::unique_ptr<IAudioRenderer> audioMode;  // Injected - OCP compliance
-    ILogging* logger;                       // Never null (guaranteed by constructor)
-    telemetry::ITelemetryWriter* telemetryWriter = nullptr;  // Injected - DI compliance
+    ILogging* logger;
+    telemetry::ITelemetryWriter* telemetryWriter = nullptr;
 
 private:
-    // Default logger instance (used when none provided)
     static ConsoleLogger& defaultLogger();
 };
 
 // ============================================================================
-// Unified Main Loop - Works for BOTH sine and engine modes
-// Uses Strategy pattern for audio mode behavior
-// Injects IInputProvider and IPresentation for SRP compliance
+// Main simulation entry point
+// Dependencies injected: strategy, inputProvider, presentation
 // ============================================================================
 
 int runUnifiedAudioLoop(
@@ -77,14 +66,10 @@ int runUnifiedAudioLoop(
     IAudioSource& audioSource,
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
-    IAudioRenderer& audioMode,
+    IAudioStrategy& audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
     telemetry::ITelemetryWriter* telemetryWriter);
-
-// ============================================================================
-// Engine Loader Result - Wraps loaded engine for dependency injection
-// ============================================================================
 
 struct EngineLoaderResult {
     EngineSimHandle handle = nullptr;
@@ -93,16 +78,10 @@ struct EngineLoaderResult {
     bool success = false;
 };
 
-
-// ============================================================================
-// Main Simulation Entry Point - UNIFIED for both modes
-// Dependencies injected: audioPlayer, audioMode, inputProvider, presentation
-// ============================================================================
-
 int runSimulation(
     const SimulationConfig& config,
     EngineSimAPI& engineAPI,
-    IAudioRenderer* audioMode,
+    IAudioStrategy* audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation
 );
