@@ -275,7 +275,7 @@ int runUnifiedAudioLoop(
 
         // For threaded mode: generate audio proactively and add to buffer
         // For sync-pull mode: no generation needed (render callback handles it)
-        if (audioPlayer) {
+        if (audioPlayer && audioStrategy.needsMainThreadAudioGeneration()) {
             generateAudioForThreadedMode(handle, api, audioSource, audioPlayer);
         }
 

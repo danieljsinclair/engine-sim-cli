@@ -1,151 +1,95 @@
 # ARCH-002: ITelemetryProvider Interface Design and Implementation
 
 **Priority:** P1 - High Priority
-**Status:** 🟡 Ready for Implementation
+**Status:** PARTIALLY COMPLETE -- interface exists as `ITelemetryWriter`, no concrete implementation
 **Assignee:** @tech-architect
 **Reviewer:** @test-architect, @product-owner
 
 ## Overview
 
-Design and implement ITelemetryProvider interface to separate telemetry concerns from logging. This provides clean abstraction for telemetry data production and consumption, enabling future TMUX presentation and cross-platform telemetry support.
+Design and implement a telemetry interface to separate telemetry concerns from logging. This provides clean abstraction for telemetry data production and consumption, enabling future TMUX presentation and cross-platform telemetry support.
 
-## Problem Statement
+## Problem Statement (Original)
 
-Current implementation mixes logging and telemetry concerns. There's no clean abstraction for:
-- Telemetry data production (bridge)
-- Telemetry data storage
-- Telemetry data consumption (presentation)
+Previous implementation mixed logging and telemetry concerns with no clean abstraction for telemetry data production, storage, or consumption. This violated SRP and made it difficult to implement different telemetry consumers (CLI, TMUX, etc.).
 
-This violates Single Responsibility Principle and makes it difficult to implement different telemetry consumers (CLI, TMUX, etc.).
+## As-Is State (Current Codebase)
 
-## Objectives
+### What Exists
+- `telemetry::ITelemetryWriter` -- forward-declared in `src/simulation/SimulationLoop.h`
+- Used in `SimulationLoop.cpp` via `#include "ITelemetryProvider.h"`
+- `SimulationConfig` has a `telemetry::ITelemetryWriter* telemetryWriter = nullptr` member
+- `writeTelemetry()` function in `SimulationLoop.cpp` writes `TelemetryData` structs to the writer
+- `runUnifiedAudioLoop()` accepts `telemetry::ITelemetryWriter*` parameter
 
-1. **Interface Design**: Create `ITelemetryProvider` interface for telemetry data access
-2. **Separation of Concerns**: Separate telemetry from logging (ILogging)
-3. **Thread-Safe Storage**: In-memory telemetry storage that's thread-safe
-4. **Bridge Integration**: Bridge produces telemetry/stats
-5. **Future-Ready**: Enable TMUX presentation and cross-platform telemetry
+### What Does NOT Exist
+- No concrete implementation of `ITelemetryWriter` in the source tree
+- No `ITelemetryProvider` interface (the original proposal name)
+- No `TelemetryData` struct definition visible in headers (likely in the `ITelemetryProvider.h` include)
+- No in-memory telemetry storage
+- No thread-safe telemetry collection
 
-## Acceptance Criteria
-
-### Interface Design
-- [ ] Create `ITelemetryProvider` interface with focused methods
-- [ ] Define telemetry data structures (stats, events, metrics)
-- [ ] Thread-safe API design
-- [ ] Clear separation from ILogging interface
-
-### Implementation
-- [ ] Implement in-memory telemetry storage
-- [ ] Thread-safe operations (atomic or mutex-protected)
-- [ ] Performance-conscious design (no blocking on main audio thread)
-- [ ] Memory-bounded (unbounded growth prevention)
-
-### Bridge Integration
-- [ ] Bridge produces telemetry data via ITelemetryProvider
-- [ ] Bridge integration doesn't impact audio performance
-- [ ] Telemetry production is optional (can be disabled)
-- [ ] Minimal overhead for telemetry collection
-
-### Testing
-- [ ] `make test` passes completely
-- [ ] Thread safety tests pass
-- [ ] Performance tests verify no audio thread impact
-- [ ] Memory bounds tests verify no unbounded growth
-- [ ] Test architect review passes
-
-### Documentation
-- [ ] ITelemetryProvider interface documented
-- [ ] TELEMETRY_ARCHITECTURE.md updated
-- [ ] Usage examples provided
-- [ ] Thread-safety guarantees documented
-
-## Technical Approach
-
-### Interface Design
-```cpp
-// Telemetry data structures
-struct AudioMetrics {
-    uint64_t framesRendered;
-    uint64_t bufferUnderruns;
-    float averageLatencyMs;
-    // ... other metrics
-};
-
-struct TelemetryEvent {
-    std::chrono::system_clock::time_point timestamp;
-    std::string category;
-    std::string message;
-};
-
-// Interface
-class ITelemetryProvider {
-public:
-    virtual ~ITelemetryProvider() = default;
-
-    // Metrics
-    virtual void recordMetric(const std::string& name, double value) = 0;
-    virtual AudioMetrics getAudioMetrics() const = 0;
-
-    // Events
-    virtual void logEvent(const TelemetryEvent& event) = 0;
-    virtual std::vector<TelemetryEvent> getRecentEvents(size_t limit = 100) const = 0;
-
-    // Lifecycle
-    virtual void reset() = 0;
-    virtual bool isEnabled() const = 0;
-};
+### Current Data Flow
+```
+SimulationLoop::runUnifiedAudioLoop()
+  -> writeTelemetry(telemetryWriter, stats, ...)
+     -> telemetryWriter->write(data)  // No-op when telemetryWriter is nullptr
 ```
 
-### Implementation Approach
-- In-memory storage with fixed-size buffers
-- Lock-free or minimal-locking design for performance
-- Separate queues for events to prevent audio thread blocking
-- Optional collection (disabled by default for production)
+In `CLIMain.cpp`, `telemetryWriter` is never set (always `nullptr`), so telemetry is effectively disabled.
 
-### Bridge Integration
-- Bridge owns ITelemetryProvider instance
-- Bridge methods call telemetry recording
-- Minimal overhead (function call overhead only when enabled)
-- No impact on audio thread when disabled
+### Gaps from Original Design
+1. The interface is called `ITelemetryWriter` not `ITelemetryProvider` -- narrower scope
+2. No `recordMetric()` or `getAudioMetrics()` methods -- only `write(TelemetryData)`
+3. No event system for telemetry
+4. No in-memory storage or retrieval API
+5. No concrete implementation exists
 
-## Dependencies
+## To-Be State
 
-- Phase 6: IAudioStrategy consolidation (blocking)
-- Bridge refactoring to integrate telemetry
+### Remaining Work
+1. **Locate/consolidate `ITelemetryProvider.h`** -- the file is included but its location relative to src/ is unclear
+2. **Create concrete `TelemetryWriter` implementation** or decide this is deferred
+3. **Wire `telemetryWriter` in `CLIMain.cpp`** if concrete implementation is created
+4. **Consider expanding** to the richer `ITelemetryProvider` design if TMUX/UI needs require it
 
-## Risk Assessment
+### Assessment
+The telemetry plumbing (interface, data flow) is in place in `SimulationLoop`, but no concrete implementation exists. The current `ITelemetryWriter` is a simpler write-only interface compared to the original `ITelemetryProvider` proposal. This may be intentional -- a minimal viable interface.
 
-**Medium Risk:**
-- Thread-safety bugs in telemetry storage
-- Performance impact on audio thread
-- Memory exhaustion from unbounded telemetry growth
+## Acceptance Criteria Status
 
-**Mitigation:**
-- Test architect review required for thread-safety
-- Performance tests for audio thread impact
-- Fixed-size buffers and rotation policies
-- Disable telemetry by default in production builds
+### Interface Design
+- [x] `ITelemetryWriter` interface exists (simpler than proposed `ITelemetryProvider`)
+- [x] `TelemetryData` struct used in `writeTelemetry()`
+- [x] Thread-safe API design (pointer passed to simulation loop)
+- [x] Clear separation from ILogging interface
+- [ ] Rich metrics API (`recordMetric`, `getAudioMetrics`) -- NOT implemented
 
-## Definition of Done
+### Implementation
+- [ ] Concrete `ITelemetryWriter` implementation -- NOT created
+- [ ] In-memory telemetry storage -- NOT created
+- [ ] Memory-bounded storage -- NOT created
 
-- [ ] All acceptance criteria met
-- [ ] `make test` passes completely
-- [ ] Performance tests show no audio thread degradation
-- [ ] Documentation updated
-- [ ] Code review approved by @tech-architect and @test-architect
-- [ ] @product-owner final approval
+### Integration
+- [x] Simulation loop accepts `ITelemetryWriter*` parameter
+- [x] Telemetry is optional (nullptr check in `writeTelemetry()`)
+- [x] No impact on audio thread (telemetry written from main loop)
+- [ ] Wired in CLIMain (always nullptr currently)
+
+### Testing
+- [ ] Thread safety tests -- N/A (no implementation yet)
+- [ ] Memory bounds tests -- N/A (no implementation yet)
 
 ## References
 
-- `/Users/danielsinclair/vscode/escli.refac7/docs/TELEMETRY_ARCHITECTURE.md`
-- `/Users/danielsinclair/vscode/escli.refac7/docs/AUDIO_MODULE_ARCHITECTURE.md`
+- `/Users/danielsinclair/vscode/escli.refac7/src/simulation/SimulationLoop.h` -- forward declaration
+- `/Users/danielsinclair/vscode/escli.refac7/src/simulation/SimulationLoop.cpp` -- usage
+- `/Users/danielsinclair/vscode/escli.refac7/src/config/CLIMain.cpp` -- entry point (telemetryWriter = nullptr)
 
 ---
 
 **Created:** 2026-04-08
-**Last Updated:** 2026-04-08
-**Estimate:** 1-2 days
-
-## Status: ✅ DONE (Production Ready)
+**Last Updated:** 2026-04-15
+**Estimate:** 1-2 days (interface), additional for implementation
 
 

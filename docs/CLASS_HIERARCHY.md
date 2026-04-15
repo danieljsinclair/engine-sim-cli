@@ -1,279 +1,224 @@
 # Class Hierarchy Diagram
 ## Complete Relationship Map of All Classes
 
+**Last Updated:** 2026-04-15
+**Status:** Reflects current codebase state (post ARCH-001/003/004 completion)
+
 ---
 
 ## Inheritance Hierarchy
 
 ```
-IAudioRenderer (Interface)
-    ↑
-    │
-    ├─► ThreadedRenderer
-    │
-    └─► SyncPullRenderer
-
-
 IAudioStrategy (Interface)
-    ↑
-    │
-    ├─► ThreadedStrategy
-    │
-    └─► SyncPullStrategy
-
-
-IPresentation (Interface)
-    ↑
-    │
-    └─► ConsolePresentation
-
-
-IInputProvider (Interface)
-    ↑
-    │
-    └─► KeyboardInputProvider
-
-
-IAudioSource (Interface)
-    ↑
-    │
-    └─► BridgeAudioSource
+    |
+    +-- ThreadedStrategy (cursor-chasing mode with circular buffer)
+    |
+    +-- SyncPullStrategy (lock-step mode with on-demand rendering)
 
 
 IAudioHardwareProvider (Interface)
-    ↑
-    │
-    └─► CoreAudioHardwareProvider
+    |
+    +-- CoreAudioHardwareProvider (macOS CoreAudio AudioUnit wrapper)
+
+
+IPresentation (Interface)
+    |
+    +-- ConsolePresentation
+
+
+IInputProvider (Interface)
+    |
+    +-- KeyboardInputProvider
+
+
+IAudioSource (Interface, in src/AudioSource.h)
+    |
+    +-- BaseAudioSource
+        |
+        +-- EngineAudioSource
+
+
+audio::IAudioSource (Interface, in src/audio/common/IAudioSource.h)
+    (NOT currently used by SimulationLoop -- separate from above IAudioSource)
 ```
 
 ---
 
 ## Composition/Aggregation Relationships
 
-### StrategyContext Composition
+### BufferContext Composition (Current -- replaces StrategyContext/AudioUnitContext)
 
 ```
-StrategyContext
-├─► AudioState
-│   ├─ sampleRate: int
-│   └─ isPlaying: bool
-│
-├─► BufferState
-│   ├─ writePointer: std::atomic<int>
-│   ├─ readPointer: std::atomic<int>
-│   ├─ underrunCount: std::atomic<int>
-│   ├─ fillLevel: int
-│   └─ capacity: int
-│
-├─► Diagnostics
-│   ├─ lastRenderMs: std::atomic<double>
-│   ├─ lastHeadroomMs: std::atomic<double>
-│   ├─ lastBudgetPct: std::atomic<double>
-│   ├─ lastFrameBudgetPct: std::atomic<double>
-│   ├─ totalFramesRendered: int
-│   └─ ... (timing metrics)
-│
-├─► std::unique_ptr<CircularBuffer>
-│
-├─► IAudioStrategy* (reference, not owned)
-│
-└─► EngineSimHandle
+BufferContext
+|-- AudioState
+|   |-- isPlaying: atomic<bool>
+|   +-- sampleRate: int
+|
+|-- BufferState
+|   |-- writePointer: atomic<int>
+|   |-- readPointer: atomic<int>
+|   |-- underrunCount: atomic<int>
+|   |-- fillLevel: int
+|   +-- capacity: int
+|   |-- availableFrames(): int
+|   +-- freeSpace(): int
+|
+|-- Diagnostics
+|   |-- lastRenderMs: atomic<double>
+|   |-- lastHeadroomMs: atomic<double>
+|   |-- lastBudgetPct: atomic<double>
+|   |-- lastFrameBudgetPct: atomic<double>
+|   +-- totalFramesRendered: atomic<int64_t>
+|   |-- recordRender()
+|   |-- reset()
+|   +-- getSnapshot() -> Snapshot
+|
+|-- CircularBuffer* (non-owning, owned by AudioPlayer)
+|
+|-- IAudioStrategy* (non-owning, set by AudioPlayer)
+|
+|-- EngineSimHandle (engine simulator handle)
+|
++-- const EngineSimAPI* (engine simulator API)
 ```
 
-### AudioUnitContext Composition (Legacy)
-
-```
-AudioUnitContext
-├─► EngineSimHandle
-├─► std::atomic<bool> isPlaying
-├─► IAudioRenderer* audioRenderer
-├─► std::unique_ptr<CircularBuffer>
-├─► std::atomic<int> writePointer
-├─► std::atomic<int> readPointer
-├─► std::atomic<int> underrunCount
-├─► int bufferStatus
-├─► std::atomic<int64_t> totalFramesRead
-├─► int sampleRate
-├─► std::unique_ptr<SyncPullAudio>
-├─► std::atomic<int> lastReqFrames
-├─► std::atomic<int> lastGotFrames
-├─► std::atomic<double> lastRenderMs
-├─► std::atomic<double> lastHeadroomMs
-├─► std::atomic<double> lastBudgetPct
-├─► std::atomic<double> lastFrameBudgetPct
-├─► std::atomic<double> lastBufferTrendPct
-├─► std::atomic<double> lastCallbackIntervalMs
-├─► std::atomic<bool> preBufferDepleted
-├─► std::atomic<double> windowStartTimeMs
-├─► std::atomic<int> framesServedInWindow
-├─► std::atomic<double> perfWindowStartTimeMs
-├─► std::atomic<int> framesRequestedInWindow
-├─► std::atomic<int> framesGeneratedInWindow
-├─► std::atomic<double> lastCallbackTimeMs
-└─► float volume
-```
-
-### AudioPlayer Composition (Legacy)
+### AudioPlayer Composition (Current)
 
 ```
 AudioPlayer
-├─► AudioUnit audioUnit
-├─► AudioDeviceID deviceID
-├─► bool isPlaying
-├─► int sampleRate
-├─► AudioUnitContext* context
-├─► IAudioRenderer* renderer
-├─► std::unique_ptr<ConsoleLogger> defaultLogger_
-└─► ILogging* logger_
+|-- BufferContext context_ (owned)
+|-- CircularBuffer circularBuffer_ (owned)
+|-- unique_ptr<IAudioHardwareProvider> hardwareProvider_ (owned)
+|-- IAudioStrategy* strategy_ (injected, not owned)
+|-- unique_ptr<ILogging> defaultLogger_ (owned if created internally)
+|-- ILogging* logger_ (non-null, points to default or injected)
+|-- bool isPlaying_
++-- int sampleRate_
 ```
 
-### StrategyAdapter Composition (Bridge)
+### SimulationConfig Composition (Current)
 
 ```
-StrategyAdapter : public IAudioRenderer
-├─► std::unique_ptr<IAudioStrategy> strategy_
-├─► std::unique_ptr<StrategyContext> context_
-├─► int sampleRate_
-├─► EngineSimHandle engineHandle_
-└─► const EngineSimAPI* engineAPI_
+SimulationConfig
+|-- string configPath
+|-- string assetBasePath
+|-- double duration
+|-- bool interactive
+|-- bool playAudio
+|-- float volume
+|-- bool sineMode
+|-- bool syncPull
+|-- double targetRPM
+|-- double targetLoad
+|-- bool useDefaultEngine
+|-- const char* outputWav
+|-- int simulationFrequency
+|-- int preFillMs
+|-- ILogging* logger
++-- telemetry::ITelemetryWriter* telemetryWriter (always nullptr currently)
 ```
 
 ---
 
 ## Dependency Graph
 
-### CLIMain Dependencies
+### CLIMain Dependencies (Current)
 
 ```
 CLIMain::main()
-├─► CommandLineArgs (from CLIconfig)
-├─► SimulationConfig (from SimulationLoop.h)
-├─► createStrategyAdapter()
-│   └─► IAudioStrategyFactory
-│       └─► AudioMode
-│           ├─► ThreadedStrategy
-│           └─► SyncPullStrategy
-├─► SimulationLoop::runUnifiedAudioLoop()
-└─► EngineSimAPI
+|-- CommandLineArgs (from CLIconfig)
+|-- SimulationConfig (from SimulationLoop.h)
+|-- IAudioStrategyFactory::createStrategy()
+|   +-- AudioMode
+|       |-- ThreadedStrategy
+|       +-- SyncPullStrategy
+|-- createInputProvider() -> IInputProvider*
+|-- createPresentation() -> IPresentation*
++-- runSimulation(config, engineAPI, strategy, inputProvider, presentation)
 ```
 
-### SimulationLoop Dependencies
+### SimulationLoop Dependencies (Current)
 
 ```
 SimulationLoop::runUnifiedAudioLoop()
-├─► AudioPlayer
-│   ├─► AudioUnit (CoreAudio)
-│   └─► AudioUnitContext
-│
-├─► IAudioRenderer (via StrategyAdapter)
-│   └─► IAudioStrategy (ThreadedStrategy/SyncPullStrategy)
-│       └─► StrategyContext
-│           ├─► AudioState
-│           ├─► BufferState
-│           ├─► Diagnostics
-│           └─► CircularBuffer
-│
-├─► IAudioSource
-│   └─► BridgeAudioSource
-│       └─► EngineSimAPI
-│
-├─► IInputProvider
-│   └─► KeyboardInputProvider
-│
-└─► IPresentation
-    └─► ConsolePresentation
+|-- AudioPlayer
+|   |-- unique_ptr<IAudioHardwareProvider> (CoreAudioHardwareProvider)
+|   +-- BufferContext
+|       |-- AudioState
+|       |-- BufferState
+|       |-- Diagnostics
+|       +-- CircularBuffer
+|
+|-- IAudioStrategy (ThreadedStrategy/SyncPullStrategy)
+|   +-- BufferContext*
+|
+|-- IAudioSource
+|   +-- EngineAudioSource
+|       +-- EngineSimAPI
+|
+|-- IInputProvider
+|   +-- KeyboardInputProvider
+|
+|-- IPresentation
+|   +-- ConsolePresentation
+|
++-- telemetry::ITelemetryWriter (nullptr currently)
 ```
 
-### Audio Layer Dependencies
+### Audio Layer Dependencies (Current)
 
 ```
 IAudioStrategy (Interface)
-├─► StrategyContext
-│   ├─► AudioState
-│   ├─► BufferState
-│   ├─► Diagnostics
-│   ├─► CircularBuffer
-│   └─► EngineSimHandle
-│
-└─► ILogging
-```
-
-```
+|-- BufferContext*
+|   |-- AudioState
+|   |-- BufferState
+|   |-- Diagnostics
+|   |-- CircularBuffer*
+|   |-- IAudioStrategy*
+|   |-- EngineSimHandle
+|   +-- const EngineSimAPI*
++-- ILogging*
 
 IAudioHardwareProvider (Interface)
-├─► AudioStreamFormat
-├─► PlatformAudioBufferList
-├─► AudioHardwareState
-└─► ILogging
-```
+|-- AudioStreamFormat
+|-- PlatformAudioBufferList
+|-- AudioHardwareState
++-- ILogging*
 
-### ThreadedStrategy Dependencies
-
-```
-ThreadedStrategy
-├─► StrategyContext
-│   ├─► AudioState
-│   ├─► BufferState
-│   ├─► Diagnostics
-│   ├─► CircularBuffer
-│   └─► EngineSimHandle
-│
-└─► ILogging
-```
-
-### SyncPullStrategy Dependencies
-
-```
-SyncPullStrategy
-├─► StrategyContext
-│   ├─► AudioState
-│   ├─► BufferState
-│   ├─► Diagnostics
-│   └─► EngineSimHandle
-│
-└─► ILogging
-```
-
-### CoreAudioHardwareProvider Dependencies
-
-```
-CoreAudioHardwareProvider : public IAudioHardwareProvider
-├─► AudioUnit audioUnit_
-├─► AudioDeviceID deviceID_
-├─► AudioStreamFormat format_
-├─► IAudioHardwareProvider::AudioCallback callback_
-└─► ILogging* logger_
+CoreAudioHardwareProvider
+|-- AudioUnit (CoreAudio)
+|-- AudioDeviceID
+|-- AudioCallback (std::function)
+|-- BufferContext* (for callback invocation)
++-- ILogging*
 ```
 
 ---
 
 ## File-Component Mapping
 
-### Audio Strategy Layer (New Architecture)
+### Audio Strategy Layer
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/audio/strategies/IAudioStrategy.h | IAudioStrategy, AudioMode, AudioStrategyConfig | Strategy interface and types |
-| src/audio/strategies/IAudioStrategyFactory.cpp | IAudioStrategyFactory | Factory for creating strategies |
-| src/audio/strategies/ThreadedStrategy.h | ThreadedStrategy | Cursor-chasing mode implementation |
-| src/audio/strategies/ThreadedStrategy.cpp | ThreadedStrategy | Implementation |
-| src/audio/strategies/SyncPullStrategy.h | SyncPullStrategy | Lock-step mode implementation |
-| src/audio/strategies/SyncPullStrategy.cpp | SyncPullStrategy | Implementation |
+| src/audio/strategies/IAudioStrategy.h | IAudioStrategy, IAudioStrategyFactory, AudioMode, AudioStrategyConfig | Strategy interface, factory, and types |
+| src/audio/strategies/IAudioStrategyFactory.cpp | IAudioStrategyFactory | Factory implementation |
+| src/audio/strategies/ThreadedStrategy.h/.cpp | ThreadedStrategy | Cursor-chasing mode with circular buffer |
+| src/audio/strategies/SyncPullStrategy.h/.cpp | SyncPullStrategy | Lock-step mode with on-demand rendering |
 
-### Audio Hardware Layer (New Architecture)
+### Audio Hardware Layer
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/audio/hardware/IAudioHardwareProvider.h | IAudioHardwareProvider, AudioStreamFormat, PlatformAudioBufferList, AudioHardwareState | Hardware abstraction |
+| src/audio/hardware/IAudioHardwareProvider.h | IAudioHardwareProvider, AudioStreamFormat, PlatformAudioBufferList, AudioHardwareState, AudioHardwareProviderFactory | Hardware abstraction and supporting types |
 | src/audio/hardware/AudioHardwareProviderFactory.cpp | AudioHardwareProviderFactory | Factory for creating providers |
-| src/audio/hardware/CoreAudioHardwareProvider.h | CoreAudioHardwareProvider | macOS implementation |
-| src/audio/hardware/CoreAudioHardwareProvider.cpp | CoreAudioHardwareProvider | Implementation |
+| src/audio/hardware/CoreAudioHardwareProvider.h/.cpp | CoreAudioHardwareProvider | macOS CoreAudio implementation |
 
-### Audio State Management (New Architecture)
+### Audio State Management
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/audio/state/StrategyContext.h | StrategyContext | Composed context for strategies |
+| src/audio/state/BufferContext.h | BufferContext | Composed context for audio strategies |
 | src/audio/state/AudioState.h | AudioState | Audio playback state |
 | src/audio/state/BufferState.h | BufferState | Circular buffer state |
 | src/audio/state/Diagnostics.h | Diagnostics | Performance metrics |
@@ -282,210 +227,165 @@ CoreAudioHardwareProvider : public IAudioHardwareProvider
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/audio/common/CircularBuffer.h | CircularBuffer | Circular buffer implementation |
-| src/audio/common/CircularBuffer.cpp | CircularBuffer | Implementation |
-| src/audio/common/IAudioSource.h | IAudioSource | Audio source interface |
-| src/audio/common/BridgeAudioSource.h | BridgeAudioSource | Engine bridge audio source |
-| src/audio/common/BridgeAudioSource.cpp | BridgeAudioSource | Implementation |
+| src/audio/common/CircularBuffer.h/.cpp | CircularBuffer | Ring buffer implementation |
+| src/audio/common/IAudioSource.h | audio::IAudioSource | Audio source interface (NOT used by SimulationLoop) |
 
-### Audio Adapter Layer (Bridge)
+### Core Audio Components
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/audio/adapters/StrategyAdapter.h | StrategyAdapter | Adapts IAudioStrategy to IAudioRenderer |
-| src/audio/adapters/StrategyAdapter.cpp | StrategyAdapter | Implementation |
-| src/audio/adapters/StrategyAdapterFactory.h | createStrategyAdapter() | Factory for adapters |
-
-### Audio Legacy Layer (Old Architecture)
-
-| File | Classes | Responsibilities |
-|------|---------|---------------|
-| src/AudioPlayer.h | AudioPlayer, AudioUnitContext | Audio playback with direct AudioUnit access |
-| src/AudioPlayer.cpp | AudioPlayer | Implementation |
-| src/AudioSource.h | AudioSource | Deprecated audio source |
-| src/AudioSource.cpp | AudioSource | Deprecated implementation |
-| src/SyncPullAudio.h | SyncPullAudio | Legacy sync-pull |
-| src/SyncPullAudio.cpp | SyncPullAudio | Legacy implementation |
-| src/audio/renderers/IAudioRenderer.h | IAudioRenderer | Deprecated renderer interface |
-| src/audio/renderers/ThreadedRenderer.h | ThreadedRenderer | Superseded by ThreadedStrategy |
-| src/audio/renderers/ThreadedRenderer.cpp | ThreadedRenderer | Deprecated implementation |
-| src/audio/renderers/SyncPullRenderer.h | SyncPullRenderer | Superseded by SyncPullStrategy |
-| src/audio/renderers/SyncPullRenderer.cpp | SyncPullRenderer | Deprecated implementation |
-| src/audio/renderers/AudioRendererFactory.cpp | createAudioRendererFactory() | Superseded by IAudioStrategyFactory |
+| src/AudioPlayer.h/.cpp | AudioPlayer | Orchestrates playback with injected strategy + hardware provider |
+| src/AudioSource.h/.cpp | IAudioSource, BaseAudioSource, EngineAudioSource | Audio source abstraction (used by SimulationLoop) |
 
 ### Simulation Layer
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/simulation/SimulationLoop.h | SimulationConfig, runSimulation(), runUnifiedAudioLoop(), etc. | Main simulation loop |
-| src/simulation/SimulationLoop.cpp | SimulationConfig, functions | Implementation |
-| src/simulation/EngineConfig.h | EngineConfig | Engine configuration |
-| src/simulation/EngineConfig.cpp | EngineConfig | Implementation |
+| src/simulation/SimulationLoop.h/.cpp | SimulationConfig, runSimulation(), runUnifiedAudioLoop() | Main simulation loop |
+| src/simulation/EngineConfig.h/.cpp | EngineConfig, EngineSimConfig | Engine configuration |
 
 ### CLI/Config Layer
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/config/CLIMain.h | (functions) | Main entry point |
-| src/config/CLIMain.cpp | main() | Implementation |
-| src/config/CLIconfig.h | CommandLineArgs, SimulationConfig | Command line parsing |
-| src/config/CLIconfig.cpp | CommandLineArgs, SimulationConfig | Implementation |
-| src/config/ANSIColors.h | (helper functions) | Console colors |
-| src/config/ANSIColors.cpp | (helper functions) | Implementation |
+| src/config/CLIMain.h/.cpp | main(), CreateSimulationConfig() | Entry point |
+| src/config/CLIconfig.h/.cpp | CommandLineArgs, parseArguments() | CLI parsing |
+| src/config/ANSIColors.h/.cpp | ANSIColors | Console color helpers |
 
 ### Presentation Layer
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/presentation/IPresentation.h | IPresentation | Presentation interface |
-| src/presentation/ConsolePresentation.h | ConsolePresentation | Console presentation |
-| src/presentation/ConsolePresentation.cpp | ConsolePresentation | Implementation |
+| src/presentation/IPresentation.h | IPresentation, EngineState, PresentationConfig | Presentation interface |
+| src/presentation/ConsolePresentation.h/.cpp | ConsolePresentation | Console output |
 
 ### Input Layer
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/input/IInputProvider.h | IInputProvider | Input interface |
-| src/input/KeyboardInput.h | KeyboardInput | Keyboard input |
-| src/input/KeyboardInput.cpp | KeyboardInput | Implementation |
-| src/input/KeyboardInputProvider.h | KeyboardInputProvider | Keyboard input provider |
-| src/input/KeyboardInputProvider.cpp | KeyboardInputProvider | Implementation |
+| src/input/IInputProvider.h | IInputProvider, EngineInput | Input interface |
+| src/input/KeyboardInput.h/.cpp | KeyboardInput | Keyboard input |
+| src/input/KeyboardInputProvider.h/.cpp | KeyboardInputProvider | Keyboard input provider |
 
 ### Bridge Layer
 
 | File | Classes | Responsibilities |
 |------|---------|---------------|
-| src/bridge/engine_sim_loader.h | EngineSimAPI, EngineSimHandle, EngineLoaderResult | Engine simulator bridge |
+| src/bridge/engine_sim_loader.h | EngineSimAPI, EngineSimHandle, EngineSimResult | Engine simulator C API bridge |
+
+---
+
+## Deleted Components (No Longer in Codebase)
+
+These files/directories have been removed as part of the architecture refactor:
+
+| Component | Status | Replaced By |
+|-----------|--------|-------------|
+| src/audio/adapters/StrategyAdapter.h | DELETED | Not needed (strategies directly unified) |
+| src/audio/adapters/StrategyAdapter.cpp | DELETED | Not needed |
+| src/audio/adapters/StrategyAdapterFactory.h | DELETED | IAudioStrategyFactory |
+| src/audio/renderers/IAudioRenderer.h | DELETED | IAudioStrategy |
+| src/audio/renderers/ (all files) | DELETED | src/audio/strategies/ |
+| src/audio/modes/ (all files) | DELETED | src/audio/strategies/ |
+| AudioUnitContext (struct) | DELETED | BufferContext |
+| StrategyContext (struct) | RENAMED | BufferContext |
 
 ---
 
 ## Key Architecture Patterns
 
 ### Strategy Pattern
-
 - **IAudioStrategy**: Abstracts audio generation strategies
-- **ThreadedStrategy**: Cursor-chasing implementation
-- **SyncPullStrategy**: Lock-step implementation
-- **IAudioRenderer**: Deprecated renderer interface (being replaced)
-- **StrategyAdapter**: Bridges new strategies to old renderer interface
+- **ThreadedStrategy**: Cursor-chasing with circular buffer
+- **SyncPullStrategy**: On-demand synchronous rendering
+- **IAudioStrategyFactory**: Creates strategies by AudioMode enum
 
 ### Factory Pattern
-
 - **IAudioStrategyFactory**: Creates IAudioStrategy implementations
 - **AudioHardwareProviderFactory**: Creates IAudioHardwareProvider implementations
-- **StrategyAdapterFactory**: Creates StrategyAdapter instances
-- **AudioRendererFactory**: Deprecated (superseded)
 
 ### Dependency Injection
+- **IAudioStrategy**: Injected into AudioPlayer and SimulationLoop
+- **IAudioHardwareProvider**: Owned by AudioPlayer
+- **IInputProvider**: Injected into SimulationLoop
+- **IPresentation**: Injected into SimulationLoop
+- **ILogging**: Injected throughout codebase
 
-- **IInputProvider**: Injected into simulation loop
-- **IPresentation**: Injected into simulation loop
-- **IAudioRenderer**: Injected into simulation loop (via StrategyAdapter)
-- **ILogger**: Injected throughout codebase
-- **EngineSimAPI**: Provided by bridge
-
-### Composition vs Inheritance
-
-- **StrategyContext**: Composition of AudioState, BufferState, Diagnostics, CircularBuffer
-- **AudioUnitContext**: Monolithic composition (legacy)
-
-### Adapter Pattern
-
-- **StrategyAdapter**: Bridges IAudioStrategy to IAudioRenderer interface
-- Enables gradual migration from old to new architecture
-- Maintains backward compatibility during transition
+### Composition Pattern
+- **BufferContext**: Composed of AudioState, BufferState, Diagnostics, CircularBuffer
+- Replaces monolithic AudioUnitContext god struct
 
 ---
 
-## SOLID Principles Assessment
+## SOLID Principles Assessment (Current State)
 
 ### Single Responsibility Principle (SRP)
 
-| Component | SRP Compliance | Notes |
-|-----------|----------------|-------|
-| IAudioStrategy | ✓ | One responsibility: audio generation |
-| ThreadedStrategy | ✓ | One responsibility: cursor-chasing mode |
-| SyncPullStrategy | ✓ | One responsibility: lock-step mode |
-| IAudioHardwareProvider | ✓ | One responsibility: hardware abstraction |
-| StrategyContext | ✓ | One responsibility: context composition |
-| AudioPlayer | ✗ | Multiple responsibilities: hardware access, playback control |
-| SimulationLoop | ✗ | Multiple responsibilities: simulation coordination |
+| Component | Compliance | Notes |
+|-----------|------------|-------|
+| IAudioStrategy | PASS | One responsibility: audio generation strategy |
+| ThreadedStrategy | PASS | Cursor-chasing rendering only |
+| SyncPullStrategy | PASS | Lock-step rendering only |
+| IAudioHardwareProvider | PASS | Platform hardware abstraction |
+| CoreAudioHardwareProvider | PASS | CoreAudio AudioUnit lifecycle |
+| BufferContext | PASS | Composes state, no logic |
+| AudioState | PASS | Playback state only |
+| BufferState | PASS | Buffer pointers and counters only |
+| Diagnostics | PASS | Performance metrics only |
+| CircularBuffer | PASS | Ring buffer storage only |
+| AudioPlayer | PASS | Orchestrates strategy + hardware (was borderline, now delegates) |
+| SimulationLoop | BORDERLINE | Orchestration + some inline helper logic |
 
 ### Open/Closed Principle (OCP)
 
-| Component | OCP Compliance | Notes |
-|-----------|----------------|-------|
-| IAudioStrategy | ✓ | New strategies can be added without modification |
-| IAudioHardwareProvider | ✓ | New platforms can be added without modification |
-| AudioPlayer | ✗ | Direct AudioUnit access, hard to extend |
-| SimulationLoop | ✓ | Extensible via strategy pattern |
+| Component | Compliance | Notes |
+|-----------|------------|-------|
+| IAudioStrategy | PASS | New strategies added without modification |
+| IAudioHardwareProvider | PASS | New platforms added without modification |
+| SimulationLoop | PASS | Extensible via injected strategy/input/presentation |
+| IAudioStrategyFactory | PASS | Switch statement in factory (minor OCP tension) |
 
 ### Liskov Substitution Principle (LSP)
 
-| Component | LSP Compliance | Notes |
-|-----------|----------------|-------|
-| IAudioStrategy | ✓ | ThreadedStrategy/SyncPullStrategy are substitutable |
-| IAudioHardwareProvider | ✓ | CoreAudioHardwareProvider is substitutable |
-| IAudioRenderer | ✓ | ThreadedRenderer/SyncPullRenderer are substitutable |
-| StrategyAdapter | ✓ | Correctly implements IAudioRenderer |
+| Interface | Compliance | Notes |
+|-----------|------------|-------|
+| IAudioStrategy | PASS | ThreadedStrategy/SyncPullStrategy fully substitutable |
+| IAudioHardwareProvider | PASS | CoreAudioHardwareProvider substitutable |
+| IInputProvider | PASS | All implementations honor contracts |
+| IPresentation | PASS | All implementations honor contracts |
 
 ### Interface Segregation Principle (ISP)
 
-| Component | ISP Compliance | Notes |
-|-----------|----------------|-------|
-| IAudioStrategy | ✓ | Focused interface, essential methods only |
-| IAudioHardwareProvider | ✓ | Focused interface, essential methods only |
-| AudioUnitContext | ✗ | Monolithic, too many responsibilities |
-| StrategyContext | ✓ | Composed of focused components |
+| Interface | Compliance | Notes |
+|-----------|------------|-------|
+| IAudioStrategy | PASS | Focused interface for audio generation |
+| IAudioHardwareProvider | PASS | Focused interface for hardware operations |
+| IInputProvider | PASS | Focused interface for input |
+| IPresentation | PASS | Focused interface for display |
+| BufferContext | PASS | Composed of focused components |
 
 ### Dependency Inversion Principle (DIP)
 
-| Component | DIP Compliance | Notes |
-|-----------|----------------|-------|
-| CLIMain | ✓ | Depends on abstractions (strategies, factories) |
-| SimulationLoop | ✓ | Depends on abstractions (IAudioRenderer, IAudioSource) |
-| AudioPlayer | ✗ | Depends on concrete AudioUnit |
-| IAudioStrategy | ✓ | Depends on StrategyContext abstraction |
+| Component | Compliance | Notes |
+|-----------|------------|-------|
+| CLIMain | PASS | Depends on abstractions (strategies, factories) |
+| SimulationLoop | PASS | Depends on IAudioStrategy, IInputProvider, IPresentation |
+| AudioPlayer | PASS | Depends on IAudioStrategy and IAudioHardwareProvider |
+| ThreadedStrategy | PASS | Depends on BufferContext abstraction |
+| SyncPullStrategy | PASS | Depends on BufferContext abstraction |
+
+### Remaining DIP Concerns
+- AudioPlayer creates `CoreAudioHardwareProvider` directly instead of using `AudioHardwareProviderFactory`
+- `audio::IAudioSource` exists in `src/audio/common/` but is unused (separate `IAudioSource` in `src/AudioSource.h` is used)
 
 ---
 
-## Summary
+## Known Gaps
 
-### Current Architecture State
-
-The codebase contains both old and new audio architectures:
-
-**Old Architecture** (being phased out):
-- AudioPlayer with direct AudioUnit access
-- AudioUnitContext (monolithic state)
-- IAudioRenderer with ThreadedRenderer/SyncPullRenderer
-- AudioSource, SyncPullAudio (deprecated)
-
-**New Architecture** (being phased in):
-- IAudioStrategy with ThreadedStrategy/SyncPullStrategy
-- IAudioHardwareProvider with CoreAudioHardwareProvider
-- StrategyContext (composed state)
-- CircularBuffer, AudioState, BufferState, Diagnostics
-
-**Bridge** (temporary during migration):
-- StrategyAdapter bridges IAudioStrategy to IAudioRenderer
-- Maintains backward compatibility
-
-### Migration Progress
-
-- ✅ New architecture components implemented and tested
-- ✅ StrategyAdapter bridges old and new
-- ✅ All tests passing (31/32 unit, 7/7 integration)
-- ⏳ AudioPlayer still uses old AudioUnit (pending)
-- ⏳ Legacy code still in build (pending)
-- ⏳ Complete migration (pending)
-
-### Recommendations
-
-1. **Complete AudioPlayer refactoring** to use IAudioHardwareProvider
-2. **Remove legacy components** once migration is complete
-3. **Update documentation** to reflect new architecture
-4. **Consolidate audio directory** structure
+1. **AudioPlayer creates CoreAudioHardwareProvider directly** -- should use `AudioHardwareProviderFactory` for full DIP compliance
+2. **Legacy `static audioUnitCallback`** still declared in AudioPlayer.h but not used (callback registered via hardware provider)
+3. **Duplicate IAudioSource** -- `audio::IAudioSource` in `src/audio/common/` is not used; `IAudioSource` in `src/AudioSource.h` is the one in use
+4. **ITelemetryWriter has no implementation** -- forward-declared and always nullptr in SimulationConfig
 
 ---
 

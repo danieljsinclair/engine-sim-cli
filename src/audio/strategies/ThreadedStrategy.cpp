@@ -38,6 +38,10 @@ bool ThreadedStrategy::shouldDrainDuringWarmup() const {
     return true;
 }
 
+bool ThreadedStrategy::needsMainThreadAudioGeneration() const {
+    return true;
+}
+
 // ============================================================================
 // Lifecycle Method Implementations
 // ============================================================================
@@ -200,12 +204,10 @@ void ThreadedStrategy::updateSimulation(BufferContext* context, EngineSimHandle 
     }
 
     // Threaded mode updates simulation in main loop
-    // This is typically called by the main simulation loop
     if (handle && context->audioState.isPlaying.load()) {
-        // Call engine API to advance simulation
-        // Using fixed update interval for consistency
-        constexpr double UPDATE_INTERVAL_MS = 10.0;
-        EngineSimResult result = api.Update(handle, UPDATE_INTERVAL_MS);
+        // Convert deltaTime from milliseconds to seconds (bridge expects seconds, <= 1.0)
+        double deltaTimeSeconds = deltaTimeMs / 1000.0;
+        EngineSimResult result = api.Update(handle, deltaTimeSeconds);
 
         if (result != ESIM_SUCCESS && logger_) {
             logger_->warning(LogMask::AUDIO, "ThreadedStrategy::updateSimulation: Engine update failed (result=%d)", result);

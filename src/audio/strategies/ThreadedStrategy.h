@@ -47,6 +47,7 @@ public:
 
     // Strategy-Specific Methods
     bool shouldDrainDuringWarmup() const override;
+    bool needsMainThreadAudioGeneration() const override;
     std::string getDiagnostics() const override;
     std::string getProgressDisplay() const override;
     void configure(const AudioStrategyConfig& config) override;

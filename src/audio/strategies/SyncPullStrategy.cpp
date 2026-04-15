@@ -37,6 +37,10 @@ bool SyncPullStrategy::shouldDrainDuringWarmup() const {
     return false;
 }
 
+bool SyncPullStrategy::needsMainThreadAudioGeneration() const {
+    return false;
+}
+
 // ============================================================================
 // Lifecycle Method Implementations
 // ============================================================================
@@ -190,11 +194,8 @@ bool SyncPullStrategy::render(
     lastBufferTrendPct_.store(bufferTrendPct);
     lastCallbackIntervalMs_.store(callbackIntervalMs);
 
-    // Also store in BufferContext diagnostics for consumers that read from there
-    context->diagnostics.lastRenderMs.store(renderMs);
-    context->diagnostics.lastHeadroomMs.store(headroomMs);
-    context->diagnostics.lastBudgetPct.store(timeBudgetPct);
-    context->diagnostics.lastFrameBudgetPct.store(frameBudgetPct);
+    // Store in BufferContext diagnostics (including accumulated frame count)
+    context->diagnostics.recordRender(renderMs, framesRendered);
 
     return true;
 }

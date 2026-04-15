@@ -32,6 +32,7 @@ public:
     const char* getName() const override;
     bool isEnabled() const override;
     bool shouldDrainDuringWarmup() const override;
+    bool needsMainThreadAudioGeneration() const override;
 
     bool render(BufferContext* context, AudioBufferList* ioData, UInt32 numberFrames) override;
     bool AddFrames(BufferContext* context, float* buffer, int frameCount) override;

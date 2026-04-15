@@ -572,4 +572,38 @@ Proceed with Priority 1 (Strategy Integration) before addressing other concerns.
 
 ---
 
+## Post-Audit Status Update (2026-04-15)
+
+All three critical issues identified in this audit have been resolved:
+
+### Issue 1: AudioUnitContext SRP Violation -- RESOLVED
+- **Was:** 76-line monolithic struct with 20+ atomic variables
+- **Now:** Replaced by composed `BufferContext` (AudioState + BufferState + Diagnostics + CircularBuffer)
+- **Files:** `src/audio/state/BufferContext.h`, `AudioState.h`, `BufferState.h`, `Diagnostics.h`
+
+### Issue 2: IAudioMode + IAudioRenderer WET Coupling -- RESOLVED
+- **Was:** Two overlapping interfaces with duplicate responsibilities
+- **Now:** Single `IAudioStrategy` interface with `ThreadedStrategy` and `SyncPullStrategy` implementations
+- **Deleted:** `IAudioMode`, `IAudioRenderer`, all mode/renderer implementations, `StrategyAdapter` bridge
+- **Files:** `src/audio/strategies/IAudioStrategy.h`, `ThreadedStrategy.h/.cpp`, `SyncPullStrategy.h/.cpp`
+
+### Issue 3: AudioPlayer Platform Coupling -- RESOLVED
+- **Was:** Direct `AudioUnit` member in AudioPlayer
+- **Now:** `IAudioHardwareProvider` abstraction with `CoreAudioHardwareProvider` implementation
+- **Files:** `src/audio/hardware/IAudioHardwareProvider.h`, `CoreAudioHardwareProvider.h/.cpp`
+
+### Remaining Gaps
+1. AudioPlayer creates `CoreAudioHardwareProvider` directly (should use factory)
+2. Legacy `static audioUnitCallback` still declared in AudioPlayer.h but unused
+3. Duplicate `IAudioSource` interfaces (one in `src/audio/common/` unused, one in `src/AudioSource.h` used)
+4. `ITelemetryWriter` has no concrete implementation
+
+### Architecture Docs Updated
+- `.github/ARCH-001` -- IAudioStrategy consolidation: COMPLETE
+- `.github/ARCH-002` -- ITelemetryProvider: PARTIALLY COMPLETE (interface exists, no implementation)
+- `.github/ARCH-003` -- IAudioPlatform extraction: COMPLETE (as `IAudioHardwareProvider`)
+- `.github/ARCH-004` -- Strategy Interface Unification: COMPLETE
+
+---
+
 *End of Architecture Audit*

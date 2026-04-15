@@ -79,6 +79,14 @@ public:
     // === Strategy-Specific Methods ===
 
     virtual bool shouldDrainDuringWarmup() const = 0;
+
+    /**
+     * Whether the strategy needs audio generated on the main thread.
+     * Threaded: true (main loop fills circular buffer via ReadAudioBuffer).
+     * SyncPull: false (render callback generates audio on-demand via RenderOnDemand).
+     */
+    virtual bool needsMainThreadAudioGeneration() const = 0;
+
     virtual std::string getDiagnostics() const = 0;
     virtual std::string getProgressDisplay() const = 0;
     virtual void configure(const AudioStrategyConfig& config) = 0;
