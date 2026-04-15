@@ -6,7 +6,7 @@
 
 #include "config/CLIconfig.h"
 #include "AudioPlayer.h"
-#include "AudioSource.h"
+#include "audio/hardware/CoreAudioHardwareProvider.h"
 #include "audio/strategies/IAudioStrategy.h"
 #include "input/IInputProvider.h"
 #include "presentation/IPresentation.h"
@@ -19,6 +19,10 @@
 #include <cstring>
 #include <atomic>
 #include <csignal>
+#include <iostream>
+#include <iomanip>
+#include <thread>
+#include <chrono>
 
 // ============================================================================
 // SimulationConfig Implementation
@@ -55,6 +59,44 @@ SimulationConfig::SimulationConfig(ILogging* logger)
 
 namespace {
 
+// Timing control for 60Hz loop pacing (moved from AudioSource)
+struct LoopTimer {
+    std::chrono::steady_clock::time_point absoluteStartTime;
+    int iterationCount;
+
+    LoopTimer() : absoluteStartTime(std::chrono::steady_clock::now()), iterationCount(0) {}
+
+    void sleepToMaintain60Hz() {
+        iterationCount++;
+        auto now = std::chrono::steady_clock::now();
+        auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - absoluteStartTime).count();
+        auto targetUs = static_cast<long long>(iterationCount * AudioLoopConfig::UPDATE_INTERVAL * 1000000);
+        auto sleepUs = targetUs - elapsedUs;
+
+        if (sleepUs > 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
+        }
+    }
+};
+
+void outputProgress(bool interactive, const std::string& prefix,
+    double currentTime, double duration, int progress,
+    const EngineSimStats& stats, double throttle, int underrunCount) {
+    (void)currentTime;
+    (void)duration;
+    if (interactive) {
+        std::cout << prefix << "\n" << std::flush;
+    } else {
+        static int lastProgress = 0;
+        if (progress != lastProgress && progress % 10 == 0) {
+            std::cout << prefix << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
+                        << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
+                        << " | Underruns: " << underrunCount << "\r" << std::flush;
+            lastProgress = progress;
+        }
+    }
+}
+
 void enableStarterMotor(EngineSimHandle handle, const EngineSimAPI& api) {
     api.SetStarterMotor(handle, 1);
 }
@@ -74,10 +116,10 @@ int getUnderrunCount(AudioPlayer* audioPlayer) {
         return 0;
     }
     auto* context = audioPlayer->getContext();
-    return context ? context->bufferState.underrunCount.load() : 0;
+    return (context && context->circularBuffer) ? context->circularBuffer->getUnderrunCount() : 0;
 }
 
-void performTimingControl(TimingOps::LoopTimer& timer) {
+void performTimingControl(LoopTimer& timer) {
     timer.sleepToMaintain60Hz();
 }
 
@@ -182,19 +224,39 @@ ScriptConfig prepareScriptConfig(const SimulationConfig& config) {
 
 void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
                    AudioPlayer* audioPlayer, bool drainDuringWarmup) {
-    WarmupOps::runWarmup(handle, engineAPI, audioPlayer, drainDuringWarmup);
-}
+    double smoothedThrottle = 0.6;
+    double currentTime = 0.0;
 
-std::unique_ptr<IAudioSource> createAudioSource(EngineSimHandle handle,
-                                                EngineSimAPI& engineAPI) {
-    return std::make_unique<EngineAudioSource>(handle, engineAPI);
+    for (int i = 0; i < AudioLoopConfig::WARMUP_ITERATIONS; i++) {
+        EngineSimStats stats = {};
+        engineAPI.GetStats(handle, &stats);
+
+        engineAPI.SetThrottle(handle, smoothedThrottle);
+        engineAPI.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+
+        currentTime += AudioLoopConfig::UPDATE_INTERVAL;
+
+        if (drainDuringWarmup && audioPlayer) {
+            std::vector<float> discardBuffer(AudioLoopConfig::FRAMES_PER_UPDATE * 2);
+            int warmupRead = 0;
+
+            for (int retry = 0; retry <= 3 && warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE; retry++) {
+                int readThisTime = 0;
+                engineAPI.RenderOnDemand(handle,
+                    discardBuffer.data() + warmupRead * 2,
+                    AudioLoopConfig::FRAMES_PER_UPDATE - warmupRead,
+                    &readThisTime);
+
+                if (readThisTime > 0) warmupRead += readThisTime;
+            }
+        }
+    }
 }
 
 void cleanupSimulation(AudioPlayer* audioPlayer, EngineSimHandle handle,
                        EngineSimAPI& engineAPI, int exitCode) {
     if (audioPlayer) {
         audioPlayer->stop();
-        audioPlayer->waitForCompletion();
         delete audioPlayer;
     }
     engineAPI.Destroy(handle);
@@ -207,26 +269,6 @@ void warnWavExportNotSupported(bool outputWavRequested, ILogging* logger) {
     }
 }
 
-/**
- * Generate audio frames via engine API and write to the player's circular buffer.
- * Used for threaded mode where the main loop generates audio proactively.
- */
-void generateAudioForThreadedMode(EngineSimHandle handle, const EngineSimAPI& api,
-                                  IAudioSource& audioSource, AudioPlayer* audioPlayer) {
-    if (!audioPlayer) return;
-
-    int defaultFrames = AudioLoopConfig::FRAMES_PER_UPDATE;
-    int framesToGenerate = audioPlayer->calculateCursorChasingSamples(defaultFrames);
-
-    std::vector<float> buffer(framesToGenerate * 2);
-    int totalRead = 0;
-    api.ReadAudioBuffer(handle, buffer.data(), framesToGenerate, &totalRead);
-
-    if (totalRead > 0) {
-        audioPlayer->addToCircularBuffer(buffer.data(), totalRead);
-    }
-}
-
 } // anonymous namespace
 
 // ============================================================================
@@ -236,7 +278,6 @@ void generateAudioForThreadedMode(EngineSimHandle handle, const EngineSimAPI& ap
 int runUnifiedAudioLoop(
     EngineSimHandle handle,
     const EngineSimAPI& api,
-    IAudioSource& audioSource,
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
     IAudioStrategy& audioStrategy,
@@ -245,7 +286,7 @@ int runUnifiedAudioLoop(
     telemetry::ITelemetryWriter* telemetryWriter)
 {
     double currentTime = 0.0;
-    TimingOps::LoopTimer timer;
+    LoopTimer timer;
 
     const double minSustainedRPM = 550.0;
 
@@ -271,12 +312,9 @@ int runUnifiedAudioLoop(
         EngineSimStats stats = {};
         api.GetStats(handle, &stats);
 
-        audioSource.updateStats(stats);
-
-        // For threaded mode: generate audio proactively and add to buffer
-        // For sync-pull mode: no generation needed (render callback handles it)
-        if (audioPlayer && audioStrategy.needsMainThreadAudioGeneration()) {
-            generateAudioForThreadedMode(handle, api, audioSource, audioPlayer);
+        // Generate audio: strategy decides whether to fill buffer (Threaded fills, SyncPull no-ops)
+        if (ctx) {
+            audioStrategy.fillBufferFromEngine(ctx, handle, api, AudioLoopConfig::FRAMES_PER_UPDATE);
         }
 
         int underrunCount = getUnderrunCount(audioPlayer);
@@ -285,7 +323,33 @@ int runUnifiedAudioLoop(
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
-        audioSource.displayProgress(currentTime, config.duration, config.interactive, stats, throttle, underrunCount, audioPlayer);
+        // Display progress (inlined from EngineAudioSource)
+        {
+            int progress = static_cast<int>(currentTime * 100 / config.duration);
+            std::ostringstream prefix;
+            int rpm = static_cast<int>(stats.currentRPM);
+            if (rpm < 10 && stats.currentRPM > 0) rpm = 0;
+            prefix << "[" << std::setw(5) << rpm << " RPM] ";
+            prefix << "[Throttle: " << std::setw(4) << static_cast<int>(throttle * 100) << "%] ";
+            prefix << "[Underruns: " << underrunCount << "] ";
+            prefix << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8) << std::setprecision(5) << stats.exhaustFlow << std::noshowpos << " m3/s]" << ANSIColors::RESET << " ";
+
+            if (audioPlayer && audioPlayer->getContext()) {
+                const BufferContext* dispCtx = audioPlayer->getContext();
+                double renderMs = dispCtx->diagnostics.lastRenderMs.load();
+                double headroomMs = dispCtx->diagnostics.lastHeadroomMs.load();
+                double budgetPct = dispCtx->diagnostics.lastBudgetPct.load();
+
+                if (renderMs > 0.0) {
+                    std::string budgetColor = ANSIColors::getDispositionColour(budgetPct < 80, budgetPct < 100);
+                    prefix << "[SYNC-PULL] rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << renderMs << "ms"
+                           << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms"
+                           << " (" << budgetColor << std::setw(3) << std::setprecision(0) << budgetPct << "% of budget" << ANSIColors::RESET << ")";
+                }
+            }
+
+            outputProgress(config.interactive, prefix.str(), currentTime, config.duration, progress, stats, throttle, underrunCount);
+        }
 
         updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider);
 
@@ -296,7 +360,8 @@ int runUnifiedAudioLoop(
 }
 
 AudioPlayer* InitAudioPlayback(IAudioStrategy* strategy, int sampleRate, EngineSimHandle handle, EngineSimAPI& engineAPI, ILogging* logger) {
-    auto* audioPlayer = new AudioPlayer(strategy, logger);
+    auto hardwareProvider = std::make_unique<CoreAudioHardwareProvider>(logger);
+    auto* audioPlayer = new AudioPlayer(strategy, std::move(hardwareProvider), logger);
 
     bool initSuccess = audioPlayer->initialize(sampleRate, handle, &engineAPI);
 
@@ -402,9 +467,7 @@ int runSimulation(
     // Start AudioUnit playback via AudioPlayer
     audioPlayer->start();
 
-    std::unique_ptr<IAudioSource> audioSource = createAudioSource(handle, engineAPI);
-
-    int exitCode = runUnifiedAudioLoop(handle, engineAPI, *audioSource, config, audioPlayer, *audioStrategy, inputProvider, presentation, config.telemetryWriter);
+    int exitCode = runUnifiedAudioLoop(handle, engineAPI, config, audioPlayer, *audioStrategy, inputProvider, presentation, config.telemetryWriter);
 
     cleanupSimulation(audioPlayer, handle, engineAPI, exitCode);
 

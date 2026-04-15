@@ -24,6 +24,8 @@ struct BufferContext;
 struct AudioStrategyConfig {
     int sampleRate;
     int channels;
+    EngineSimHandle engineHandle = nullptr;
+    const EngineSimAPI* engineAPI = nullptr;
 };
 
 // Audio mode enumeration
@@ -81,11 +83,12 @@ public:
     virtual bool shouldDrainDuringWarmup() const = 0;
 
     /**
-     * Whether the strategy needs audio generated on the main thread.
-     * Threaded: true (main loop fills circular buffer via ReadAudioBuffer).
-     * SyncPull: false (render callback generates audio on-demand via RenderOnDemand).
+     * Fill internal buffer with audio from the engine.
+     * Called by the main simulation loop each iteration.
+     * ThreadedStrategy: reads from engine via ReadAudioBuffer, applies cursor chasing.
+     * SyncPullStrategy: no-op (audio is generated on-demand in render callback).
      */
-    virtual bool needsMainThreadAudioGeneration() const = 0;
+    virtual void fillBufferFromEngine(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) = 0;
 
     virtual std::string getDiagnostics() const = 0;
     virtual std::string getProgressDisplay() const = 0;

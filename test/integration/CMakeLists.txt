@@ -15,7 +15,6 @@ add_executable(integration_tests
     # Source files under test (Simulator-level integration)
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/AudioPlayer.cpp
-    ../../src/AudioSource.cpp
     ../../src/config/ANSIColors.cpp
     # Audio strategies
     ../../src/audio/strategies/IAudioStrategyFactory.cpp

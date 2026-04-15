@@ -7,36 +7,22 @@
 #define BUFFER_CONTEXT_H
 
 #include "audio/state/AudioState.h"
-#include "audio/state/BufferState.h"
 #include "audio/state/Diagnostics.h"
 #include "audio/common/CircularBuffer.h"
-#include "engine_sim_bridge.h"
-#include "bridge/engine_sim_loader.h"
-
-// Forward declarations
-class IAudioStrategy;
 
 /**
  * BufferContext - Composed context for audio strategies
  *
- * Replaces the monolithic AudioUnitContext god struct by composing
- * focused state structs with clear separation of concerns.
- *
- * Composition:
+ * Contains shared playback state used by both strategies:
  * - AudioState: Core playback state (playing, sampleRate)
- * - BufferState: Circular buffer management (pointers, counters)
  * - Diagnostics: Performance and timing metrics
- * - CircularBuffer: Actual audio data buffer
- * - Strategy Reference: Current rendering strategy
- * - Engine handles: Simulator connection for on-demand rendering
+ * - CircularBuffer: Audio data buffer (owned externally, e.g. by AudioPlayer)
  *
- * SRP: Only composes and manages state components, doesn't contain logic
- * DIP: Strategies depend on this composed context, not individual components
+ * Buffer tracking (pointers, underruns) is managed directly by CircularBuffer.
+ * Engine-specific state (handle, API) is owned by the strategies that need it.
  */
 struct BufferContext {
     AudioState audioState;
-
-    BufferState bufferState;
 
     Diagnostics diagnostics;
 
@@ -46,40 +32,13 @@ struct BufferContext {
      */
     CircularBuffer* circularBuffer;
 
-    /**
-     * Current rendering strategy.
-     * nullptr until set by AudioPlayer.
-     */
-    IAudioStrategy* strategy;
-
-    /**
-     * Engine simulator handle.
-     * Required for sync-pull mode to generate audio.
-     */
-    EngineSimHandle engineHandle;
-
-    /**
-     * Engine simulator API.
-     * Required for sync-pull mode to call RenderOnDemand.
-     */
-    const EngineSimAPI* engineAPI;
-
     BufferContext()
         : circularBuffer(nullptr)
-        , strategy(nullptr)
-        , engineHandle(nullptr)
-        , engineAPI(nullptr)
     {}
 
     void reset() {
         audioState.reset();
-        bufferState.reset();
         diagnostics.reset();
-    }
-
-    void resetAudioAndBuffer() {
-        audioState.reset();
-        bufferState.reset();
     }
 };
 

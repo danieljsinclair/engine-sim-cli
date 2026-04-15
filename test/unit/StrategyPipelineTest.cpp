@@ -211,12 +211,12 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_ProducesAudioOnSuccessiveCa
 
     auto context = std::make_unique<BufferContext>();
     context->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-    context->engineHandle = engine.handle;
-    context->engineAPI = &engine.api;
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
+    config.engineHandle = engine.handle;
+    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(context.get(), config));
     context->audioState.isPlaying.store(true);
 
@@ -250,12 +250,12 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_FirstAndSubsequentCallsBoth
 
     auto context = std::make_unique<BufferContext>();
     context->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-    context->engineHandle = engine.handle;
-    context->engineAPI = &engine.api;
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
+    config.engineHandle = engine.handle;
+    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(context.get(), config));
     context->audioState.isPlaying.store(true);
 
@@ -302,7 +302,6 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_Pipeline_ProducesContinuousAudioAf
     auto circularBuffer = std::make_unique<CircularBuffer>();
     ASSERT_TRUE(circularBuffer->initialize(DEFAULT_BUFFER_CAPACITY));
     context->circularBuffer = circularBuffer.get();
-    context->strategy = strategy.get();
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -346,7 +345,6 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_Pipeline_DoesNotDrainToSilenceAfte
     auto circularBuffer = std::make_unique<CircularBuffer>();
     ASSERT_TRUE(circularBuffer->initialize(DEFAULT_BUFFER_CAPACITY));
     context->circularBuffer = circularBuffer.get();
-    context->strategy = strategy.get();
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -410,12 +408,12 @@ TEST_F(StrategyPipelineTest, SyncPull_ReadAudioBufferDrainsEngineBeforeRenderOnD
 
     auto context = std::make_unique<BufferContext>();
     context->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-    context->engineHandle = engine.handle;
-    context->engineAPI = &engine.api;
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
+    config.engineHandle = engine.handle;
+    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(context.get(), config));
     context->audioState.isPlaying.store(true);
 
@@ -469,12 +467,12 @@ TEST_F(StrategyPipelineTest, SyncPull_RenderOnDemand_RecoversAfterReadAudioBuffe
 
     auto context = std::make_unique<BufferContext>();
     context->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-    context->engineHandle = engine.handle;
-    context->engineAPI = &engine.api;
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
+    config.engineHandle = engine.handle;
+    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(context.get(), config));
     context->audioState.isPlaying.store(true);
 
@@ -535,7 +533,6 @@ TEST_F(StrategyPipelineTest, ThreadedPipeline_FullChain_WithInjectedAudio) {
     auto circularBuffer = std::make_unique<CircularBuffer>();
     ASSERT_TRUE(circularBuffer->initialize(DEFAULT_BUFFER_CAPACITY));
     context->circularBuffer = circularBuffer.get();
-    context->strategy = strategy.get();
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -651,12 +648,12 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_UpdatesTotalFramesRendered)
 
     auto context = std::make_unique<BufferContext>();
     context->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-    context->engineHandle = engine.handle;
-    context->engineAPI = &engine.api;
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
+    config.engineHandle = engine.handle;
+    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(context.get(), config));
     context->audioState.isPlaying.store(true);
 
@@ -684,12 +681,12 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_AccumulatesFramesAcrossMult
 
     auto context = std::make_unique<BufferContext>();
     context->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-    context->engineHandle = engine.handle;
-    context->engineAPI = &engine.api;
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
+    config.engineHandle = engine.handle;
+    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(context.get(), config));
     context->audioState.isPlaying.store(true);
 

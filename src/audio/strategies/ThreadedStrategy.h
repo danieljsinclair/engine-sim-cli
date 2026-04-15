@@ -47,7 +47,7 @@ public:
 
     // Strategy-Specific Methods
     bool shouldDrainDuringWarmup() const override;
-    bool needsMainThreadAudioGeneration() const override;
+    void fillBufferFromEngine(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
     std::string getDiagnostics() const override;
     std::string getProgressDisplay() const override;
     void configure(const AudioStrategyConfig& config) override;

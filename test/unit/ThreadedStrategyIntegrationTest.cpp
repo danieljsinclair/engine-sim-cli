@@ -43,8 +43,6 @@ protected:
         // Initialize context with required state (no mock simulator needed for basic tests)
         context_->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
         context_->audioState.isPlaying = false;
-        context_->engineHandle = nullptr;  // No engine handle needed for basic tests
-        context_->engineAPI = nullptr;  // No engine API needed for basic tests
 
         // Initialize strategy
         AudioStrategyConfig config;
@@ -158,9 +156,6 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_RendersFromCircularBuff
     ASSERT_EQ(framesWritten, static_cast<size_t>(DEFAULT_FRAME_COUNT))
         << "Not all frames written to circular buffer";
 
-    // Update context pointers
-    context_->bufferState.writePointer.store(circularBuffer_->getWritePointer());
-
     // Act: Render audio from circular buffer
     AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
     bool renderResult = strategy_->render(context_.get(), &audioBuffer, DEFAULT_FRAME_COUNT);
@@ -210,7 +205,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesBufferUnderrunGr
     }
 
     // Verify: Underrun count should be incremented
-    int underrunCount = context_->bufferState.underrunCount.load();
+    int underrunCount = context_->circularBuffer->getUnderrunCount();
     EXPECT_GT(underrunCount, 0)
         << "Underrun count should be incremented";
 
@@ -241,7 +236,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesBufferWrapAround
     ASSERT_EQ(framesWritten, 100u) << "Failed to write test data";
 
     // Set read position to beginning (simulate wrap scenario)
-    context_->bufferState.readPointer.store(readPosition);
+    // Note: readPointer is now managed by CircularBuffer internally
 
     // Act: Render should read from beginning correctly despite write position near end
     AudioBufferList audioBuffer = createAudioBufferList(50);
@@ -287,7 +282,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_AddFramesCorrectly) {
 
     // Verify: Write pointer should be updated
     int expectedWritePointer = circularBuffer_->getWritePointer();
-    int actualWritePointer = context_->bufferState.writePointer.load();
+    int actualWritePointer = context_->circularBuffer->getWritePointer();
     EXPECT_EQ(actualWritePointer, expectedWritePointer)
         << "Write pointer should be updated";
 
@@ -350,8 +345,8 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_ResetBufferAfterWarmupC
         << "Buffer should be empty after reset";
 
     // Verify: Pointers should be reset to 0
-    int writePointer = context_->bufferState.writePointer.load();
-    int readPointer = context_->bufferState.readPointer.load();
+    int writePointer = context_->circularBuffer->getWritePointer();
+    int readPointer = context_->circularBuffer->getReadPointer();
     EXPECT_EQ(writePointer, 0)
         << "Write pointer should be reset to 0";
     EXPECT_EQ(readPointer, 0)
@@ -429,7 +424,6 @@ TEST_F(ThreadedStrategyIntegrationTest, CaptureThreadedStrategyBaseline) {
 
     // Write to circular buffer
     circularBuffer_->write(testData.data(), DEFAULT_FRAME_COUNT);
-    context_->bufferState.writePointer.store(circularBuffer_->getWritePointer());
 
     // Act: Render audio to capture baseline
     AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
@@ -468,8 +462,6 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_DifferentOutputFromSync
     auto syncPullContext = std::make_unique<BufferContext>();
     syncPullContext->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
     syncPullContext->audioState.isPlaying = false;
-    syncPullContext->engineHandle = nullptr;  // No mock simulator for basic tests
-    syncPullContext->engineAPI = nullptr;  // No mock API for basic tests
 
     // Initialize both strategies
     AudioStrategyConfig config;

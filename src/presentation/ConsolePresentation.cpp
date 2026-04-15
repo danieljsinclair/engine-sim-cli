@@ -42,10 +42,10 @@ void ConsolePresentation::ShowEngineState(const EngineState& state) {
 }
 
 void ConsolePresentation::showDiagnostics(const EngineState& state) {
-    std::cout << "\n[" << static_cast<int>(state.rpm) << " RPM]"
-              << " [Throttle: " << static_cast<int>(state.throttle * 100) << "%]"
-              << " [Flow: " << std::showpos << std::setw(8) << std::setprecision(4) << state.exhaustFlow << std::noshowpos << " m3/s] "
-              << " [Underruns: " << state.underrunCount << "]";
+    // Diagnostics are handled by the simulation loop's inline displayProgress() which formats
+    // the same data with proper SYNC-PULL timing info. Writing here would duplicate
+    // output with inconsistent formatting (SRP: one owner for console diagnostics).
+    (void)state;
 }
 
 void ConsolePresentation::ShowMessage(const std::string& message) {

@@ -41,9 +41,8 @@ add_executable(engine-sim-cli
     # Audio hardware providers
     src/audio/hardware/CoreAudioHardwareProvider.cpp
     src/audio/hardware/AudioHardwareProviderFactory.cpp
-    # Audio player and source
+    # Audio player
     src/AudioPlayer.cpp
-    src/AudioSource.cpp
 )
 
 target_link_libraries(engine-sim-cli

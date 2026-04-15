@@ -9,7 +9,6 @@
 #include "bridge/engine_sim_loader.h"
 
 class AudioPlayer;
-class IAudioSource;
 class IAudioStrategy;
 
 // Forward declarations for injectable interfaces
@@ -63,7 +62,6 @@ private:
 int runUnifiedAudioLoop(
     EngineSimHandle handle,
     const EngineSimAPI& api,
-    IAudioSource& audioSource,
     const SimulationConfig& config,
     AudioPlayer* audioPlayer,
     IAudioStrategy& audioStrategy,

@@ -80,11 +80,7 @@ TEST(DebugTest, InitializationWithMockSimulator) {
     // Initialize context with required state (without mock simulator)
     context->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
     context->audioState.isPlaying = false;
-    context->engineHandle = nullptr;  // No mock simulator
-    std::cout << "Engine handle set to nullptr..." << std::endl;
-
-    context->engineAPI = nullptr;  // No mock API
-    std::cout << "Engine API set to nullptr..." << std::endl;
+    std::cout << "Context state initialized..." << std::endl;
 
     // Initialize strategy
     AudioStrategyConfig config;

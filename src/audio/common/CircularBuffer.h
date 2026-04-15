@@ -58,6 +58,11 @@ public:
     // Get current read position
     int getReadPointer() const { return readPointer_.load(); }
 
+    // Get/set underrun count (diagnostic counter)
+    int getUnderrunCount() const { return underrunCount_.load(); }
+    void incrementUnderrunCount() { underrunCount_.fetch_add(1); }
+    void resetUnderrunCount() { underrunCount_.store(0); }
+
     // Get raw buffer pointer for direct access
     float* getBuffer() { return buffer_; }
 
@@ -69,6 +74,7 @@ private:
     size_t bufferCapacity_;            // Capacity in frames
     std::atomic<int> writePointer_;    // Write position
     std::atomic<int> readPointer_;     // Read position
+    std::atomic<int> underrunCount_;   // Diagnostic: underrun counter
 
     // Calculate circular distance from read to write
     size_t calculateDistance(int write, int read) const;

@@ -12,9 +12,9 @@
 // CRITICAL: Since EngineSimAPI methods are non-virtual, calling through a
 // base-class pointer will dispatch to EngineSimAPI, NOT MockEngineSimAPI.
 // This means:
-//   - For SyncPullStrategy (uses context->engineAPI pointer):
+//   - For SyncPullStrategy (stores engineAPI_ pointer from AudioStrategyConfig):
 //     We must use the mock directly, not through base pointer.
-//     The strategy calls context->engineAPI->RenderOnDemand() which dispatches
+//     The strategy calls engineAPI_->RenderOnDemand() which dispatches
 //     statically to EngineSimAPI::RenderOnDemand -> EngineSimRenderOnDemand.
 //     This calls the REAL bridge function. Our mock can't intercept this.
 //   - For ThreadedStrategy::updateSimulation (takes const EngineSimAPI& api):
@@ -23,7 +23,7 @@
 // SOLUTION: Instead of trying to intercept non-virtual calls, we test the
 // BEHAVIOR by using the real bridge API with the --sine engine. The bridge
 // records its own state. For unit-level mocking, we use a global interceptor
-// pattern: the mock replaces the context->engineAPI pointer with itself,
+// pattern: the mock replaces the engineAPI_ pointer with itself,
 // and since SyncPullStrategy calls through the pointer, the static dispatch
 // goes to EngineSimAPI::RenderOnDemand which calls EngineSimRenderOnDemand().
 //

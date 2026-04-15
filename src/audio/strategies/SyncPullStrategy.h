@@ -32,7 +32,7 @@ public:
     const char* getName() const override;
     bool isEnabled() const override;
     bool shouldDrainDuringWarmup() const override;
-    bool needsMainThreadAudioGeneration() const override;
+    void fillBufferFromEngine(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
 
     bool render(BufferContext* context, AudioBufferList* ioData, UInt32 numberFrames) override;
     bool AddFrames(BufferContext* context, float* buffer, int frameCount) override;
@@ -55,13 +55,12 @@ public:
 private:
     ILogging* logger_;
 
-    // Timing state for real measurements
-    mutable std::atomic<double> lastRenderMs_{0.0};
-    mutable std::atomic<double> lastHeadroomMs_{0.0};
-    mutable std::atomic<double> lastBudgetPct_{0.0};
-    mutable std::atomic<double> lastFrameBudgetPct_{100.0};
-    mutable std::atomic<double> lastBufferTrendPct_{0.0};
-    mutable std::atomic<double> lastCallbackIntervalMs_{250.0};
+    // Engine connection (set during initialize)
+    EngineSimHandle engineHandle_ = nullptr;
+    const EngineSimAPI* engineAPI_ = nullptr;
+
+    // Diagnostics (replaces per-metric atomics, written in render())
+    Diagnostics diagnostics_;
 };
 
 #endif // SYNC_PULL_STRATEGY_H

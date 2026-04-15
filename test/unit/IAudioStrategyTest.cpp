@@ -37,9 +37,6 @@ protected:
         ASSERT_TRUE(circularBuffer->initialize(capacity))
             << "Failed to initialize circular buffer with capacity " << capacity;
         context->circularBuffer = circularBuffer.get();
-        context->bufferState.capacity = capacity;
-        // Initialize logical read pointer for cursor-chasing
-        context->bufferState.readPointer.store(0);
     }
 
     // Helper: Create AudioBufferList for testing
@@ -135,8 +132,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_ReadsAvailableFrames) 
     ASSERT_EQ(framesWritten, static_cast<size_t>(TEST_FRAME_COUNT));
 
     // Set context pointers to match CircularBuffer's internal state
-    context->bufferState.writePointer.store(context->circularBuffer->getWritePointer());
-    context->bufferState.readPointer.store(context->circularBuffer->getReadPointer());
+    // Pointers are now managed internally by CircularBuffer
 
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
 
@@ -166,8 +162,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough
     ASSERT_EQ(framesWritten, static_cast<size_t>(TEST_FRAME_COUNT / 2));
 
     // Set context pointers to match CircularBuffer's internal state
-    context->bufferState.writePointer.store(context->circularBuffer->getWritePointer());
-    context->bufferState.readPointer.store(context->circularBuffer->getReadPointer());
+    // Pointers are now managed internally by CircularBuffer
 
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
 
@@ -210,8 +205,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_WrapAroundRead) {
     context->circularBuffer->write(input2.data(), TEST_FRAME_COUNT / 2);
 
     // Set context pointers to match CircularBuffer's internal state
-    context->bufferState.writePointer.store(context->circularBuffer->getWritePointer());
-    context->bufferState.readPointer.store(context->circularBuffer->getReadPointer());
+    // Pointers are now managed internally by CircularBuffer
 
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
 

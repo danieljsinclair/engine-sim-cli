@@ -37,8 +37,9 @@ bool SyncPullStrategy::shouldDrainDuringWarmup() const {
     return false;
 }
 
-bool SyncPullStrategy::needsMainThreadAudioGeneration() const {
-    return false;
+void SyncPullStrategy::fillBufferFromEngine(BufferContext*, EngineSimHandle, const EngineSimAPI&, int) {
+    // SyncPull generates audio on-demand in the render callback via RenderOnDemand.
+    // No main-thread audio generation needed.
 }
 
 // ============================================================================
@@ -55,6 +56,10 @@ bool SyncPullStrategy::initialize(BufferContext* context, const AudioStrategyCon
 
     context->audioState.sampleRate = config.sampleRate;
     context->audioState.isPlaying = false;
+
+    // Store engine connection from config
+    engineHandle_ = config.engineHandle;
+    engineAPI_ = config.engineAPI;
 
     if (logger_) {
         logger_->info(LogMask::AUDIO,
@@ -134,7 +139,7 @@ bool SyncPullStrategy::render(
         return false;
     }
 
-    if (!context->engineAPI) {
+    if (!engineAPI_) {
         if (logger_) {
             logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: Engine API not initialized");
         }
@@ -151,8 +156,8 @@ bool SyncPullStrategy::render(
 
     while (remainingFrames > 0 && framesRendered < framesToGenerate) {
         int32_t framesWritten = 0;
-        EngineSimResult result = context->engineAPI->RenderOnDemand(
-            context->engineHandle,
+        EngineSimResult result = engineAPI_->RenderOnDemand(
+            engineHandle_,
             audioData + (framesRendered * 2),
             remainingFrames,
             &framesWritten
@@ -180,21 +185,8 @@ bool SyncPullStrategy::render(
     auto callbackEnd = std::chrono::high_resolution_clock::now();
     double renderMs = std::chrono::duration<double, std::milli>(callbackEnd - callbackStart).count();
 
-    constexpr double BUFFER_PERIOD_MS = 16.0;
-    double timeBudgetPct = (renderMs * 100.0) / BUFFER_PERIOD_MS;
-    double headroomMs = BUFFER_PERIOD_MS - renderMs;
-    double frameBudgetPct = 100.0 * framesRendered / framesToGenerate;
-    double callbackIntervalMs = 250.0;
-    double bufferTrendPct = 0.0;
-
-    lastRenderMs_.store(renderMs);
-    lastHeadroomMs_.store(headroomMs);
-    lastBudgetPct_.store(timeBudgetPct);
-    lastFrameBudgetPct_.store(frameBudgetPct);
-    lastBufferTrendPct_.store(bufferTrendPct);
-    lastCallbackIntervalMs_.store(callbackIntervalMs);
-
-    // Store in BufferContext diagnostics (including accumulated frame count)
+    // Store in both strategy-local diagnostics and context diagnostics
+    diagnostics_.recordRender(renderMs, framesRendered);
     context->diagnostics.recordRender(renderMs, framesRendered);
 
     return true;
@@ -226,25 +218,14 @@ std::string SyncPullStrategy::getDiagnostics() const {
 }
 
 std::string SyncPullStrategy::getProgressDisplay() const {
-    double renderMs = lastRenderMs_.load();
-    double headroomMs = lastHeadroomMs_.load();
-    double timeBudgetPct = lastBudgetPct_.load();
-    double bufferTrendPct = lastBufferTrendPct_.load();
-    double callbackIntervalMs = lastCallbackIntervalMs_.load();
+    auto snap = diagnostics_.getSnapshot();
 
-    double callbackRateHz = (callbackIntervalMs > 0.0) ? (1000.0 / callbackIntervalMs) : 0.0;
-    double generatingFps = (callbackIntervalMs > 0.0) ? (callbackRateHz * 100.0) : 0.0;
-
-    std::string budgetColor = ANSIColors::getDispositionColour(timeBudgetPct < 80, timeBudgetPct < 100);
-    std::string trendColor = ANSIColors::getDispositionColour(bufferTrendPct >= 0, bufferTrendPct < 0, bufferTrendPct < -1.0);
+    std::string budgetColor = ANSIColors::getDispositionColour(snap.lastBudgetPct < 80, snap.lastBudgetPct < 100);
 
     std::ostringstream output;
-    output << "[SYNC-PULL] rendered=" << std::fixed << std::setprecision(1) << renderMs << "ms"
-           << " headroom=" << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms"
-           << " (" << budgetColor << std::setprecision(0) << static_cast<int>(timeBudgetPct) << "% of budget" << ANSIColors::RESET << ")"
-           << " callbacks=" << std::setprecision(0) << callbackRateHz << "Hz"
-           << " generating=" << std::setprecision(1) << (generatingFps / 1000.0) << "kfps"
-           << " trend=" << trendColor << std::showpos << std::setprecision(1) << bufferTrendPct << "%" << std::noshowpos << ANSIColors::RESET;
+    output << "[SYNC-PULL] rendered=" << std::fixed << std::setprecision(1) << snap.lastRenderMs << "ms"
+           << " headroom=" << std::showpos << std::setprecision(1) << snap.lastHeadroomMs << std::noshowpos << "ms"
+           << " (" << budgetColor << std::setprecision(0) << static_cast<int>(snap.lastBudgetPct) << "% of budget" << ANSIColors::RESET << ")";
 
     return output.str();
 }

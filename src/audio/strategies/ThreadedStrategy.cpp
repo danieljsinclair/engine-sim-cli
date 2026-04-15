@@ -38,8 +38,35 @@ bool ThreadedStrategy::shouldDrainDuringWarmup() const {
     return true;
 }
 
-bool ThreadedStrategy::needsMainThreadAudioGeneration() const {
-    return true;
+void ThreadedStrategy::fillBufferFromEngine(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) {
+    if (!context || !context->circularBuffer || !handle) return;
+
+    // Cursor chasing: adjust how many frames to read based on buffer fill level
+    size_t available = context->circularBuffer->available();
+    int bufferSize = static_cast<int>(context->circularBuffer->capacity());
+    int sampleRate = context->audioState.sampleRate;
+    int targetLead = static_cast<int>(sampleRate * 0.1);  // 100ms lead
+
+    int framesToWrite;
+    if (static_cast<int>(available) < targetLead) {
+        framesToWrite = defaultFramesPerUpdate + (targetLead - static_cast<int>(available));
+    } else if (static_cast<int>(available) > targetLead * 2) {
+        framesToWrite = std::max(defaultFramesPerUpdate - (static_cast<int>(available) - targetLead), 0);
+    } else {
+        framesToWrite = defaultFramesPerUpdate;
+    }
+
+    constexpr int MAX_FRAMES_PER_READ = 4096;
+    framesToWrite = std::min(framesToWrite, MAX_FRAMES_PER_READ);
+    framesToWrite = std::min(framesToWrite, bufferSize);
+
+    std::vector<float> buffer(framesToWrite * 2);
+    int totalRead = 0;
+    api.ReadAudioBuffer(handle, buffer.data(), framesToWrite, &totalRead);
+
+    if (totalRead > 0) {
+        AddFrames(context, buffer.data(), totalRead);
+    }
 }
 
 // ============================================================================
@@ -75,11 +102,8 @@ bool ThreadedStrategy::initialize(BufferContext* context, const AudioStrategyCon
     context->audioState.sampleRate = config.sampleRate;
     context->audioState.isPlaying = false;
 
-    // Initialize buffer state
-    context->bufferState.writePointer.store(0);
-    context->bufferState.readPointer.store(0);
-    context->bufferState.underrunCount.store(0);
-    context->bufferState.fillLevel = 0;
+    // Reset circular buffer state
+    context->circularBuffer->reset();
 
     if (logger_) {
         logger_->info(LogMask::AUDIO,
@@ -109,7 +133,7 @@ void ThreadedStrategy::prepareBuffer(BufferContext* context) {
     std::fill(silence.begin(), silence.end(), 0.0f);
 
     size_t framesWritten = context->circularBuffer->write(silence.data(), preFillFrames);
-    context->bufferState.writePointer.store(context->circularBuffer->getWritePointer());
+    (void)framesWritten;
 
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "ThreadedStrategy::prepareBuffer: Pre-filled %d frames with silence", static_cast<int>(framesWritten));
@@ -184,11 +208,7 @@ void ThreadedStrategy::resetBufferAfterWarmup(BufferContext* context) {
     }
 
     // Reset circular buffer to eliminate warmup latency
-    // Drain any pre-filled audio and reset pointers
     context->circularBuffer->reset();
-    context->bufferState.writePointer.store(0);
-    context->bufferState.readPointer.store(0);
-    context->bufferState.fillLevel = 0;
 
     if (logger_) {
         logger_->info(LogMask::AUDIO, "ThreadedStrategy::resetBufferAfterWarmup: Buffer reset complete");
@@ -259,10 +279,6 @@ bool ThreadedStrategy::render(
     // Update diagnostics with buffer status
     updateDiagnostics(context, availableFrames, numberFrames);
 
-    // Update logical read pointer for cursor-chasing
-    // The physical read pointer was updated by CircularBuffer::read()
-    context->bufferState.readPointer.store(context->circularBuffer->getReadPointer());
-
     return true;
 }
 
@@ -295,19 +311,13 @@ bool ThreadedStrategy::AddFrames(
         }
     }
 
-    // Update logical write pointer for cursor-chasing
-    // The physical write pointer was updated by CircularBuffer::write()
-    context->bufferState.writePointer.store(context->circularBuffer->getWritePointer());
-
     return true;
 }
 
 std::string ThreadedStrategy::getDiagnostics() const {
     std::string diagnostics = "ThreadedStrategy Diagnostics:\n";
     diagnostics += "- Mode: Threaded audio generation\n";
-    diagnostics += "- Buffer management: Circular buffer (internal pointer management)\n";
-    diagnostics += "- Buffer fill level: See context.bufferState.fillLevel\n";
-    diagnostics += "- Current read/write pointers: Managed by CircularBuffer internally\n";
+    diagnostics += "- Buffer management: Circular buffer\n";
     return diagnostics;
 }
 
@@ -363,13 +373,10 @@ void ThreadedStrategy::updateDiagnostics(
     int availableFrames,
     int requestedFrames
 ) {
-    // Update buffer status
+    // Update buffer underrun tracking
     if (availableFrames < requestedFrames) {
-        context->bufferState.underrunCount.fetch_add(1);
+        context->circularBuffer->incrementUnderrunCount();
     } else {
-        context->bufferState.underrunCount.store(0);
+        context->circularBuffer->resetUnderrunCount();
     }
-
-    // Update buffer fill level
-    context->bufferState.fillLevel = static_cast<int>(context->circularBuffer->available());
 }

@@ -103,11 +103,9 @@ TEST_F(IntegrationAudioPlayerTest, AudioPlayer_UsesHardwareProvider) {
 
 TEST_F(IntegrationAudioPlayerTest, BufferContext_WorksWithThreadedStrategy) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    context_->strategy = strategy.get();
 
     context_->audioState.sampleRate = 44100;
     context_->audioState.isPlaying = true;
-    context_->bufferState.capacity = DEFAULT_BUFFER_CAPACITY;
 
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
     bool result = strategy->render(context_.get(), &audioBuffer, TEST_FRAME_COUNT);
@@ -117,15 +115,10 @@ TEST_F(IntegrationAudioPlayerTest, BufferContext_WorksWithThreadedStrategy) {
 
 TEST_F(IntegrationAudioPlayerTest, BufferContext_WrapsAroundCorrectly) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    context_->strategy = strategy.get();
 
     int wrapFrames = 20;
     std::vector<float> wrapSignal(wrapFrames * STEREO_CHANNELS, TEST_SIGNAL_VALUE_3);
     context_->circularBuffer->write(wrapSignal.data(), wrapFrames);
-
-    context_->bufferState.writePointer.store(wrapFrames);
-    context_->bufferState.readPointer.store(0);
-    context_->bufferState.capacity = DEFAULT_BUFFER_CAPACITY;
 
     AudioBufferList audioBuffer = createAudioBufferList(wrapFrames);
     bool result = strategy->render(context_.get(), &audioBuffer, wrapFrames);
@@ -152,7 +145,6 @@ TEST_F(IntegrationAudioPlayerTest, Factory_ReturnsNullForUnknownMode) {
 
 TEST_F(IntegrationAudioPlayerTest, ThreadedStrategy_AddFrames) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    context_->strategy = strategy.get();
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
     bool result = strategy->AddFrames(context_.get(), buffer.data(), TEST_FRAME_COUNT);
@@ -164,7 +156,6 @@ TEST_F(IntegrationAudioPlayerTest, ThreadedStrategy_AddFrames) {
 
 TEST_F(IntegrationAudioPlayerTest, SyncPullStrategy_AddFrames) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    context_->strategy = strategy.get();
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_2);
     bool result = strategy->AddFrames(context_.get(), buffer.data(), TEST_FRAME_COUNT);

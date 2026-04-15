@@ -9,8 +9,8 @@
 // CircularBuffer Implementation
 // ============================================================================
 
-CircularBuffer::CircularBuffer() 
-    : buffer_(nullptr), bufferCapacity_(0), writePointer_(0), readPointer_(0) {
+CircularBuffer::CircularBuffer()
+    : buffer_(nullptr), bufferCapacity_(0), writePointer_(0), readPointer_(0), underrunCount_(0) {
 }
 
 CircularBuffer::~CircularBuffer() {
@@ -196,6 +196,7 @@ size_t CircularBuffer::freeSpace() const {
 void CircularBuffer::reset() {
     writePointer_.store(0);
     readPointer_.store(0);
+    underrunCount_.store(0);
 }
 
 void CircularBuffer::clear() {
