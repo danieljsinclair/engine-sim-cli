@@ -9,16 +9,15 @@
 
 #include <memory>
 #include <string>
+#include <atomic>
 
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
 
 #include "engine_sim_bridge.h"
 #include "bridge/engine_sim_loader.h"
+#include "audio/state/Diagnostics.h"
 #include "ILogging.h"
-
-// Forward declarations
-struct BufferContext;
 
 // Simulation configuration
 struct AudioStrategyConfig {
@@ -54,29 +53,34 @@ public:
     virtual bool isEnabled() const = 0;
 
     /**
-     * Render audio to the provided buffer list
+     * Check if the strategy is currently playing audio.
+     * Thread-safe: can be called from any thread (e.g. audio callback).
+     */
+    virtual bool isPlaying() const = 0;
+
+    /**
+     * Render audio to the provided buffer list.
      * Called by the real-time audio callback.
      */
     virtual bool render(
-        BufferContext* context,
         AudioBufferList* ioData,
         UInt32 numberFrames
     ) = 0;
 
     /**
-     * Add frames to the strategy's internal buffer
+     * Add frames to the strategy's internal buffer.
      * Called by the main simulation loop.
      */
-    virtual bool AddFrames(BufferContext* context, float* buffer, int frameCount) = 0;
+    virtual bool AddFrames(float* buffer, int frameCount) = 0;
 
     // === Lifecycle Methods ===
 
-    virtual bool initialize(BufferContext* context, const AudioStrategyConfig& config) = 0;
-    virtual void prepareBuffer(BufferContext* context) = 0;
+    virtual bool initialize(const AudioStrategyConfig& config) = 0;
+    virtual void prepareBuffer() = 0;
 
-    virtual bool startPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) = 0;
-    virtual void stopPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) = 0;
-    virtual void resetBufferAfterWarmup(BufferContext* context) = 0;
+    virtual bool startPlayback(EngineSimHandle handle, const EngineSimAPI* api) = 0;
+    virtual void stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) = 0;
+    virtual void resetBufferAfterWarmup() = 0;
 
     // === Strategy-Specific Methods ===
 
@@ -88,14 +92,17 @@ public:
      * ThreadedStrategy: reads from engine via ReadAudioBuffer, applies cursor chasing.
      * SyncPullStrategy: no-op (audio is generated on-demand in render callback).
      */
-    virtual void fillBufferFromEngine(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) = 0;
+    virtual void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) = 0;
 
     virtual std::string getDiagnostics() const = 0;
     virtual std::string getProgressDisplay() const = 0;
     virtual void reset() = 0;
     virtual std::string getModeString() const = 0;
 
-    virtual void updateSimulation(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) = 0;
+    virtual void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) = 0;
+
+    // Temporary: returns render timing diagnostics snapshot (Phase C moves to telemetry-only)
+    virtual Diagnostics::Snapshot getDiagnosticsSnapshot() const = 0;
 };
 
 /**

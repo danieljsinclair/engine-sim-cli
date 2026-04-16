@@ -2,11 +2,10 @@
 // Implements synchronous audio generation where simulation advances with audio playback
 // SRP: Single responsibility - only implements synchronous lock-step rendering
 // OCP: New strategies can be added without modifying existing code
-// DIP: Depends on state abstractions, not concrete implementations
+// DIP: Depends on abstractions, not concrete implementations
 
 #include "audio/strategies/SyncPullStrategy.h"
 #include "audio/strategies/IAudioStrategy.h"
-#include "audio/state/BufferContext.h"
 #include "ILogging.h"
 #include "config/ANSIColors.h"
 #include <sstream>
@@ -33,31 +32,26 @@ bool SyncPullStrategy::isEnabled() const {
     return true;
 }
 
+bool SyncPullStrategy::isPlaying() const {
+    return audioState_.isPlaying.load();
+}
+
 bool SyncPullStrategy::shouldDrainDuringWarmup() const {
     return false;
 }
 
-void SyncPullStrategy::fillBufferFromEngine(BufferContext*, EngineSimHandle, const EngineSimAPI&, int) {
+void SyncPullStrategy::fillBufferFromEngine(EngineSimHandle, const EngineSimAPI&, int) {
     // SyncPull generates audio on-demand in the render callback via RenderOnDemand.
-    // No main-thread audio generation needed.
 }
 
 // ============================================================================
 // Lifecycle Method Implementations
 // ============================================================================
 
-bool SyncPullStrategy::initialize(BufferContext* context, const AudioStrategyConfig& config) {
-    if (!context) {
-        if (logger_) {
-            logger_->error(LogMask::AUDIO, "SyncPullStrategy::initialize: Invalid context");
-        }
-        return false;
-    }
+bool SyncPullStrategy::initialize(const AudioStrategyConfig& config) {
+    audioState_.sampleRate = config.sampleRate;
+    audioState_.isPlaying = false;
 
-    context->audioState.sampleRate = config.sampleRate;
-    context->audioState.isPlaying = false;
-
-    // Store engine connection from config
     engineHandle_ = config.engineHandle;
     engineAPI_ = config.engineAPI;
 
@@ -70,22 +64,14 @@ bool SyncPullStrategy::initialize(BufferContext* context, const AudioStrategyCon
     return true;
 }
 
-void SyncPullStrategy::prepareBuffer(BufferContext* context) {
-    (void)context;
+void SyncPullStrategy::prepareBuffer() {
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "SyncPullStrategy::prepareBuffer: No-op for sync-pull mode");
     }
 }
 
-bool SyncPullStrategy::startPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
-    if (!context) {
-        if (logger_) {
-            logger_->error(LogMask::AUDIO, "SyncPullStrategy::startPlayback: Invalid context");
-        }
-        return false;
-    }
-
-    context->audioState.isPlaying.store(true);
+bool SyncPullStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
+    audioState_.isPlaying.store(true);
 
     if (logger_) {
         logger_->info(LogMask::AUDIO, "SyncPullStrategy::startPlayback: On-demand rendering started");
@@ -94,55 +80,33 @@ bool SyncPullStrategy::startPlayback(BufferContext* context, EngineSimHandle han
     return true;
 }
 
-void SyncPullStrategy::stopPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) {
-    if (!context) {
-        if (logger_) {
-            logger_->warning(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: Invalid context");
-        }
-        return;
-    }
-
-    context->audioState.isPlaying.store(false);
+void SyncPullStrategy::stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
+    audioState_.isPlaying.store(false);
 
     if (logger_) {
         logger_->info(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: On-demand rendering stopped");
     }
-
-    (void)handle;
-    (void)api;
 }
 
-void SyncPullStrategy::resetBufferAfterWarmup(BufferContext* context) {
-    (void)context;
+void SyncPullStrategy::resetBufferAfterWarmup() {
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "SyncPullStrategy::resetBufferAfterWarmup: No-op for sync-pull mode");
     }
 }
 
-void SyncPullStrategy::updateSimulation(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
-    (void)context;
-    (void)handle;
-    (void)api;
-    (void)deltaTimeMs;
+void SyncPullStrategy::updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
     // Sync-pull mode updates simulation during render callback
 }
 
 bool SyncPullStrategy::render(
-    BufferContext* context,
     AudioBufferList* ioData,
     UInt32 numberFrames
 ) {
-    if (!context || !ioData) {
-        if (logger_) {
-            logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: Invalid context or buffer");
-        }
+    if (!ioData) {
         return false;
     }
 
     if (!engineAPI_) {
-        if (logger_) {
-            logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: Engine API not initialized");
-        }
         return false;
     }
 
@@ -181,26 +145,18 @@ bool SyncPullStrategy::render(
         }
     }
 
-    // Calculate real timing metrics
     auto callbackEnd = std::chrono::high_resolution_clock::now();
     double renderMs = std::chrono::duration<double, std::milli>(callbackEnd - callbackStart).count();
 
-    // Store in both strategy-local diagnostics and context diagnostics
     diagnostics_.recordRender(renderMs, framesRendered);
-    context->diagnostics.recordRender(renderMs, framesRendered);
 
     return true;
 }
 
 bool SyncPullStrategy::AddFrames(
-    BufferContext* context,
     float* buffer,
     int frameCount
 ) {
-    (void)context;
-    (void)buffer;
-    (void)frameCount;
-
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "SyncPullStrategy::AddFrames: No-op for sync-pull mode");
     }
@@ -212,8 +168,6 @@ std::string SyncPullStrategy::getDiagnostics() const {
     diagnostics += "- Mode: Lock-step (synchronous) mode\n";
     diagnostics += "- Audio generation: On-demand from simulator\n";
     diagnostics += "- Synchronization: Simulation advances with audio playback\n";
-    diagnostics += "- Buffer management: No circular buffer used\n";
-    diagnostics += "- Pre-fill: No pre-fill buffer needed\n";
     return diagnostics;
 }
 

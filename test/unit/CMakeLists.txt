@@ -16,6 +16,7 @@ add_executable(unit_tests
     DebugTest.cpp
     MockSimulatorDebugTest.cpp
     StrategyPipelineTest.cpp
+    BufferContextEradicationTest.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/config/ANSIColors.cpp # Required for display

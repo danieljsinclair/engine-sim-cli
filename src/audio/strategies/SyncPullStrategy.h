@@ -2,7 +2,8 @@
 // Implements synchronous audio generation where simulation advances with audio playback
 // SRP: Single responsibility - only implements synchronous lock-step rendering
 // OCP: New strategies can be added without modifying existing code
-// DIP: Depends on state abstractions, not concrete implementations
+// DIP: Depends on abstractions, not concrete implementations
+// Owns its own state: AudioState, Diagnostics
 
 #ifndef SYNC_PULL_STRATEGY_H
 #define SYNC_PULL_STRATEGY_H
@@ -11,7 +12,8 @@
 #include <atomic>
 
 #include "audio/strategies/IAudioStrategy.h"
-#include "audio/state/BufferContext.h"
+#include "audio/state/AudioState.h"
+#include "audio/state/Diagnostics.h"
 #include "ILogging.h"
 
 /**
@@ -21,9 +23,7 @@
  * Audio is rendered on-demand synchronously from engine simulator.
  * No separate audio thread is needed.
  *
- * SRP: Only implements synchronous lock-step rendering
- * OCP: New strategies can be added without modifying this code
- * DIP: Depends on BufferContext abstraction, not concrete state
+ * Owns its own state: AudioState, Diagnostics.
  */
 class SyncPullStrategy : public IAudioStrategy {
 public:
@@ -31,19 +31,20 @@ public:
 
     const char* getName() const override;
     bool isEnabled() const override;
+    bool isPlaying() const override;
     bool shouldDrainDuringWarmup() const override;
-    void fillBufferFromEngine(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
+    void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
 
-    bool render(BufferContext* context, AudioBufferList* ioData, UInt32 numberFrames) override;
-    bool AddFrames(BufferContext* context, float* buffer, int frameCount) override;
+    bool render(AudioBufferList* ioData, UInt32 numberFrames) override;
+    bool AddFrames(float* buffer, int frameCount) override;
 
     // Lifecycle Methods
-    bool initialize(BufferContext* context, const AudioStrategyConfig& config) override;
-    void prepareBuffer(BufferContext* context) override;
-    bool startPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
-    void stopPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
-    void resetBufferAfterWarmup(BufferContext* context) override;
-    void updateSimulation(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
+    bool initialize(const AudioStrategyConfig& config) override;
+    void prepareBuffer() override;
+    bool startPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
+    void stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
+    void resetBufferAfterWarmup() override;
+    void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
 
     std::string getDiagnostics() const override;
     std::string getProgressDisplay() const override;
@@ -51,15 +52,20 @@ public:
     void reset() override;
     std::string getModeString() const override;
 
+    // Access to diagnostics for display (temporary until Phase C moves to telemetry)
+    const Diagnostics& diagnostics() const { return diagnostics_; }
+    Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return diagnostics_.getSnapshot(); }
+
 private:
     ILogging* logger_;
+
+    // Owned state (previously in BufferContext)
+    AudioState audioState_;
+    Diagnostics diagnostics_;
 
     // Engine connection (set during initialize)
     EngineSimHandle engineHandle_ = nullptr;
     const EngineSimAPI* engineAPI_ = nullptr;
-
-    // Diagnostics (replaces per-metric atomics, written in render())
-    Diagnostics diagnostics_;
 };
 
 #endif // SYNC_PULL_STRATEGY_H

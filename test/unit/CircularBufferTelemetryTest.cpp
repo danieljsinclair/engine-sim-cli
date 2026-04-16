@@ -4,7 +4,6 @@
 // instead of being managed as external state on CircularBuffer.
 //
 // Business value: Components push diagnostics to telemetry (ISP/SRP).
-// CircularBuffer is a pure buffer -- it doesn't manage diagnostic counters.
 // ThreadedStrategy detects underruns and pushes to telemetry.
 // SimulationLoop reads underruns from telemetry, not from the buffer.
 
@@ -13,8 +12,6 @@
 
 #include "audio/strategies/ThreadedStrategy.h"
 #include "audio/strategies/SyncPullStrategy.h"
-#include "audio/state/BufferContext.h"
-#include "audio/common/CircularBuffer.h"
 #include "ITelemetryProvider.h"
 #include "AudioTestHelpers.h"
 #include "AudioTestConstants.h"
@@ -31,30 +28,18 @@ protected:
         // Create telemetry provider
         telemetry_ = std::make_unique<telemetry::InMemoryTelemetry>();
 
-        // Create strategy context
-        context_ = std::make_unique<BufferContext>();
-
-        // Initialize circular buffer
-        circularBuffer_ = std::make_unique<CircularBuffer>();
-        ASSERT_TRUE(circularBuffer_->initialize(DEFAULT_BUFFER_CAPACITY));
-        context_->circularBuffer = circularBuffer_.get();
-
-        // Create strategy with telemetry injected
+        // Create strategy with telemetry injected (strategy owns its CircularBuffer)
         strategy_ = std::make_unique<ThreadedStrategy>(nullptr, telemetry_.get());
 
-        // Initialize context
-        context_->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-        context_->audioState.isPlaying = false;
-
+        // Initialize strategy
         AudioStrategyConfig config;
         config.sampleRate = DEFAULT_SAMPLE_RATE;
         config.channels = STEREO_CHANNELS;
-        ASSERT_TRUE(strategy_->initialize(context_.get(), config));
+        ASSERT_TRUE(strategy_->initialize(config));
     }
 
     void TearDown() override {
         strategy_.reset();
-        circularBuffer_->cleanup();
     }
 
     // Helper: Create AudioBufferList for testing
@@ -75,8 +60,6 @@ protected:
     }
 
     std::unique_ptr<telemetry::InMemoryTelemetry> telemetry_;
-    std::unique_ptr<BufferContext> context_;
-    std::unique_ptr<CircularBuffer> circularBuffer_;
     std::unique_ptr<ThreadedStrategy> strategy_;
 };
 
@@ -85,12 +68,9 @@ protected:
 // ============================================================================
 
 TEST_F(CircularBufferTelemetryTest, UnderrunPushedToTelemetry_WhenBufferEmpty) {
-    // Arrange: Empty circular buffer (will trigger underrun)
-    circularBuffer_->reset();
-
-    // Act: Render with no data available
+    // Act: Render with no data available (buffer is empty after init)
     AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    bool renderResult = strategy_->render(context_.get(), &audioBuffer, DEFAULT_FRAME_COUNT);
+    bool renderResult = strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
 
     // Assert: Render should succeed (output silence)
     EXPECT_TRUE(renderResult);
@@ -108,17 +88,17 @@ TEST_F(CircularBufferTelemetryTest, UnderrunPushedToTelemetry_WhenBufferEmpty) {
 // ============================================================================
 
 TEST_F(CircularBufferTelemetryTest, NoUnderrunInTelemetry_WhenBufferHasData) {
-    // Arrange: Fill circular buffer with data
+    // Arrange: Fill internal buffer with data via AddFrames
     std::vector<float> testData(DEFAULT_FRAME_COUNT * STEREO_CHANNELS);
     for (int frame = 0; frame < DEFAULT_FRAME_COUNT; ++frame) {
         testData[frame * STEREO_CHANNELS] = static_cast<float>(frame);
         testData[frame * STEREO_CHANNELS + 1] = static_cast<float>(frame + 1);
     }
-    circularBuffer_->write(testData.data(), DEFAULT_FRAME_COUNT);
+    strategy_->AddFrames(testData.data(), DEFAULT_FRAME_COUNT);
 
     // Act: Render with data available
     AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    bool renderResult = strategy_->render(context_.get(), &audioBuffer, DEFAULT_FRAME_COUNT);
+    bool renderResult = strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
 
     // Assert: Render should succeed
     EXPECT_TRUE(renderResult);
@@ -136,14 +116,10 @@ TEST_F(CircularBufferTelemetryTest, NoUnderrunInTelemetry_WhenBufferHasData) {
 // ============================================================================
 
 TEST_F(CircularBufferTelemetryTest, MultipleUnderruns_AccumulateInTelemetry) {
-    // Arrange: Empty buffer
-    circularBuffer_->reset();
-
-    // Act: Render multiple times with no data
-    int underrunCount = 0;
+    // Act: Render multiple times with no data (buffer empty after init)
     for (int i = 0; i < 5; ++i) {
         AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-        strategy_->render(context_.get(), &audioBuffer, DEFAULT_FRAME_COUNT);
+        strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
         freeAudioBufferList(audioBuffer);
     }
 
@@ -158,14 +134,14 @@ TEST_F(CircularBufferTelemetryTest, MultipleUnderruns_AccumulateInTelemetry) {
 // ============================================================================
 
 TEST_F(CircularBufferTelemetryTest, BufferHealthPublishedToTelemetry) {
-    // Arrange: Fill buffer partially (50%)
-    int halfCapacity = static_cast<int>(circularBuffer_->capacity()) / 2;
+    // Arrange: Fill buffer partially via AddFrames
+    int halfCapacity = DEFAULT_BUFFER_CAPACITY / 2;
     std::vector<float> testData(halfCapacity * STEREO_CHANNELS, 0.5f);
-    circularBuffer_->write(testData.data(), halfCapacity);
+    strategy_->AddFrames(testData.data(), halfCapacity);
 
     // Act: Render a small amount
     AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    strategy_->render(context_.get(), &audioBuffer, DEFAULT_FRAME_COUNT);
+    strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
 
     // Assert: Buffer health should be published
     auto diag = telemetry_->getAudioDiagnostics();
@@ -177,27 +153,24 @@ TEST_F(CircularBufferTelemetryTest, BufferHealthPublishedToTelemetry) {
 
 // ============================================================================
 // Test 5: SyncPullStrategy does not push audio diagnostics to telemetry
-//         (SyncPull doesn't use CircularBuffer at all)
+//         (SyncPull does not use CircularBuffer at all)
 // ============================================================================
 
 TEST_F(CircularBufferTelemetryTest, SyncPullStrategy_DoesNotPushAudioDiagnostics) {
     // Arrange: Create SyncPullStrategy
     auto syncStrategy = std::make_unique<SyncPullStrategy>(nullptr);
-    auto syncContext = std::make_unique<BufferContext>();
-    syncContext->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
-    syncContext->audioState.isPlaying = false;
 
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    syncStrategy->initialize(syncContext.get(), config);
+    syncStrategy->initialize(config);
 
     // Act: SyncPullStrategy.render() will fail without engine API,
     //      but it should NOT push audio diagnostics to telemetry
     AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    syncStrategy->render(syncContext.get(), &audioBuffer, DEFAULT_FRAME_COUNT);
+    syncStrategy->render(&audioBuffer, DEFAULT_FRAME_COUNT);
 
-    // Assert: Audio diagnostics should remain at zero (SyncPull doesn't push)
+    // Assert: Audio diagnostics should remain at zero (SyncPull does not push)
     auto diag = telemetry_->getAudioDiagnostics();
     EXPECT_EQ(diag.underrunCount, 0)
         << "SyncPullStrategy should not push audio diagnostics to telemetry";

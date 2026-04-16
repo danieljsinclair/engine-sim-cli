@@ -1,12 +1,12 @@
 // AudioStrategyIntegrationTest.cpp - Integration tests for audio strategy + hardware
-// TDD: Tests verify strategy/hardware/buffer integration works correctly
+// TDD: Tests verify strategy/hardware integration works correctly
+// Strategies own their own state -- no BufferContext needed
 
 #include "audio/strategies/IAudioStrategy.h"
 #include "audio/strategies/ThreadedStrategy.h"
 #include "audio/strategies/SyncPullStrategy.h"
 #include "audio/hardware/IAudioHardwareProvider.h"
 #include "audio/hardware/CoreAudioHardwareProvider.h"
-#include "audio/state/BufferContext.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
 
@@ -24,12 +24,6 @@ protected:
     void SetUp() override {
         logger_ = std::make_unique<ConsoleLogger>();
         hardwareProvider_ = std::make_unique<CoreAudioHardwareProvider>(logger_.get());
-        context_ = std::make_unique<BufferContext>();
-
-        circularBuffer_ = std::make_unique<CircularBuffer>();
-        ASSERT_TRUE(circularBuffer_->initialize(DEFAULT_BUFFER_CAPACITY))
-            << "Failed to initialize circular buffer";
-        context_->circularBuffer = circularBuffer_.get();
     }
 
     void TearDown() override {
@@ -56,8 +50,6 @@ protected:
 
     std::unique_ptr<ConsoleLogger> logger_;
     std::unique_ptr<IAudioHardwareProvider> hardwareProvider_;
-    std::unique_ptr<BufferContext> context_;
-    std::unique_ptr<CircularBuffer> circularBuffer_;
 };
 
 // ============================================================================
@@ -101,28 +93,44 @@ TEST_F(AudioStrategyIntegrationTest, HardwareProvider_InitAndCallback) {
     EXPECT_TRUE(hardwareProvider_->initialize(format));
 }
 
-TEST_F(AudioStrategyIntegrationTest, BufferContext_WorksWithThreadedStrategy) {
+TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_RendersWithInitializedBuffer) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
-    context_->audioState.sampleRate = 44100;
-    context_->audioState.isPlaying = true;
+    // Initialize strategy -- creates internal circular buffer
+    AudioStrategyConfig config;
+    config.sampleRate = 44100;
+    config.channels = STEREO_CHANNELS;
+    ASSERT_TRUE(strategy->initialize(config));
 
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
-    bool result = strategy->render(context_.get(), &audioBuffer, TEST_FRAME_COUNT);
+    bool result = strategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    // With empty buffer, should still succeed (output silence)
     EXPECT_TRUE(result);
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(AudioStrategyIntegrationTest, BufferContext_WrapsAroundCorrectly) {
+TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_WrapsAroundCorrectly) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
+
+    AudioStrategyConfig config;
+    config.sampleRate = 44100;
+    config.channels = STEREO_CHANNELS;
+    ASSERT_TRUE(strategy->initialize(config));
 
     int wrapFrames = 20;
     std::vector<float> wrapSignal(wrapFrames * STEREO_CHANNELS, TEST_SIGNAL_VALUE_3);
-    context_->circularBuffer->write(wrapSignal.data(), wrapFrames);
+    ASSERT_TRUE(strategy->AddFrames(wrapSignal.data(), wrapFrames));
 
     AudioBufferList audioBuffer = createAudioBufferList(wrapFrames);
-    bool result = strategy->render(context_.get(), &audioBuffer, wrapFrames);
+    bool result = strategy->render(&audioBuffer, wrapFrames);
     EXPECT_TRUE(result);
+
+    // Verify output matches input
+    float* output = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    for (int i = 0; i < wrapFrames * STEREO_CHANNELS; ++i) {
+        EXPECT_FLOAT_EQ(output[i], TEST_SIGNAL_VALUE_3);
+    }
+
     freeAudioBufferList(audioBuffer);
 }
 
@@ -146,18 +154,29 @@ TEST_F(AudioStrategyIntegrationTest, Factory_ReturnsNullForUnknownMode) {
 TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_AddFrames) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
+    AudioStrategyConfig config;
+    config.sampleRate = 44100;
+    config.channels = STEREO_CHANNELS;
+    ASSERT_TRUE(strategy->initialize(config));
+
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
-    bool result = strategy->AddFrames(context_.get(), buffer.data(), TEST_FRAME_COUNT);
+    bool result = strategy->AddFrames(buffer.data(), TEST_FRAME_COUNT);
     EXPECT_TRUE(result);
 
-    int available = static_cast<int>(context_->circularBuffer->available());
-    EXPECT_EQ(available, TEST_FRAME_COUNT);
+    // Verify data can be rendered back
+    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+    ASSERT_TRUE(strategy->render(&audioBuffer, TEST_FRAME_COUNT));
+    float* output = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    for (int i = 0; i < TEST_FRAME_COUNT * STEREO_CHANNELS; ++i) {
+        EXPECT_FLOAT_EQ(output[i], TEST_SIGNAL_VALUE_1);
+    }
+    freeAudioBufferList(audioBuffer);
 }
 
 TEST_F(AudioStrategyIntegrationTest, SyncPullStrategy_AddFrames) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_2);
-    bool result = strategy->AddFrames(context_.get(), buffer.data(), TEST_FRAME_COUNT);
+    bool result = strategy->AddFrames(buffer.data(), TEST_FRAME_COUNT);
     EXPECT_TRUE(result);
 }

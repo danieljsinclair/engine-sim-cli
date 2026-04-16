@@ -1,8 +1,8 @@
 // ThreadedStrategy.h - Cursor-chasing audio strategy
-// Implements IAudioStrategy using BufferContext state model
 // SRP: Single responsibility - only implements threaded cursor-chasing rendering
 // OCP: New strategies can be added without modifying existing code
-// DIP: Depends on state abstractions, not concrete implementations
+// DIP: Depends on abstractions, not concrete implementations
+// Owns its own state: AudioState, Diagnostics, CircularBuffer
 
 #ifndef THREADED_STRATEGY_H
 #define THREADED_STRATEGY_H
@@ -12,20 +12,20 @@
 #include <AudioToolbox/AudioToolbox.h>
 
 #include "audio/strategies/IAudioStrategy.h"
-#include "audio/state/BufferContext.h"
+#include "audio/common/CircularBuffer.h"
+#include "audio/state/AudioState.h"
+#include "audio/state/Diagnostics.h"
 #include "ITelemetryProvider.h"
 #include "ILogging.h"
 
 /**
  * ThreadedStrategy - Cursor-chasing audio strategy
  *
- * Audio is generated in the main loop, written to a circular buffer,
+ * Audio is generated in the main loop, written to an internal circular buffer,
  * and read by the real-time audio callback at playback cursor position.
  * Maintains ~100ms lead between generation and playback.
  *
- * SRP: Only implements threaded cursor-chasing rendering
- * OCP: New strategies can be added without modifying this code
- * DIP: Depends on BufferContext abstraction, not concrete state
+ * Owns its own state: AudioState, Diagnostics, CircularBuffer.
  */
 class ThreadedStrategy : public IAudioStrategy {
 public:
@@ -35,35 +35,45 @@ public:
     // IAudioStrategy Implementation
     const char* getName() const override;
     bool isEnabled() const override;
+    bool isPlaying() const override;
 
-    bool render(BufferContext* context, AudioBufferList* ioData, UInt32 numberFrames) override;
-    bool AddFrames(BufferContext* context, float* buffer, int frameCount) override;
+    bool render(AudioBufferList* ioData, UInt32 numberFrames) override;
+    bool AddFrames(float* buffer, int frameCount) override;
 
     // Lifecycle Methods
-    bool initialize(BufferContext* context, const AudioStrategyConfig& config) override;
-    void prepareBuffer(BufferContext* context) override;
-    bool startPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
-    void stopPlayback(BufferContext* context, EngineSimHandle handle, const EngineSimAPI* api) override;
-    void resetBufferAfterWarmup(BufferContext* context) override;
-    void updateSimulation(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
+    bool initialize(const AudioStrategyConfig& config) override;
+    void prepareBuffer() override;
+    bool startPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
+    void stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
+    void resetBufferAfterWarmup() override;
+    void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
 
     // Strategy-Specific Methods
     bool shouldDrainDuringWarmup() const override;
-    void fillBufferFromEngine(BufferContext* context, EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
+    void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
     std::string getDiagnostics() const override;
     std::string getProgressDisplay() const override;
     void reset() override;
     std::string getModeString() const override;
 
+    // Access to diagnostics for display (temporary until Phase C moves to telemetry)
+    const Diagnostics& diagnostics() const { return diagnostics_; }
+    Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return diagnostics_.getSnapshot(); }
+
 private:
     ILogging* logger_;
     telemetry::ITelemetryWriter* telemetry_;
 
-    // Internal underrun tracking (replaces CircularBuffer state management)
+    // Owned state (previously in BufferContext)
+    AudioState audioState_;
+    Diagnostics diagnostics_;
+    CircularBuffer circularBuffer_;
+
+    // Internal underrun tracking
     int underrunCount_ = 0;
 
-    int getAvailableFrames(const BufferContext* context) const;
-    void updateDiagnostics(BufferContext* context, int availableFrames, int framesRequested);
+    int getAvailableFrames() const;
+    void updateDiagnostics(int availableFrames, int framesRequested);
     void publishAudioDiagnostics(int underrunCount, double bufferHealthPct);
 };
 

@@ -21,8 +21,7 @@ CoreAudioHardwareProvider::CoreAudioHardwareProvider(ILogging* logger)
       overrunCount(0),
       defaultLogger_(logger ? nullptr : new ConsoleLogger()),
       logger_(logger ? logger : defaultLogger_.get()),
-      audioCallback_(nullptr),
-      context_(nullptr) {
+      audioCallback_(nullptr) {
 }
 
 CoreAudioHardwareProvider::~CoreAudioHardwareProvider() {

@@ -9,7 +9,6 @@
 #include "bridge/engine_sim_loader.h"
 
 class IAudioStrategy;
-class BufferContext;
 
 // Forward declarations for injectable interfaces
 namespace input { class IInputProvider; }
@@ -64,7 +63,6 @@ int runUnifiedAudioLoop(
     EngineSimHandle handle,
     const EngineSimAPI& api,
     const SimulationConfig& config,
-    BufferContext* audioContext,
     IAudioStrategy& audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
