@@ -30,8 +30,6 @@ target_link_libraries(unit_tests
 # Add source files that stay in CLI to be compiled with the unit tests
 target_sources(unit_tests
     PRIVATE
-        ../../src/audio/strategies/IAudioStrategyFactory.cpp
-        ../../src/audio/hardware/AudioHardwareProviderFactory.cpp
         ../../src/simulation/EngineConfig.cpp
         ../../src/simulation/SimulationLoop.cpp
 )

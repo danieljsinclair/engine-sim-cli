@@ -33,9 +33,6 @@ add_executable(engine-sim-cli
     # Input layer
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
-    # Audio factory (stays in CLI - depends on bridge strategy types)
-    src/audio/strategies/IAudioStrategyFactory.cpp
-    src/audio/hardware/AudioHardwareProviderFactory.cpp
 )
 
 target_link_libraries(engine-sim-cli

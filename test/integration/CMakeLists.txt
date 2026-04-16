@@ -15,9 +15,6 @@ add_executable(integration_tests
     ${MOCK_SOURCES}
     # Required support code
     ../../src/config/ANSIColors.cpp
-    # Audio factories (still in CLI)
-    ../../src/audio/strategies/IAudioStrategyFactory.cpp
-    ../../src/audio/hardware/AudioHardwareProviderFactory.cpp
 )
 
 target_link_libraries(integration_tests
