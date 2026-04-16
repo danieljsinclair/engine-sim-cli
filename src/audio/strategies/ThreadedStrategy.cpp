@@ -17,9 +17,8 @@ using namespace std::chrono;
 // ThreadedStrategy Implementation
 // ============================================================================
 
-ThreadedStrategy::ThreadedStrategy(ILogging* logger)
-    : logger_(logger) {
-    // Note: logger may be nullptr - handle with null checks
+ThreadedStrategy::ThreadedStrategy(ILogging* logger, telemetry::ITelemetryWriter* telemetry)
+    : logger_(logger), telemetry_(telemetry) {
 }
 
 // ============================================================================
@@ -373,10 +372,29 @@ void ThreadedStrategy::updateDiagnostics(
     int availableFrames,
     int requestedFrames
 ) {
-    // Update buffer underrun tracking
+    // Update buffer underrun tracking (internal state, not on CircularBuffer)
     if (availableFrames < requestedFrames) {
-        context->circularBuffer->incrementUnderrunCount();
+        underrunCount_++;
     } else {
-        context->circularBuffer->resetUnderrunCount();
+        underrunCount_ = 0;
+    }
+
+    // Calculate buffer health percentage
+    double bufferHealthPct = 0.0;
+    if (context && context->circularBuffer && context->circularBuffer->capacity() > 0) {
+        bufferHealthPct = (static_cast<double>(availableFrames) /
+                          static_cast<double>(context->circularBuffer->capacity())) * 100.0;
+    }
+
+    // Push to telemetry
+    publishAudioDiagnostics(underrunCount_, bufferHealthPct);
+}
+
+void ThreadedStrategy::publishAudioDiagnostics(int underrunCount, double bufferHealthPct) {
+    if (telemetry_) {
+        telemetry::AudioDiagnosticsTelemetry diag;
+        diag.underrunCount = underrunCount;
+        diag.bufferHealthPct = bufferHealthPct;
+        telemetry_->writeAudioDiagnostics(diag);
     }
 }

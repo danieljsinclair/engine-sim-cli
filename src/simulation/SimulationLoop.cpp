@@ -111,14 +111,6 @@ bool checkStarterMotorRPM(EngineSimHandle handle, const EngineSimAPI& api, doubl
     return false;
 }
 
-int getUnderrunCount(AudioPlayer* audioPlayer) {
-    if (!audioPlayer) {
-        return 0;
-    }
-    auto* context = audioPlayer->getContext();
-    return (context && context->circularBuffer) ? context->circularBuffer->getUnderrunCount() : 0;
-}
-
 void performTimingControl(LoopTimer& timer) {
     timer.sleepToMaintain60Hz();
 }
@@ -170,24 +162,37 @@ void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
                     const EngineSimStats& stats,
                     double currentTime,
                     double throttle,
-                    bool ignition,
-                    int underrunCount) {
-    if (telemetryWriter) {
-        telemetry::TelemetryData data;
-        data.currentRPM = stats.currentRPM;
-        data.currentLoad = stats.currentLoad;
-        data.exhaustFlow = stats.exhaustFlow;
-        data.manifoldPressure = stats.manifoldPressure;
-        data.activeChannels = stats.activeChannels;
-        data.processingTimeMs = stats.processingTimeMs;
-        data.underrunCount = underrunCount;
-        data.bufferHealthPct = 0.0;
-        data.throttlePosition = throttle;
-        data.ignitionOn = ignition;
-        data.starterMotorEngaged = false;
-        data.timestamp = currentTime;
-        telemetryWriter->write(data);
-    }
+                    bool ignition) {
+    if (!telemetryWriter) return;
+
+    // Push engine state
+    telemetry::EngineStateTelemetry engine;
+    engine.currentRPM = stats.currentRPM;
+    engine.currentLoad = stats.currentLoad;
+    engine.exhaustFlow = stats.exhaustFlow;
+    engine.manifoldPressure = stats.manifoldPressure;
+    engine.activeChannels = stats.activeChannels;
+    telemetryWriter->writeEngineState(engine);
+
+    // Push frame performance
+    telemetry::FramePerformanceTelemetry perf;
+    perf.processingTimeMs = stats.processingTimeMs;
+    telemetryWriter->writeFramePerformance(perf);
+
+    // Push vehicle inputs
+    telemetry::VehicleInputsTelemetry inputs;
+    inputs.throttlePosition = throttle;
+    inputs.ignitionOn = ignition;
+    inputs.starterMotorEngaged = false;
+    telemetryWriter->writeVehicleInputs(inputs);
+
+    // Push simulator metrics
+    telemetry::SimulatorMetricsTelemetry metrics;
+    metrics.timestamp = currentTime;
+    telemetryWriter->writeSimulatorMetrics(metrics);
+
+    // Note: AudioDiagnostics (underrunCount, bufferHealthPct) are pushed
+    // by ThreadedStrategy, not here -- SRP/ISP compliance
 }
 
 EngineSimConfig createDefaultEngineSimConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
@@ -283,7 +288,8 @@ int runUnifiedAudioLoop(
     IAudioStrategy& audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
-    telemetry::ITelemetryWriter* telemetryWriter)
+    telemetry::ITelemetryWriter* telemetryWriter,
+    telemetry::ITelemetryReader* telemetryReader)
 {
     double currentTime = 0.0;
     LoopTimer timer;
@@ -317,9 +323,14 @@ int runUnifiedAudioLoop(
             audioStrategy.fillBufferFromEngine(ctx, handle, api, AudioLoopConfig::FRAMES_PER_UPDATE);
         }
 
-        int underrunCount = getUnderrunCount(audioPlayer);
+        writeTelemetry(telemetryWriter, stats, currentTime, throttle, ignition);
 
-        writeTelemetry(telemetryWriter, stats, currentTime, throttle, ignition, underrunCount);
+        // Read underrun count from telemetry (pushed by ThreadedStrategy)
+        int underrunCount = 0;
+        if (telemetryReader) {
+            auto audioDiag = telemetryReader->getAudioDiagnostics();
+            underrunCount = audioDiag.underrunCount;
+        }
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
@@ -467,7 +478,7 @@ int runSimulation(
     // Start AudioUnit playback via AudioPlayer
     audioPlayer->start();
 
-    int exitCode = runUnifiedAudioLoop(handle, engineAPI, config, audioPlayer, *audioStrategy, inputProvider, presentation, config.telemetryWriter);
+    int exitCode = runUnifiedAudioLoop(handle, engineAPI, config, audioPlayer, *audioStrategy, inputProvider, presentation, config.telemetryWriter, config.telemetryReader);
 
     cleanupSimulation(audioPlayer, handle, engineAPI, exitCode);
 

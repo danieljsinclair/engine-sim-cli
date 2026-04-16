@@ -13,6 +13,7 @@
 
 #include "audio/strategies/IAudioStrategy.h"
 #include "audio/state/BufferContext.h"
+#include "ITelemetryProvider.h"
 #include "ILogging.h"
 
 /**
@@ -28,7 +29,8 @@
  */
 class ThreadedStrategy : public IAudioStrategy {
 public:
-    explicit ThreadedStrategy(ILogging* logger = nullptr);
+    explicit ThreadedStrategy(ILogging* logger = nullptr,
+                              telemetry::ITelemetryWriter* telemetry = nullptr);
 
     // IAudioStrategy Implementation
     const char* getName() const override;
@@ -56,9 +58,14 @@ public:
 
 private:
     ILogging* logger_;
+    telemetry::ITelemetryWriter* telemetry_;
+
+    // Internal underrun tracking (replaces CircularBuffer state management)
+    int underrunCount_ = 0;
 
     int getAvailableFrames(const BufferContext* context) const;
     void updateDiagnostics(BufferContext* context, int availableFrames, int framesRequested);
+    void publishAudioDiagnostics(int underrunCount, double bufferHealthPct);
 };
 
 #endif // THREADED_STRATEGY_H

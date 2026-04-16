@@ -16,6 +16,8 @@
 #include <fstream>
 #include <cstring>
 
+#include "ITelemetryProvider.h"
+
 using namespace test::constants;
 
 // ============================================================================
@@ -37,8 +39,9 @@ protected:
             << "Failed to initialize circular buffer";
         context_->circularBuffer = circularBuffer_.get();
 
-        // Create strategy
-        strategy_ = std::make_unique<ThreadedStrategy>(logger_.get());
+        // Create strategy with telemetry for diagnostic verification
+        telemetry_ = std::make_unique<telemetry::InMemoryTelemetry>();
+        strategy_ = std::make_unique<ThreadedStrategy>(logger_.get(), telemetry_.get());
 
         // Initialize context with required state (no mock simulator needed for basic tests)
         context_->audioState.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -116,6 +119,7 @@ protected:
     }
 
     std::unique_ptr<ConsoleLogger> logger_;
+    std::unique_ptr<telemetry::InMemoryTelemetry> telemetry_;
     // std::unique_ptr<MockDataSimulator> mockSimulator_;  // Not used in basic tests
     std::unique_ptr<BufferContext> context_;
     std::unique_ptr<CircularBuffer> circularBuffer_;
@@ -204,10 +208,10 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesBufferUnderrunGr
             << "Right channel should be silent at frame " << frame;
     }
 
-    // Verify: Underrun count should be incremented
-    int underrunCount = context_->circularBuffer->getUnderrunCount();
-    EXPECT_GT(underrunCount, 0)
-        << "Underrun count should be incremented";
+    // Verify: Underrun count should be visible in telemetry
+    auto diag = telemetry_->getAudioDiagnostics();
+    EXPECT_GT(diag.underrunCount, 0)
+        << "Underrun count should be published to telemetry";
 
     freeAudioBufferList(audioBuffer);
 }

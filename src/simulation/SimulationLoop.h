@@ -15,7 +15,7 @@ class IAudioStrategy;
 namespace input { class IInputProvider; }
 namespace presentation { class IPresentation; }
 class ILogging;
-namespace telemetry { class ITelemetryWriter; }
+namespace telemetry { class ITelemetryWriter; class ITelemetryReader; }
 
 // ============================================================================
 // SimulationConfig - Minimal config for simulation (OCP compliance)
@@ -49,6 +49,7 @@ public:
 
     ILogging* logger;
     telemetry::ITelemetryWriter* telemetryWriter = nullptr;
+    telemetry::ITelemetryReader* telemetryReader = nullptr;
 
 private:
     static ConsoleLogger& defaultLogger();
@@ -67,7 +68,8 @@ int runUnifiedAudioLoop(
     IAudioStrategy& audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
-    telemetry::ITelemetryWriter* telemetryWriter);
+    telemetry::ITelemetryWriter* telemetryWriter,
+    telemetry::ITelemetryReader* telemetryReader);
 
 struct EngineLoaderResult {
     EngineSimHandle handle = nullptr;

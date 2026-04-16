@@ -4,6 +4,7 @@
 # Unit test executable
 add_executable(unit_tests
     CircularBufferTest.cpp
+    CircularBufferTelemetryTest.cpp
     # IAudioHardwareProviderTest.cpp - TODO: Create this test
     # StateManagementTest.cpp - TODO: Create this test
     # ThreadedStrategyTest.cpp - TODO: Create this test
