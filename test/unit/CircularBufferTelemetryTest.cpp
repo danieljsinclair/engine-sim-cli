@@ -10,8 +10,8 @@
 #include <gtest/gtest.h>
 #include <memory>
 
-#include "audio/strategies/ThreadedStrategy.h"
-#include "audio/strategies/SyncPullStrategy.h"
+#include "ThreadedStrategy.h"
+#include "SyncPullStrategy.h"
 #include "ITelemetryProvider.h"
 #include "AudioTestHelpers.h"
 #include "AudioTestConstants.h"

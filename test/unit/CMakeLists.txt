@@ -1,5 +1,6 @@
 # Unit-level deterministic audio tests
 # TDD approach: RED -> GREEN -> REFACTOR
+# Phase F: Strategy/buffer/hardware sources now come from engine-sim-bridge library
 
 # Unit test executable
 add_executable(unit_tests
@@ -18,10 +19,8 @@ add_executable(unit_tests
     StrategyPipelineTest.cpp
     BufferContextEradicationTest.cpp
     ISimulatorTest.cpp
-    # Source files under test (direct inclusion for unit tests)
-    ../../src/audio/common/CircularBuffer.cpp
+    # Required support code
     ../../src/config/ANSIColors.cpp # Required for display
-    # ../../test/mocks/MockIAudioHardwareProvider.cpp - TODO: Create this file
     ../../test/mocks/MockDataSimulator.cpp
     ../../test/mocks/MockAudioUnit.cpp
 )
@@ -34,15 +33,11 @@ target_link_libraries(unit_tests
         ${AUDIO_LIBRARY}
 )
 
-# Add the strategy implementations to be compiled with the unit tests
+# Add source files that stay in CLI to be compiled with the unit tests
 target_sources(unit_tests
     PRIVATE
         ../../src/audio/strategies/IAudioStrategyFactory.cpp
-        ../../src/audio/strategies/ThreadedStrategy.cpp
-        ../../src/audio/strategies/SyncPullStrategy.cpp
         ../../src/audio/hardware/AudioHardwareProviderFactory.cpp
-        ../../src/audio/hardware/CoreAudioHardwareProvider.cpp
-        ../../src/simulation/BridgeSimulator.cpp
         ../../src/simulation/EngineConfig.cpp
         ../../src/simulation/SimulationLoop.cpp
 )

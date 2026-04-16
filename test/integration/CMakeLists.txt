@@ -1,6 +1,7 @@
 # Integration-level audio tests
 # Tests at Simulator interface level using SineWaveSimulator
 # TDD: Tests real audio bugs at the right abstraction level
+# Phase F: Strategy/buffer/hardware sources now come from engine-sim-bridge library
 
 # Mock objects for DI injection
 set(MOCK_SOURCES
@@ -12,15 +13,10 @@ set(MOCK_SOURCES
 add_executable(integration_tests
     SimulatorLevelAudioTest.cpp
     ${MOCK_SOURCES}
-    # Source files under test (Simulator-level integration)
-    ../../src/audio/common/CircularBuffer.cpp
+    # Required support code
     ../../src/config/ANSIColors.cpp
-    # Audio strategies
+    # Audio factories (still in CLI)
     ../../src/audio/strategies/IAudioStrategyFactory.cpp
-    ../../src/audio/strategies/ThreadedStrategy.cpp
-    ../../src/audio/strategies/SyncPullStrategy.cpp
-    # Audio hardware providers
-    ../../src/audio/hardware/CoreAudioHardwareProvider.cpp
     ../../src/audio/hardware/AudioHardwareProviderFactory.cpp
 )
 

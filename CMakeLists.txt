@@ -19,6 +19,7 @@ endif()
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 
 # CLI executable - refactored into modular folder structure
+# Phase F: Audio strategy/buffer/hardware/BridgeSimulator moved to engine-sim-bridge
 add_executable(engine-sim-cli
     # Config layer
     src/config/CLIconfig.cpp
@@ -27,20 +28,13 @@ add_executable(engine-sim-cli
     # Simulation layer
     src/simulation/SimulationLoop.cpp
     src/simulation/EngineConfig.cpp
-    src/simulation/BridgeSimulator.cpp
     # Presentation layer
     src/presentation/ConsolePresentation.cpp
     # Input layer
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
-    # Audio layer
-    src/audio/common/CircularBuffer.cpp
-    # Audio strategies
+    # Audio factory (stays in CLI - depends on bridge strategy types)
     src/audio/strategies/IAudioStrategyFactory.cpp
-    src/audio/strategies/ThreadedStrategy.cpp
-    src/audio/strategies/SyncPullStrategy.cpp
-    # Audio hardware providers
-    src/audio/hardware/CoreAudioHardwareProvider.cpp
     src/audio/hardware/AudioHardwareProviderFactory.cpp
 )
 

@@ -1,6 +1,6 @@
 // DebugTest.cpp - Simple debug test to isolate the hanging issue
 
-#include "audio/strategies/ThreadedStrategy.h"
+#include "ThreadedStrategy.h"
 #include "../mocks/MockDataSimulator.h"
 #include "AudioTestConstants.h"
 

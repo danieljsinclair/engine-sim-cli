@@ -6,9 +6,9 @@
 
 #include "CLIconfig.h"
 
-#include "audio/strategies/IAudioStrategy.h"
+#include "IAudioStrategy.h"
 #include "simulation/SimulationLoop.h"
-#include "simulation/BridgeSimulator.h"
+#include "BridgeSimulator.h"
 #include "input/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "presentation/IPresentation.h"

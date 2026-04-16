@@ -12,7 +12,7 @@
 // Bridge includes
 #include "engine_sim_bridge.h"
 #include "sine_wave_simulator.h"
-#include "bridge/engine_sim_loader.h"
+#include "engine_sim_loader.h"
 #include "ILogging.h"
 
 // Audio includes

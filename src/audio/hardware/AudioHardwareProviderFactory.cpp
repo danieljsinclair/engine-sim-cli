@@ -3,8 +3,8 @@
 // OCP: New platforms can be added by extending this factory
 // DIP: Client code depends on IAudioHardwareProvider, not concrete implementations
 
-#include "audio/hardware/IAudioHardwareProvider.h"
-#include "audio/hardware/CoreAudioHardwareProvider.h"
+#include "IAudioHardwareProvider.h"
+#include "CoreAudioHardwareProvider.h"
 #include "ILogging.h"
 
 #include <memory>

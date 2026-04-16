@@ -4,8 +4,8 @@
 #ifndef MOCK_AUDIO_STRATEGY_H
 #define MOCK_AUDIO_STRATEGY_H
 
-#include "audio/strategies/IAudioStrategy.h"
-#include "audio/state/Diagnostics.h"
+#include "IAudioStrategy.h"
+#include "Diagnostics.h"
 #include <cstring>
 #include <atomic>
 

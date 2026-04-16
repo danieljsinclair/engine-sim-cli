@@ -1,9 +1,9 @@
 // IAudioStrategyFactory.cpp - Factory for creating audio strategies
 // Implements the factory pattern to create appropriate IAudioStrategy implementations
 
-#include "audio/strategies/IAudioStrategy.h"
-#include "audio/strategies/ThreadedStrategy.h"
-#include "audio/strategies/SyncPullStrategy.h"
+#include "IAudioStrategy.h"
+#include "ThreadedStrategy.h"
+#include "SyncPullStrategy.h"
 
 #include <memory>
 

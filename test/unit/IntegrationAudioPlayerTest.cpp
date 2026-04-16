@@ -2,11 +2,11 @@
 // TDD: Tests verify strategy/hardware integration works correctly
 // Strategies own their own state -- no BufferContext needed
 
-#include "audio/strategies/IAudioStrategy.h"
-#include "audio/strategies/ThreadedStrategy.h"
-#include "audio/strategies/SyncPullStrategy.h"
-#include "audio/hardware/IAudioHardwareProvider.h"
-#include "audio/hardware/CoreAudioHardwareProvider.h"
+#include "IAudioStrategy.h"
+#include "ThreadedStrategy.h"
+#include "SyncPullStrategy.h"
+#include "IAudioHardwareProvider.h"
+#include "CoreAudioHardwareProvider.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
 

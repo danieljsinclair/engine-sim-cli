@@ -4,8 +4,8 @@
 // Captures baseline output for regression verification
 // Strategies own their own state -- no BufferContext needed
 
-#include "audio/strategies/ThreadedStrategy.h"
-#include "audio/strategies/SyncPullStrategy.h"
+#include "ThreadedStrategy.h"
+#include "SyncPullStrategy.h"
 #include "../mocks/MockDataSimulator.h"
 #include "../mocks/MockAudioUnit.h"
 #include "AudioTestHelpers.h"

@@ -5,7 +5,7 @@
 #ifndef MOCK_SIMULATOR_H
 #define MOCK_SIMULATOR_H
 
-#include "simulation/ISimulator.h"
+#include "ISimulator.h"
 #include "engine_sim_bridge.h"
 #include <cstring>
 #include <vector>
@@ -35,9 +35,8 @@ public:
         return true;
     }
 
-    bool destroy() override {
+    void destroy() override {
         created_ = false;
-        return true;
     }
 
     std::string getLastError() const override {
@@ -45,11 +44,10 @@ public:
     }
 
     // Simulation
-    bool update(double deltaTime) override {
+    void update(double deltaTime) override {
         deltaTime_ = deltaTime;
         stats_.currentRPM = 800.0 + throttle_ * 5200.0;
         stats_.currentLoad = throttle_;
-        return true;
     }
 
     EngineSimStats getStats() const override {
@@ -57,19 +55,16 @@ public:
     }
 
     // Control inputs
-    bool setThrottle(double position) override {
+    void setThrottle(double position) override {
         throttle_ = position;
-        return true;
     }
 
-    bool setIgnition(bool on) override {
+    void setIgnition(bool on) override {
         ignition_ = on;
-        return true;
     }
 
-    bool setStarterMotor(bool on) override {
+    void setStarterMotor(bool on) override {
         starterMotor_ = on;
-        return true;
     }
 
     // Audio frame production -- produces silence

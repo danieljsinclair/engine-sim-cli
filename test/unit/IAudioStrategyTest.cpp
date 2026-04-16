@@ -3,9 +3,9 @@
 // Tests the IAudioStrategy interface with ThreadedStrategy and SyncPullStrategy
 // Strategies own their own state -- no BufferContext needed
 
-#include "audio/strategies/IAudioStrategy.h"
-#include "audio/strategies/ThreadedStrategy.h"
-#include "audio/strategies/SyncPullStrategy.h"
+#include "IAudioStrategy.h"
+#include "ThreadedStrategy.h"
+#include "SyncPullStrategy.h"
 #include "AudioTestHelpers.h"
 #include "AudioTestConstants.h"
 

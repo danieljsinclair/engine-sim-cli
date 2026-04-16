@@ -9,10 +9,10 @@
 //
 // Phase E: Uses ISimulator (BridgeSimulator) instead of raw EngineSimAPI
 
-#include "audio/strategies/ThreadedStrategy.h"
-#include "audio/strategies/SyncPullStrategy.h"
-#include "simulation/ISimulator.h"
-#include "simulation/BridgeSimulator.h"
+#include "ThreadedStrategy.h"
+#include "SyncPullStrategy.h"
+#include "ISimulator.h"
+#include "BridgeSimulator.h"
 #include "AudioTestConstants.h"
 #include "engine_sim_bridge.h"
 
@@ -138,10 +138,9 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_UpdateSimulation_DeltaTimeConversi
     double deltaTimeSeconds = deltaTimeMs / 1000.0;
 
     // Act: Call update with the CORRECT value (seconds)
-    bool result = engine.simulator.update(deltaTimeSeconds);
+    engine.simulator.update(deltaTimeSeconds);
 
-    EXPECT_TRUE(result)
-        << "Simulator should accept deltaTime=" << deltaTimeSeconds << "s.";
+    SUCCEED();
 }
 
 // ============================================================================
@@ -428,8 +427,7 @@ TEST_F(StrategyPipelineTest, ThreadedPipeline_ReadAudioBufferReturnsZeroWithoutA
 
     const int FRAMES = 64;
 
-    bool updateResult = engine.simulator.update(0.01667);
-    ASSERT_TRUE(updateResult);
+    engine.simulator.update(0.01667);
 
     std::vector<float> buffer(FRAMES * 2);
     int readCount = 0;
