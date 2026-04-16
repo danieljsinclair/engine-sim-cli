@@ -44,7 +44,7 @@ input::IInputProvider* createInputProvider(bool interactive, ILogging* logger) {
             return provider.release();
         }
     }
-    return nullptr;
+    throw std::runtime_error("Failed to initialize input provider");
 }
 
 presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
@@ -57,7 +57,7 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
     if (pres->Initialize(config)) {
         return pres.release();
     }
-    return nullptr;
+    throw std::runtime_error("Failed to initialize presentation");
 }
 
 } // anonymous namespace
@@ -93,51 +93,40 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 // ============================================================================
 
 int main(int argc, char* argv[]) {
+    int result = 1;
+    
     std::cout << "Engine Simulator CLI v2.0\n";
     std::cout << "========================\n\n";
 
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
-    auto cliLogger = std::make_unique<ConsoleLogger>();
-
     CommandLineArgs args;
-    if (!parseArguments(argc, argv, args)) {
-        return 1;
+    if (parseArguments(argc, argv, args)) {
+        BridgeSimulator simulator;
+        ShowConfigHeader(args, ISimulator::getVersion());
+
+        // Create shared telemetry (simulator and strategies write, presentation reads)
+        auto cliLogger = std::make_unique<ConsoleLogger>();
+        auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
+        simulator.setTelemetryWriter(telemetry.get());
+
+        // Create strategy via factory - pass telemetry so strategies push diagnostics
+        SimulationConfig config = CreateSimulationConfig(args);
+        AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+        std::unique_ptr<IAudioStrategy> audioStrategy = IAudioStrategyFactory::createStrategy(mode, cliLogger.get(), telemetry.get());
+        input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
+        presentation::IPresentation* presentation = createPresentation(args);
+
+        // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioStrategy -> IAudioHardwareProvider)
+        try {
+            result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR: " << e.what() << std::endl;
+        }
+
+        delete inputProvider;
+        delete presentation;
     }
-
-    BridgeSimulator simulator;
-    ShowConfigHeader(args, ISimulator::getVersion());
-
-    const int sampleRate = 44100;
-    SimulationConfig config = CreateSimulationConfig(args);
-
-    // Create shared telemetry (simulator and strategies write, presentation reads)
-    auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
-    simulator.setTelemetryWriter(telemetry.get());
-
-    // Create strategy via factory - pass telemetry so strategies push diagnostics
-    AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-    std::unique_ptr<IAudioStrategy> audioStrategy = IAudioStrategyFactory::createStrategy(mode, cliLogger.get(), telemetry.get());
-
-    // Wire telemetry into simulation config for presentation reads
-    config.telemetryWriter = telemetry.get();
-    config.telemetryReader = telemetry.get();
-
-    input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
-    presentation::IPresentation* presentation = createPresentation(args);
-
-    // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioStrategy -> IAudioHardwareProvider)
-    int result = 0;
-    try {
-        result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation, cliLogger.get());
-    } catch (const std::exception& e) {
-        std::cerr << "ERROR: " << e.what() << std::endl;
-        result = 1;
-    }
-
-    delete inputProvider;
-    delete presentation;
-
     return result;
 }
