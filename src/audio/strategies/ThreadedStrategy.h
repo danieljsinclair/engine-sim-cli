@@ -8,6 +8,7 @@
 #define THREADED_STRATEGY_H
 
 #include <string>
+#include <memory>
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
 
@@ -61,7 +62,12 @@ public:
     Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return diagnostics_.getSnapshot(); }
 
 private:
+    // Logger: always non-null (defaults to ConsoleLogger if not injected)
+    std::unique_ptr<ILogging> defaultLogger_;
     ILogging* logger_;
+
+    // Telemetry: always non-null (defaults to NullTelemetryWriter if not injected)
+    std::unique_ptr<telemetry::ITelemetryWriter> defaultTelemetry_;
     telemetry::ITelemetryWriter* telemetry_;
 
     // Owned state (previously in BufferContext)

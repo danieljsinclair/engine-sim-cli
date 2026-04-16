@@ -5,6 +5,7 @@
 
 #include "audio/strategies/ThreadedStrategy.h"
 #include "ILogging.h"
+#include "Verification.h"
 
 #include <cstring>
 #include <algorithm>
@@ -13,11 +14,38 @@
 using namespace std::chrono;
 
 // ============================================================================
+// NullTelemetryWriter - Silently discards all telemetry writes
+// Used as default when no telemetry is injected (Null Object Pattern)
+// ============================================================================
+
+namespace {
+
+class NullTelemetryWriter : public telemetry::ITelemetryWriter {
+public:
+    void write(const telemetry::TelemetryData&) override {}
+    void writeEngineState(const telemetry::EngineStateTelemetry&) override {}
+    void writeFramePerformance(const telemetry::FramePerformanceTelemetry&) override {}
+    void writeAudioDiagnostics(const telemetry::AudioDiagnosticsTelemetry&) override {}
+    void writeVehicleInputs(const telemetry::VehicleInputsTelemetry&) override {}
+    void writeSimulatorMetrics(const telemetry::SimulatorMetricsTelemetry&) override {}
+    void reset() override {}
+    const char* getName() const override { return "NullTelemetryWriter"; }
+};
+
+} // anonymous namespace
+
+// ============================================================================
 // ThreadedStrategy Implementation
 // ============================================================================
 
 ThreadedStrategy::ThreadedStrategy(ILogging* logger, telemetry::ITelemetryWriter* telemetry)
-    : logger_(logger), telemetry_(telemetry) {
+    : defaultLogger_(logger ? nullptr : new ConsoleLogger())
+    , logger_(logger ? logger : defaultLogger_.get())
+    , defaultTelemetry_(telemetry ? nullptr : new NullTelemetryWriter())
+    , telemetry_(telemetry ? telemetry : defaultTelemetry_.get())
+{
+    ASSERT(logger_, "ThreadedStrategy: logger must not be null");
+    ASSERT(telemetry_, "ThreadedStrategy: telemetry must not be null");
 }
 
 // ============================================================================
@@ -76,13 +104,14 @@ void ThreadedStrategy::fillBufferFromEngine(EngineSimHandle handle, const Engine
 // ============================================================================
 
 bool ThreadedStrategy::initialize(const AudioStrategyConfig& config) {
+    ASSERT(logger_, "ThreadedStrategy::initialize: logger must not be null");
+    ASSERT(telemetry_, "ThreadedStrategy::initialize: telemetry must not be null");
+
     // Initialize circular buffer with appropriate capacity
     int bufferCapacity = config.sampleRate * 2;
 
     if (!circularBuffer_.initialize(bufferCapacity)) {
-        if (logger_) {
-            logger_->error(LogMask::AUDIO, "ThreadedStrategy::initialize: Failed to initialize circular buffer");
-        }
+        logger_->error(LogMask::AUDIO, "ThreadedStrategy::initialize: Failed to initialize circular buffer");
         return false;
     }
 
@@ -90,11 +119,9 @@ bool ThreadedStrategy::initialize(const AudioStrategyConfig& config) {
     audioState_.isPlaying = false;
     circularBuffer_.reset();
 
-    if (logger_) {
-        logger_->info(LogMask::AUDIO,
-                      "ThreadedStrategy initialized: bufferCapacity=%d frames (%.2f seconds)",
-                      bufferCapacity, bufferCapacity / static_cast<double>(config.sampleRate));
-    }
+    logger_->info(LogMask::AUDIO,
+                  "ThreadedStrategy initialized: bufferCapacity=%d frames (%.2f seconds)",
+                  bufferCapacity, bufferCapacity / static_cast<double>(config.sampleRate));
 
     return true;
 }
@@ -111,56 +138,42 @@ void ThreadedStrategy::prepareBuffer() {
     size_t framesWritten = circularBuffer_.write(silence.data(), preFillFrames);
     (void)framesWritten;
 
-    if (logger_) {
-        logger_->debug(LogMask::AUDIO, "ThreadedStrategy::prepareBuffer: Pre-filled %d frames with silence", static_cast<int>(framesWritten));
-    }
+    logger_->debug(LogMask::AUDIO, "ThreadedStrategy::prepareBuffer: Pre-filled %d frames with silence", static_cast<int>(framesWritten));
 }
 
 bool ThreadedStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
     if (!api || !handle) {
-        if (logger_) {
-            logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Invalid engine API or handle");
-        }
+        logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Invalid engine API or handle");
         return false;
     }
 
     EngineSimResult result = api->StartAudioThread(handle);
     if (result != ESIM_SUCCESS) {
-        if (logger_) {
-            logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Failed to start audio thread (result=%d)", result);
-        }
+        logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Failed to start audio thread (result=%d)", result);
         return false;
     }
 
     audioState_.isPlaying.store(true);
 
-    if (logger_) {
-        logger_->info(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Audio thread started");
-    }
+    logger_->info(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Audio thread started");
 
     return true;
 }
 
 void ThreadedStrategy::stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
     if (api && handle) {
-        if (logger_) {
-            logger_->debug(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Audio thread will stop with simulation");
-        }
+        logger_->debug(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Audio thread will stop with simulation");
     }
 
     audioState_.isPlaying.store(false);
 
-    if (logger_) {
-        logger_->info(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Playback stopped");
-    }
+    logger_->info(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Playback stopped");
 }
 
 void ThreadedStrategy::resetBufferAfterWarmup() {
     circularBuffer_.reset();
 
-    if (logger_) {
-        logger_->info(LogMask::AUDIO, "ThreadedStrategy::resetBufferAfterWarmup: Buffer reset complete");
-    }
+    logger_->info(LogMask::AUDIO, "ThreadedStrategy::resetBufferAfterWarmup: Buffer reset complete");
 }
 
 void ThreadedStrategy::updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
@@ -168,7 +181,7 @@ void ThreadedStrategy::updateSimulation(EngineSimHandle handle, const EngineSimA
         double deltaTimeSeconds = deltaTimeMs / 1000.0;
         EngineSimResult result = api.Update(handle, deltaTimeSeconds);
 
-        if (result != ESIM_SUCCESS && logger_) {
+        if (result != ESIM_SUCCESS) {
             logger_->warning(LogMask::AUDIO, "ThreadedStrategy::updateSimulation: Engine update failed (result=%d)", result);
         }
     }
@@ -217,10 +230,8 @@ bool ThreadedStrategy::AddFrames(
     size_t framesWritten = circularBuffer_.write(buffer, frameCount);
 
     if (framesWritten != static_cast<size_t>(frameCount)) {
-        if (logger_) {
-            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::AddFrames: Only wrote %zu/%d frames",
-                          framesWritten, frameCount);
-        }
+        logger_->warning(LogMask::AUDIO, "ThreadedStrategy::AddFrames: Only wrote %zu/%d frames",
+                      framesWritten, frameCount);
     }
 
     return true;
@@ -238,9 +249,7 @@ std::string ThreadedStrategy::getProgressDisplay() const {
 }
 
 void ThreadedStrategy::reset() {
-    if (logger_) {
-        logger_->debug(LogMask::AUDIO, "ThreadedStrategy::reset");
-    }
+    logger_->debug(LogMask::AUDIO, "ThreadedStrategy::reset");
 }
 
 std::string ThreadedStrategy::getModeString() const {
@@ -275,10 +284,8 @@ void ThreadedStrategy::updateDiagnostics(
 }
 
 void ThreadedStrategy::publishAudioDiagnostics(int underrunCount, double bufferHealthPct) {
-    if (telemetry_) {
-        telemetry::AudioDiagnosticsTelemetry diag;
-        diag.underrunCount = underrunCount;
-        diag.bufferHealthPct = bufferHealthPct;
-        telemetry_->writeAudioDiagnostics(diag);
-    }
+    telemetry::AudioDiagnosticsTelemetry diag;
+    diag.underrunCount = underrunCount;
+    diag.bufferHealthPct = bufferHealthPct;
+    telemetry_->writeAudioDiagnostics(diag);
 }

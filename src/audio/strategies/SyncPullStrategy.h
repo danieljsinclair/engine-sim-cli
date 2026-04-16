@@ -10,6 +10,7 @@
 
 #include <string>
 #include <atomic>
+#include <memory>
 
 #include "audio/strategies/IAudioStrategy.h"
 #include "audio/state/AudioState.h"
@@ -57,6 +58,8 @@ public:
     Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return diagnostics_.getSnapshot(); }
 
 private:
+    // Logger: always non-null (defaults to ConsoleLogger if not injected)
+    std::unique_ptr<ILogging> defaultLogger_;
     ILogging* logger_;
 
     // Owned state (previously in BufferContext)

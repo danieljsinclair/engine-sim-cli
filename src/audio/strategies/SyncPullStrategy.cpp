@@ -7,6 +7,7 @@
 #include "audio/strategies/SyncPullStrategy.h"
 #include "audio/strategies/IAudioStrategy.h"
 #include "ILogging.h"
+#include "Verification.h"
 #include "config/ANSIColors.h"
 #include <sstream>
 #include <iomanip>
@@ -16,8 +17,10 @@
 // ============================================================================
 
 SyncPullStrategy::SyncPullStrategy(ILogging* logger)
-    : logger_(logger)
+    : defaultLogger_(logger ? nullptr : new ConsoleLogger())
+    , logger_(logger ? logger : defaultLogger_.get())
 {
+    ASSERT(logger_, "SyncPullStrategy: logger must not be null");
 }
 
 // ============================================================================
@@ -49,33 +52,29 @@ void SyncPullStrategy::fillBufferFromEngine(EngineSimHandle, const EngineSimAPI&
 // ============================================================================
 
 bool SyncPullStrategy::initialize(const AudioStrategyConfig& config) {
+    ASSERT(logger_, "SyncPullStrategy::initialize: logger must not be null");
+
     audioState_.sampleRate = config.sampleRate;
     audioState_.isPlaying = false;
 
     engineHandle_ = config.engineHandle;
     engineAPI_ = config.engineAPI;
 
-    if (logger_) {
-        logger_->info(LogMask::AUDIO,
-                      "SyncPullStrategy initialized: sampleRate=%dHz, channels=%d",
-                      config.sampleRate, config.channels);
-    }
+    logger_->info(LogMask::AUDIO,
+                  "SyncPullStrategy initialized: sampleRate=%dHz, channels=%d",
+                  config.sampleRate, config.channels);
 
     return true;
 }
 
 void SyncPullStrategy::prepareBuffer() {
-    if (logger_) {
-        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::prepareBuffer: No-op for sync-pull mode");
-    }
+    logger_->debug(LogMask::AUDIO, "SyncPullStrategy::prepareBuffer: No-op for sync-pull mode");
 }
 
 bool SyncPullStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
     audioState_.isPlaying.store(true);
 
-    if (logger_) {
-        logger_->info(LogMask::AUDIO, "SyncPullStrategy::startPlayback: On-demand rendering started");
-    }
+    logger_->info(LogMask::AUDIO, "SyncPullStrategy::startPlayback: On-demand rendering started");
 
     return true;
 }
@@ -83,15 +82,11 @@ bool SyncPullStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI*
 void SyncPullStrategy::stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
     audioState_.isPlaying.store(false);
 
-    if (logger_) {
-        logger_->info(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: On-demand rendering stopped");
-    }
+    logger_->info(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: On-demand rendering stopped");
 }
 
 void SyncPullStrategy::resetBufferAfterWarmup() {
-    if (logger_) {
-        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::resetBufferAfterWarmup: No-op for sync-pull mode");
-    }
+    logger_->debug(LogMask::AUDIO, "SyncPullStrategy::resetBufferAfterWarmup: No-op for sync-pull mode");
 }
 
 void SyncPullStrategy::updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
@@ -128,9 +123,7 @@ bool SyncPullStrategy::render(
         );
 
         if (result != 0) {
-            if (logger_) {
-                logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand failed (result=%d)", result);
-            }
+            logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand failed (result=%d)", result);
             return false;
         }
 
@@ -138,9 +131,7 @@ bool SyncPullStrategy::render(
         remainingFrames -= framesWritten;
 
         if (framesWritten == 0 && remainingFrames > 0) {
-            if (logger_) {
-                logger_->warning(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand returned 0 frames, breaking loop");
-            }
+            logger_->warning(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand returned 0 frames, breaking loop");
             break;
         }
     }
@@ -157,9 +148,7 @@ bool SyncPullStrategy::AddFrames(
     float* buffer,
     int frameCount
 ) {
-    if (logger_) {
-        logger_->debug(LogMask::AUDIO, "SyncPullStrategy::AddFrames: No-op for sync-pull mode");
-    }
+    logger_->debug(LogMask::AUDIO, "SyncPullStrategy::AddFrames: No-op for sync-pull mode");
     return true;
 }
 
@@ -185,9 +174,7 @@ std::string SyncPullStrategy::getProgressDisplay() const {
 }
 
 void SyncPullStrategy::reset() {
-    if (logger_) {
-        logger_->debug(LogMask::AUDIO, "SyncPullStrategy reset: No-op for sync-pull mode");
-    }
+    logger_->debug(LogMask::AUDIO, "SyncPullStrategy reset: No-op for sync-pull mode");
 }
 
 std::string SyncPullStrategy::getModeString() const {
