@@ -15,6 +15,7 @@
 #include "IPresentation.h"
 #include "presentation/ConsolePresentation.h"
 #include "ILogging.h"
+#include "config/ANSIColors.h"
 
 #include <iostream>
 #include <csignal>
@@ -79,6 +80,10 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.simulationFrequency = args.simulationFrequency;
     config.preFillMs = args.preFillMs;
     if (args.outputWav) config.outputWav = args.outputWav;
+
+    // Color the simulator label for CLI output
+    std::string name = config.sineMode ? "[SINE]" : config.configPath;
+    config.simulatorLabel = ANSIColors::CYAN + name + ANSIColors::RESET;
 
     return config;
 }
