@@ -6,7 +6,7 @@
 
 #include "ISimulator.h"
 #include "BridgeSimulator.h"
-#include "config/CLIconfig.h"
+#include "AudioLoopConfig.h"
 #include "IAudioHardwareProvider.h"
 #include "CoreAudioHardwareProvider.h"
 #include "IAudioStrategy.h"
