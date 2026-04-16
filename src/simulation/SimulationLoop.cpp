@@ -9,20 +9,19 @@
 #include "audio/hardware/CoreAudioHardwareProvider.h"
 #include "audio/strategies/IAudioStrategy.h"
 #include "audio/state/Diagnostics.h"
+#include "config/ANSIColors.h"
 #include "input/IInputProvider.h"
 #include "presentation/IPresentation.h"
 #include "simulation/EngineConfig.h"
-#include "config/ANSIColors.h"
 #include "bridge/engine_sim_loader.h"
 #include "ILogging.h"
-#include "ITelemetryProvider.h" 
+#include "ITelemetryProvider.h"
 #include "Verification.h"
 
 #include <cstring>
 #include <atomic>
 #include <csignal>
 #include <iostream>
-#include <iomanip>
 #include <thread>
 #include <chrono>
 
@@ -133,24 +132,6 @@ std::unique_ptr<IAudioHardwareProvider> createHardwareProvider(
     return provider;
 }
 
-void outputProgress(bool interactive, const std::string& prefix,
-    double currentTime, double duration, int progress,
-    const EngineSimStats& stats, double throttle, int underrunCount) {
-    (void)currentTime;
-    (void)duration;
-    if (interactive) {
-        std::cout << prefix << "\n" << std::flush;
-    } else {
-        static int lastProgress = 0;
-        if (progress != lastProgress && progress % 10 == 0) {
-            std::cout << prefix << "  Progress: " << progress << "% | RPM: " << static_cast<int>(stats.currentRPM)
-                        << " | Throttle: " << static_cast<int>(throttle * 100) << "%"
-                        << " | Underruns: " << underrunCount << "\r" << std::flush;
-            lastProgress = progress;
-        }
-    }
-}
-
 void enableStarterMotor(EngineSimHandle handle, const EngineSimAPI& api) {
     api.SetStarterMotor(handle, 1);
 }
@@ -195,21 +176,26 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
                         const EngineSimStats& stats, double throttle,
                         int underrunCount, IAudioStrategy& audioStrategy,
                         input::IInputProvider* inputProvider) {
-    if (presentation) {
-        presentation::EngineState state;
-        state.timestamp = currentTime;
-        state.rpm = stats.currentRPM;
-        state.throttle = throttle;
-        state.load = stats.currentLoad;
-        state.speed = 0;
-        state.underrunCount = underrunCount;
-        state.audioMode = audioStrategy.getModeString();
-        state.ignition = inputProvider ? inputProvider->GetIgnition() : true;
-        state.starterMotor = false;
-        state.exhaustFlow = stats.exhaustFlow;
+    if (!presentation) return;
 
-        presentation->ShowEngineState(state);
-    }
+    auto snap = audioStrategy.getDiagnosticsSnapshot();
+
+    presentation::EngineState state;
+    state.timestamp = currentTime;
+    state.rpm = stats.currentRPM;
+    state.throttle = throttle;
+    state.load = stats.currentLoad;
+    state.speed = 0;
+    state.underrunCount = underrunCount;
+    state.audioMode = audioStrategy.getModeString();
+    state.ignition = inputProvider ? inputProvider->GetIgnition() : true;
+    state.starterMotor = false;
+    state.exhaustFlow = stats.exhaustFlow;
+    state.renderMs = snap.lastRenderMs;
+    state.headroomMs = snap.lastHeadroomMs;
+    state.budgetPct = snap.lastBudgetPct;
+
+    presentation->ShowEngineState(state);
 }
 
 void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
@@ -381,35 +367,7 @@ int runUnifiedAudioLoop(
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
-        // Display progress (inlined from EngineAudioSource)
-        {
-            int progress = static_cast<int>(currentTime * 100 / config.duration);
-            std::ostringstream prefix;
-            int rpm = static_cast<int>(stats.currentRPM);
-            if (rpm < 10 && stats.currentRPM > 0) rpm = 0;
-            prefix << "[" << std::setw(5) << rpm << " RPM] ";
-            prefix << "[Throttle: " << std::setw(4) << static_cast<int>(throttle * 100) << "%] ";
-            prefix << "[Underruns: " << underrunCount << "] ";
-            prefix << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8) << std::setprecision(5) << stats.exhaustFlow << std::noshowpos << " m3/s]" << ANSIColors::RESET << " ";
-
-            {
-                // Read diagnostics from strategy (temporary until Phase C moves to telemetry-based display)
-                auto snap = audioStrategy.getDiagnosticsSnapshot();
-                double renderMs = snap.lastRenderMs;
-                double headroomMs = snap.lastHeadroomMs;
-                double budgetPct = snap.lastBudgetPct;
-
-                if (renderMs > 0.0) {
-                    std::string budgetColor = ANSIColors::getDispositionColour(budgetPct < 80, budgetPct < 100);
-                    prefix << "[SYNC-PULL] rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << renderMs << "ms"
-                           << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << headroomMs << std::noshowpos << "ms"
-                           << " (" << budgetColor << std::setw(3) << std::setprecision(0) << budgetPct << "% of budget" << ANSIColors::RESET << ")";
-                }
-            }
-
-            outputProgress(config.interactive, prefix.str(), currentTime, config.duration, progress, stats, throttle, underrunCount);
-        }
-
+        // Display via presentation (ConsolePresentation formats the complete output line)
         updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider);
 
         performTimingControl(timer);

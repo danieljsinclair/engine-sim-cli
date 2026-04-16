@@ -47,13 +47,10 @@ public:
     void resetBufferAfterWarmup() override;
     void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
 
-    std::string getDiagnostics() const override;
-    std::string getProgressDisplay() const override;
-
     void reset() override;
     std::string getModeString() const override;
 
-    // Access to diagnostics for display (temporary until Phase C moves to telemetry)
+    // Returns render timing diagnostics for presentation
     const Diagnostics& diagnostics() const { return diagnostics_; }
     Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return diagnostics_.getSnapshot(); }
 

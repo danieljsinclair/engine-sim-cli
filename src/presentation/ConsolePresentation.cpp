@@ -1,11 +1,12 @@
 // ConsolePresentation.cpp - Console text presentation implementation
 // Implements IPresentation for text output to console
+// SRP: Single responsibility - formats and outputs EngineState to console
 
 #include "presentation/ConsolePresentation.h"
 
 #include <iostream>
 #include <iomanip>
-#include <chrono>
+#include <sstream>
 
 namespace presentation {
 
@@ -33,19 +34,45 @@ void ConsolePresentation::ShowEngineState(const EngineState& state) {
     if (!config_.showDiagnostics) {
         return;
     }
-    
+
     auto now = std::chrono::steady_clock::now();
     if (std::chrono::duration<double>(now - lastDiagTime_).count() > (config_.diagnosticIntervalMs / 1000.0)) {
         lastDiagTime_ = now;
-        showDiagnostics(state);
+        std::cout << formatEngineState(state) << "\r" << std::flush;
     }
 }
 
-void ConsolePresentation::showDiagnostics(const EngineState& state) {
-    // Diagnostics are handled by the simulation loop's inline displayProgress() which formats
-    // the same data with proper SYNC-PULL timing info. Writing here would duplicate
-    // output with inconsistent formatting (SRP: one owner for console diagnostics).
-    (void)state;
+std::string ConsolePresentation::formatEngineState(const EngineState& state) const {
+    std::ostringstream out;
+
+    // RPM
+    int rpm = static_cast<int>(state.rpm);
+    if (rpm < 10 && state.rpm > 0) rpm = 0;
+    out << "[" << std::setw(5) << rpm << " RPM] ";
+
+    // Throttle
+    out << "[Throttle: " << std::setw(4) << static_cast<int>(state.throttle * 100) << "%] ";
+
+    // Underruns
+    out << "[Underruns: " << state.underrunCount << "] ";
+
+    // Exhaust flow
+    out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8)
+        << std::setprecision(5) << state.exhaustFlow << std::noshowpos << " m3/s]"
+        << ANSIColors::RESET << " ";
+
+    // Audio timing diagnostics
+    if (state.renderMs > 0.0) {
+        std::string budgetColor = ANSIColors::getDispositionColour(state.budgetPct < 80, state.budgetPct < 100);
+        out << "[" << state.audioMode << "] "
+            << "rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << state.renderMs << "ms"
+            << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << state.headroomMs
+            << std::noshowpos << "ms"
+            << " (" << budgetColor << std::setw(3) << std::setprecision(0)
+            << state.budgetPct << "% of budget" << ANSIColors::RESET << ")";
+    }
+
+    return out.str();
 }
 
 void ConsolePresentation::ShowMessage(const std::string& message) {
@@ -60,7 +87,7 @@ void ConsolePresentation::ShowProgress(double currentTime, double duration) {
     if (!config_.showProgress || !config_.interactive) {
         return;
     }
-    
+
     if (duration > 0) {
         int progress = static_cast<int>((currentTime / duration) * 50);
         std::cout << "\rProgress: [";

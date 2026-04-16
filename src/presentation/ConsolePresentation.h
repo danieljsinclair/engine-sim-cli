@@ -4,6 +4,7 @@
 #define CONSOLE_PRESENTATION_H
 
 #include "presentation/IPresentation.h"
+#include "config/ANSIColors.h"
 #include <chrono>
 
 namespace presentation {
@@ -25,6 +26,7 @@ public:
 
 private:
     void showDiagnostics(const EngineState& state);
+    std::string formatEngineState(const EngineState& state) const;
     
     PresentationConfig config_;
     std::chrono::steady_clock::time_point lastDiagTime_;

@@ -8,9 +8,6 @@
 #include "audio/strategies/IAudioStrategy.h"
 #include "ILogging.h"
 #include "Verification.h"
-#include "config/ANSIColors.h"
-#include <sstream>
-#include <iomanip>
 
 // ============================================================================
 // SyncPullStrategy Implementation
@@ -150,27 +147,6 @@ bool SyncPullStrategy::AddFrames(
 ) {
     logger_->debug(LogMask::AUDIO, "SyncPullStrategy::AddFrames: No-op for sync-pull mode");
     return true;
-}
-
-std::string SyncPullStrategy::getDiagnostics() const {
-    std::string diagnostics = "SyncPullStrategy Diagnostics:\n";
-    diagnostics += "- Mode: Lock-step (synchronous) mode\n";
-    diagnostics += "- Audio generation: On-demand from simulator\n";
-    diagnostics += "- Synchronization: Simulation advances with audio playback\n";
-    return diagnostics;
-}
-
-std::string SyncPullStrategy::getProgressDisplay() const {
-    auto snap = diagnostics_.getSnapshot();
-
-    std::string budgetColor = ANSIColors::getDispositionColour(snap.lastBudgetPct < 80, snap.lastBudgetPct < 100);
-
-    std::ostringstream output;
-    output << "[SYNC-PULL] rendered=" << std::fixed << std::setprecision(1) << snap.lastRenderMs << "ms"
-           << " headroom=" << std::showpos << std::setprecision(1) << snap.lastHeadroomMs << std::noshowpos << "ms"
-           << " (" << budgetColor << std::setprecision(0) << static_cast<int>(snap.lastBudgetPct) << "% of budget" << ANSIColors::RESET << ")";
-
-    return output.str();
 }
 
 void SyncPullStrategy::reset() {

@@ -27,6 +27,11 @@ struct EngineState {
     bool ignition;
     bool starterMotor;
     double exhaustFlow;  // m^3/s
+
+    // Audio timing diagnostics (from strategy)
+    double renderMs = 0.0;
+    double headroomMs = 0.0;
+    double budgetPct = 0.0;
 };
 
 // ============================================================================

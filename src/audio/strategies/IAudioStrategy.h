@@ -94,14 +94,12 @@ public:
      */
     virtual void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) = 0;
 
-    virtual std::string getDiagnostics() const = 0;
-    virtual std::string getProgressDisplay() const = 0;
-    virtual void reset() = 0;
     virtual std::string getModeString() const = 0;
+    virtual void reset() = 0;
 
     virtual void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) = 0;
 
-    // Temporary: returns render timing diagnostics snapshot (Phase C moves to telemetry-only)
+    // Returns render timing diagnostics snapshot for presentation
     virtual Diagnostics::Snapshot getDiagnosticsSnapshot() const = 0;
 };
 

@@ -237,17 +237,6 @@ bool ThreadedStrategy::AddFrames(
     return true;
 }
 
-std::string ThreadedStrategy::getDiagnostics() const {
-    std::string diagnostics = "ThreadedStrategy Diagnostics:\n";
-    diagnostics += "- Mode: Threaded audio generation\n";
-    diagnostics += "- Buffer management: Circular buffer\n";
-    return diagnostics;
-}
-
-std::string ThreadedStrategy::getProgressDisplay() const {
-    return "";
-}
-
 void ThreadedStrategy::reset() {
     logger_->debug(LogMask::AUDIO, "ThreadedStrategy::reset");
 }

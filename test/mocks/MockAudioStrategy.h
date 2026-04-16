@@ -25,8 +25,6 @@ public:
     }
 
     bool AddFrames(float* buffer, int frameCount) override { return true; }
-    std::string getDiagnostics() const override { return "Mock strategy diagnostics"; }
-    std::string getProgressDisplay() const override { return "[MOCK] progress display"; }
     void reset() override {}
     std::string getModeString() const override { return "Mock mode"; }
 
