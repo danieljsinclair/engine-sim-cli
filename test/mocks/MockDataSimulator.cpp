@@ -191,7 +191,7 @@ EngineSimResult MockDataSimulatorContext::update(double deltaTime) {
     return ESIM_SUCCESS;
 }
 
-EngineSimResult MockDataSimulatorContext::startAudioThread() {
+EngineSimResult MockDataSimulatorContext::start() {
     m_audioThreadRunning.store(true, std::memory_order_release);
     return ESIM_SUCCESS;
 }

@@ -75,7 +75,7 @@ private:
     EngineSimResult update(double deltaTime);
 
     // Start audio thread (mock)
-    EngineSimResult startAudioThread();
+    EngineSimResult start();
 
     // Get simulation statistics
     EngineSimResult getStats(EngineSimStats* outStats);
