@@ -42,6 +42,16 @@ bool KeyboardInputProvider::IsConnected() const {
     return true;  // Keyboard is always connected in CLI
 }
 
+std::optional<EngineInput> KeyboardInputProvider::OnUpdateSimulation(double dt) {
+    if (!g_running.load()) {
+        return std::nullopt;
+    }
+
+    Update(dt);
+
+    return GetEngineInput();
+}
+
 EngineInput KeyboardInputProvider::GetEngineInput() const {
     EngineInput input;
     input.throttle = throttle_;

@@ -156,11 +156,13 @@ double getThrottle(input::IInputProvider* inputProvider) {
     return 0.1;
 }
 
-double updateInputAndGetThrottle(input::IInputProvider* inputProvider, double currentTime) {
-    if (inputProvider) {
-        return getThrottle(inputProvider);
-    }
-    return currentTime < 0.5 ? currentTime / 0.5 : 1.0;
+// Get input for non-interactive (timed) mode: ramp throttle from 0 to 1 over 0.5s
+input::EngineInput getTimedInput(double currentTime) {
+    input::EngineInput input;
+    input.throttle = currentTime < 0.5 ? currentTime / 0.5 : 1.0;
+    input.ignition = true;
+    input.starterMotor = false;
+    return input;
 }
 
 void updatePresentation(presentation::IPresentation* presentation, double currentTime,
@@ -333,17 +335,32 @@ int runUnifiedAudioLoop(
 
     const double minSustainedRPM = 550.0;
 
-    double throttle = getThrottle(inputProvider);
+    double throttle = 0.1;
+    bool ignition = true;
 
     config.logger->info(LogMask::BRIDGE, "runUnifiedAudioLoop starting simulation loop with %s mode", config.sineMode ? "SINE" : "ENGINE");
 
-    while (shouldContinueLoop(currentTime, config.duration, inputProvider)) {
+    while (true) {
         checkStarterMotorRPM(simulator, minSustainedRPM);
 
-        throttle = updateInputAndGetThrottle(inputProvider, currentTime);
-        simulator.setThrottle(throttle);
+        // Poll input: interactive mode uses OnUpdateSimulation, timed mode uses duration check
+        if (inputProvider) {
+            auto engineInput = inputProvider->OnUpdateSimulation(AudioLoopConfig::UPDATE_INTERVAL);
+            if (!engineInput) {
+                break;  // Input provider signalled termination
+            }
+            throttle = engineInput->throttle;
+            ignition = engineInput->ignition;
+        } else {
+            if (currentTime >= config.duration) {
+                break;
+            }
+            auto timedInput = getTimedInput(currentTime);
+            throttle = timedInput.throttle;
+            ignition = timedInput.ignition;
+        }
 
-        bool ignition = inputProvider ? inputProvider->GetIgnition() : true;
+        simulator.setThrottle(throttle);
         simulator.setIgnition(ignition);
 
         // Update simulation via strategy (threaded mode updates here; sync-pull is no-op)

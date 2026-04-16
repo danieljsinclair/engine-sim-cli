@@ -19,7 +19,9 @@ public:
     bool Initialize() override;
     void Shutdown() override;
     bool IsConnected() const override;
-    
+
+    std::optional<EngineInput> OnUpdateSimulation(double dt) override;
+
     EngineInput GetEngineInput() const override;
     double GetThrottle() const override;
     bool GetIgnition() const override;
