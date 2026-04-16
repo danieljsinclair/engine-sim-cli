@@ -43,8 +43,9 @@ input::IInputProvider* createInputProvider(bool interactive, ILogging* logger) {
         if (provider->Initialize()) {
             return provider.release();
         }
+        throw std::runtime_error("Failed to initialize input provider");
     }
-    throw std::runtime_error("Failed to initialize input provider");
+    return nullptr;
 }
 
 presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
@@ -119,9 +120,11 @@ int main(int argc, char* argv[]) {
         presentation::IPresentation* presentation = createPresentation(args);
 
         // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioStrategy -> IAudioHardwareProvider)
-        try {
+        try
+        {
             result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception& e) {
             std::cerr << "ERROR: " << e.what() << std::endl;
         }
 
