@@ -32,6 +32,8 @@ struct EngineState {
     double renderMs = 0.0;
     double headroomMs = 0.0;
     double budgetPct = 0.0;
+    int framesRequested = 0;
+    int framesRendered = 0;
 };
 
 // ============================================================================
@@ -41,7 +43,7 @@ struct EngineState {
 struct PresentationConfig {
     bool interactive = false;
     double duration = 0.0;  // 0 = infinite
-    int diagnosticIntervalMs = 1000;
+    int diagnosticIntervalMs = 100;
     bool showProgress = true;
     bool showDiagnostics = true;
 };

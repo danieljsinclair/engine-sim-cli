@@ -35,11 +35,7 @@ void ConsolePresentation::ShowEngineState(const EngineState& state) {
         return;
     }
 
-    auto now = std::chrono::steady_clock::now();
-    if (std::chrono::duration<double>(now - lastDiagTime_).count() > (config_.diagnosticIntervalMs / 1000.0)) {
-        lastDiagTime_ = now;
-        std::cout << formatEngineState(state) << "\r" << std::flush;
-    }
+    std::cout << formatEngineState(state) << "\n" << std::flush;
 }
 
 std::string ConsolePresentation::formatEngineState(const EngineState& state) const {
@@ -65,6 +61,8 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     if (state.renderMs > 0.0) {
         std::string budgetColor = ANSIColors::getDispositionColour(state.budgetPct < 80, state.budgetPct < 100);
         out << "[" << state.audioMode << "] "
+            << "req=" << std::setw(3) << state.framesRequested
+            << " got=" << std::setw(3) << state.framesRendered << " "
             << "rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << state.renderMs << "ms"
             << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << state.headroomMs
             << std::noshowpos << "ms"

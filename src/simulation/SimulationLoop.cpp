@@ -185,6 +185,8 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
     state.renderMs = snap.lastRenderMs;
     state.headroomMs = snap.lastHeadroomMs;
     state.budgetPct = snap.lastBudgetPct;
+    state.framesRequested = snap.lastFramesRequested;
+    state.framesRendered = snap.lastFramesRendered;
 
     presentation->ShowEngineState(state);
 }
