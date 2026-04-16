@@ -326,22 +326,6 @@ std::string ThreadedStrategy::getProgressDisplay() const {
     return "";
 }
 
-void ThreadedStrategy::configure(const ::AudioStrategyConfig& config) {
-    // Configure buffer capacity for cursor-chasing mode
-    // Note: Using 2-second buffer at 48kHz for 100ms target lead
-    // This method is called by AudioPlayer with context already set
-
-    (void)config;  // Suppress unused parameter warning
-    constexpr int sampleRate = 48000;  // Configured sample rate
-    constexpr int bufferCapacity = sampleRate * 2;  // 2 seconds at 48kHz
-
-    if (logger_) {
-        logger_->info(LogMask::AUDIO,
-                      "ThreadedStrategy configured: bufferCapacity=%d frames (%.2f seconds at 48kHz)",
-                      bufferCapacity, bufferCapacity / static_cast<double>(sampleRate));
-    }
-}
-
 void ThreadedStrategy::reset() {
     // Reset is handled by AudioPlayer by resetting the context directly
     // This method is a no-op in the strategy implementation

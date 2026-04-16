@@ -82,6 +82,64 @@ struct LoopTimer {
     }
 };
 
+// User data for the audio callback
+struct AudioCallbackContext {
+    BufferContext* bufferContext;
+    IAudioStrategy* strategy;
+};
+
+// Named audio render callback -- bridges platform audio buffers to strategy->render()
+// Takes AudioCallbackContext directly (not via refCon, which belongs to the hardware provider).
+int audioRenderCallback(const AudioCallbackContext& ctx, int numberFrames,
+                        PlatformAudioBufferList* platformBufferList) {
+    if (!ctx.bufferContext->audioState.isPlaying.load()) {
+        if (platformBufferList && platformBufferList->bufferData) {
+            for (int i = 0; i < platformBufferList->numberBuffers; i++) {
+                if (platformBufferList->bufferData[i]) {
+                    AudioBuffer* buffers = static_cast<AudioBuffer*>(platformBufferList->buffers);
+                    std::memset(buffers[i].mData, 0, buffers[i].mDataByteSize);
+                }
+            }
+        }
+        return 0;
+    }
+
+    if (platformBufferList && platformBufferList->buffers) {
+        AudioBuffer* audioBuffers = static_cast<AudioBuffer*>(platformBufferList->buffers);
+        AudioBufferList bufferList;
+        bufferList.mNumberBuffers = static_cast<UInt32>(platformBufferList->numberBuffers);
+        for (int i = 0; i < platformBufferList->numberBuffers; i++) {
+            bufferList.mBuffers[i] = audioBuffers[i];
+        }
+        ctx.strategy->render(ctx.bufferContext, &bufferList, numberFrames);
+    }
+
+    return 0;
+}
+
+// Create and initialize the audio hardware provider
+std::unique_ptr<IAudioHardwareProvider> createHardwareProvider(
+    int sampleRate,
+    const IAudioHardwareProvider::AudioCallback& callback,
+    ILogging* logger)
+{
+    auto provider = std::make_unique<CoreAudioHardwareProvider>(logger);
+    provider->registerAudioCallback(callback);
+
+    AudioStreamFormat format;
+    format.sampleRate = sampleRate;
+    format.channels = 2;
+    format.bitsPerSample = 32;
+    format.isFloat = true;
+    format.isInterleaved = true;
+
+    if (!provider->initialize(format)) {
+        return nullptr;
+    }
+
+    return provider;
+}
+
 void outputProgress(bool interactive, const std::string& prefix,
     double currentTime, double duration, int progress,
     const EngineSimStats& stats, double throttle, int underrunCount) {
@@ -415,9 +473,6 @@ int runSimulation(
         return 1;
     }
 
-    // Create audio hardware provider
-    auto hardwareProvider = std::make_unique<CoreAudioHardwareProvider>(config.logger);
-
     // Create and initialize buffer context
     CircularBuffer circularBuffer;
     if (!circularBuffer.initialize(sampleRate * 2)) {
@@ -444,52 +499,20 @@ int runSimulation(
         return 1;
     }
 
-    audioStrategy->configure(strategyConfig);
-
-    // Register audio callback that bridges platform buffers -> strategy->render()
-    auto callback = [&audioContext, audioStrategy](void* refCon, void* actionFlags,
+    // Create and initialize audio hardware provider
+    AudioCallbackContext callbackCtx{&audioContext, audioStrategy};
+    auto callback = [callbackCtx](void* refCon, void* actionFlags,
                            const void* timeStamp, int busNumber, int numberFrames,
                            PlatformAudioBufferList* platformBufferList) -> int {
         (void)refCon;
         (void)actionFlags;
         (void)timeStamp;
         (void)busNumber;
-
-        if (!audioContext.audioState.isPlaying.load()) {
-            if (platformBufferList && platformBufferList->bufferData) {
-                for (int i = 0; i < platformBufferList->numberBuffers; i++) {
-                    if (platformBufferList->bufferData[i]) {
-                        AudioBuffer* buffers = static_cast<AudioBuffer*>(platformBufferList->buffers);
-                        std::memset(buffers[i].mData, 0, buffers[i].mDataByteSize);
-                    }
-                }
-            }
-            return 0;
-        }
-
-        if (platformBufferList && platformBufferList->buffers) {
-            AudioBuffer* audioBuffers = static_cast<AudioBuffer*>(platformBufferList->buffers);
-            AudioBufferList bufferList;
-            bufferList.mNumberBuffers = static_cast<UInt32>(platformBufferList->numberBuffers);
-            for (int i = 0; i < platformBufferList->numberBuffers; i++) {
-                bufferList.mBuffers[i] = audioBuffers[i];
-            }
-            audioStrategy->render(&audioContext, &bufferList, numberFrames);
-        }
-
-        return 0;
+        return audioRenderCallback(callbackCtx, numberFrames, platformBufferList);
     };
 
-    hardwareProvider->registerAudioCallback(callback);
-
-    AudioStreamFormat format;
-    format.sampleRate = sampleRate;
-    format.channels = 2;
-    format.bitsPerSample = 32;
-    format.isFloat = true;
-    format.isInterleaved = true;
-
-    if (!hardwareProvider->initialize(format)) {
+    auto hardwareProvider = createHardwareProvider(sampleRate, callback, config.logger);
+    if (!hardwareProvider) {
         config.logger->error(LogMask::AUDIO, "Failed to initialize audio hardware");
         engineAPI.Destroy(handle);
         return 1;

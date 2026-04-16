@@ -230,13 +230,6 @@ std::string SyncPullStrategy::getProgressDisplay() const {
     return output.str();
 }
 
-void SyncPullStrategy::configure(const AudioStrategyConfig& config) {
-    (void)config;
-    if (logger_) {
-        logger_->info(LogMask::AUDIO, "SyncPullStrategy configured: No pre-fill buffer");
-    }
-}
-
 void SyncPullStrategy::reset() {
     if (logger_) {
         logger_->debug(LogMask::AUDIO, "SyncPullStrategy reset: No-op for sync-pull mode");

@@ -25,7 +25,6 @@ public:
     bool AddFrames(BufferContext* context, float* buffer, int frameCount) override { return true; }
     std::string getDiagnostics() const override { return "Mock strategy diagnostics"; }
     std::string getProgressDisplay() const override { return "[MOCK] progress display"; }
-    void configure(const AudioStrategyConfig& config) override {}
     void reset() override {}
     std::string getModeString() const override { return "Mock mode"; }
 

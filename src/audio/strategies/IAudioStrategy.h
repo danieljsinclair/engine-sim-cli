@@ -92,7 +92,6 @@ public:
 
     virtual std::string getDiagnostics() const = 0;
     virtual std::string getProgressDisplay() const = 0;
-    virtual void configure(const AudioStrategyConfig& config) = 0;
     virtual void reset() = 0;
     virtual std::string getModeString() const = 0;
 

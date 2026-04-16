@@ -48,7 +48,6 @@ public:
     std::string getDiagnostics() const override;
     std::string getProgressDisplay() const override;
 
-    void configure(const AudioStrategyConfig& config) override;
     void reset() override;
     std::string getModeString() const override;
 
