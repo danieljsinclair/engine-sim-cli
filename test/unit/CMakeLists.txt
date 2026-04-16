@@ -18,7 +18,6 @@ add_executable(unit_tests
     StrategyPipelineTest.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
-    ../../src/AudioPlayer.cpp  # Required by renderers
     ../../src/config/ANSIColors.cpp # Required for display
     # ../../test/mocks/MockIAudioHardwareProvider.cpp - TODO: Create this file
     ../../test/mocks/MockDataSimulator.cpp

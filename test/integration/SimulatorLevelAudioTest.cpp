@@ -16,7 +16,6 @@
 #include "ILogging.h"
 
 // Audio includes
-#include "AudioPlayer.h"
 #include "AudioTestConstants.h"
 
 using namespace test::constants;

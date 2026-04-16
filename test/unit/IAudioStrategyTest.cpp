@@ -7,7 +7,6 @@
 #include "audio/strategies/SyncPullStrategy.h"
 #include "audio/state/BufferContext.h"
 #include "audio/common/CircularBuffer.h"
-#include "AudioPlayer.h"
 #include "AudioTestHelpers.h"
 #include "AudioTestConstants.h"
 

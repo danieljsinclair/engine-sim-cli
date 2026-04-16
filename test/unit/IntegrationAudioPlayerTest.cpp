@@ -1,5 +1,5 @@
-// IntegrationAudioPlayerTest.cpp - Integration tests for AudioPlayer
-// TDD: Tests verify AudioPlayer works correctly with IAudioStrategy + IAudioHardwareProvider
+// AudioStrategyIntegrationTest.cpp - Integration tests for audio strategy + hardware
+// TDD: Tests verify strategy/hardware/buffer integration works correctly
 
 #include "audio/strategies/IAudioStrategy.h"
 #include "audio/strategies/ThreadedStrategy.h"
@@ -19,7 +19,7 @@ using namespace test::constants;
 // Integration test fixture
 // ============================================================================
 
-class IntegrationAudioPlayerTest : public ::testing::Test {
+class AudioStrategyIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         logger_ = std::make_unique<ConsoleLogger>();
@@ -64,21 +64,21 @@ protected:
 // Tests
 // ============================================================================
 
-TEST_F(IntegrationAudioPlayerTest, AudioPlayer_AcceptsThreadedStrategy) {
+TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_CreatedSuccessfully) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "Threaded");
     EXPECT_TRUE(strategy->isEnabled());
 }
 
-TEST_F(IntegrationAudioPlayerTest, AudioPlayer_AcceptsSyncPullStrategy) {
+TEST_F(AudioStrategyIntegrationTest, SyncPullStrategy_CreatedSuccessfully) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "SyncPull");
     EXPECT_TRUE(strategy->isEnabled());
 }
 
-TEST_F(IntegrationAudioPlayerTest, AudioPlayer_UsesHardwareProvider) {
+TEST_F(AudioStrategyIntegrationTest, HardwareProvider_InitAndCallback) {
     ASSERT_NE(hardwareProvider_, nullptr);
 
     auto mockCallback = +[](void* refCon, void* actionFlags,
@@ -101,7 +101,7 @@ TEST_F(IntegrationAudioPlayerTest, AudioPlayer_UsesHardwareProvider) {
     EXPECT_TRUE(hardwareProvider_->initialize(format));
 }
 
-TEST_F(IntegrationAudioPlayerTest, BufferContext_WorksWithThreadedStrategy) {
+TEST_F(AudioStrategyIntegrationTest, BufferContext_WorksWithThreadedStrategy) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
     context_->audioState.sampleRate = 44100;
@@ -113,7 +113,7 @@ TEST_F(IntegrationAudioPlayerTest, BufferContext_WorksWithThreadedStrategy) {
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(IntegrationAudioPlayerTest, BufferContext_WrapsAroundCorrectly) {
+TEST_F(AudioStrategyIntegrationTest, BufferContext_WrapsAroundCorrectly) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
     int wrapFrames = 20;
@@ -126,24 +126,24 @@ TEST_F(IntegrationAudioPlayerTest, BufferContext_WrapsAroundCorrectly) {
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(IntegrationAudioPlayerTest, Factory_CreatesThreadedStrategy) {
+TEST_F(AudioStrategyIntegrationTest, Factory_CreatesThreadedStrategy) {
     auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::Threaded, logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "Threaded");
 }
 
-TEST_F(IntegrationAudioPlayerTest, Factory_CreatesSyncPullStrategy) {
+TEST_F(AudioStrategyIntegrationTest, Factory_CreatesSyncPullStrategy) {
     auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::SyncPull, logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "SyncPull");
 }
 
-TEST_F(IntegrationAudioPlayerTest, Factory_ReturnsNullForUnknownMode) {
+TEST_F(AudioStrategyIntegrationTest, Factory_ReturnsNullForUnknownMode) {
     auto strategy = IAudioStrategyFactory::createStrategy(static_cast<AudioMode>(999), logger_.get());
     EXPECT_EQ(strategy, nullptr);
 }
 
-TEST_F(IntegrationAudioPlayerTest, ThreadedStrategy_AddFrames) {
+TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_AddFrames) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
@@ -154,7 +154,7 @@ TEST_F(IntegrationAudioPlayerTest, ThreadedStrategy_AddFrames) {
     EXPECT_EQ(available, TEST_FRAME_COUNT);
 }
 
-TEST_F(IntegrationAudioPlayerTest, SyncPullStrategy_AddFrames) {
+TEST_F(AudioStrategyIntegrationTest, SyncPullStrategy_AddFrames) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_2);

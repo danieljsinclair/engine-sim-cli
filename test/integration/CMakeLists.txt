@@ -14,7 +14,6 @@ add_executable(integration_tests
     ${MOCK_SOURCES}
     # Source files under test (Simulator-level integration)
     ../../src/audio/common/CircularBuffer.cpp
-    ../../src/AudioPlayer.cpp
     ../../src/config/ANSIColors.cpp
     # Audio strategies
     ../../src/audio/strategies/IAudioStrategyFactory.cpp
