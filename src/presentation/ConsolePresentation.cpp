@@ -74,11 +74,20 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     if (state.callbackRateHz > 0.0) {
         double neededKfps = state.sampleRate / 1000.0;
         double generatingKfps = state.generatingRateFps / 1000.0;
+
+        // Colour coding: green if generating >= needed, yellow if >= 90%, red otherwise
+        std::string genColor = ANSIColors::getDispositionColour(
+            generatingKfps >= neededKfps, generatingKfps >= neededKfps * 0.9);
+
+        // Trend: green if >= 0, yellow if < 0, red if < -1.0
+        std::string trendColor = ANSIColors::getDispositionColour(
+            state.trendPct >= 0.0, state.trendPct >= -1.0);
+
         out << "[callbacks=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
             << "needed=" << std::setw(5) << std::setprecision(1) << neededKfps << "kfps "
-            << "generating=" << std::setw(5) << generatingKfps << "kfps "
-            << "trend=" << std::setw(5) << std::showpos << std::setprecision(1) << state.trendPct
-            << std::noshowpos << "%]";
+            << "generating=" << genColor << std::setw(5) << generatingKfps << "kfps" << ANSIColors::RESET << " "
+            << "trend=" << trendColor << std::setw(5) << std::showpos << std::setprecision(1) << state.trendPct
+            << std::noshowpos << "%" << ANSIColors::RESET << "]";
     }
 
     return out.str();
