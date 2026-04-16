@@ -203,27 +203,12 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
 }
 
 void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
-                    const EngineSimStats& stats,
                     double currentTime,
                     double throttle,
                     bool ignition) {
     if (!telemetryWriter) return;
 
-    // Push engine state
-    telemetry::EngineStateTelemetry engine;
-    engine.currentRPM = stats.currentRPM;
-    engine.currentLoad = stats.currentLoad;
-    engine.exhaustFlow = stats.exhaustFlow;
-    engine.manifoldPressure = stats.manifoldPressure;
-    engine.activeChannels = stats.activeChannels;
-    telemetryWriter->writeEngineState(engine);
-
-    // Push frame performance
-    telemetry::FramePerformanceTelemetry perf;
-    perf.processingTimeMs = stats.processingTimeMs;
-    telemetryWriter->writeFramePerformance(perf);
-
-    // Push vehicle inputs
+    // Push vehicle inputs (loop owns throttle/ignition, simulator doesn't)
     telemetry::VehicleInputsTelemetry inputs;
     inputs.throttlePosition = throttle;
     inputs.ignitionOn = ignition;
@@ -235,8 +220,9 @@ void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
     metrics.timestamp = currentTime;
     telemetryWriter->writeSimulatorMetrics(metrics);
 
-    // Note: AudioDiagnostics (underrunCount, bufferHealthPct) are pushed
-    // by ThreadedStrategy, not here -- SRP/ISP compliance
+    // Note: EngineStateTelemetry and FramePerformanceTelemetry are pushed
+    // by BridgeSimulator::update() -- SRP/ISP compliance
+    // Note: AudioDiagnostics and AudioTiming are pushed by strategies
 }
 
 EngineSimConfig createDefaultEngineSimConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
@@ -371,7 +357,7 @@ int runUnifiedAudioLoop(
         // Generate audio: strategy decides whether to fill buffer (Threaded fills, SyncPull no-ops)
         audioStrategy.fillBufferFromEngine(&simulator, AudioLoopConfig::FRAMES_PER_UPDATE);
 
-        writeTelemetry(telemetryWriter, stats, currentTime, throttle, ignition);
+        writeTelemetry(telemetryWriter, currentTime, throttle, ignition);
 
         // Read underrun count from telemetry (pushed by ThreadedStrategy)
         int underrunCount = 0;

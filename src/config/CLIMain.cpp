@@ -107,8 +107,9 @@ int main(int argc, char* argv[]) {
     const int sampleRate = 44100;
     SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
 
-    // Create shared telemetry (strategies write, presentation reads)
+    // Create shared telemetry (simulator and strategies write, presentation reads)
     auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
+    simulator.setTelemetryWriter(telemetry.get());
 
     // Create strategy via factory - pass telemetry so strategies push diagnostics
     AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;

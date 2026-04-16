@@ -35,6 +35,8 @@ public:
         return true;
     }
 
+    void setTelemetryWriter(telemetry::ITelemetryWriter*) override {}
+
     void destroy() override {
         created_ = false;
     }
