@@ -41,3 +41,4 @@ verification_output/
 *.dat
 
 .cache/
+results.xml
