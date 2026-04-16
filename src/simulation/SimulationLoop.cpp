@@ -60,23 +60,19 @@ SimulationConfig::SimulationConfig(ILogging* logger)
 
 namespace {
 
-// Timing control for 60Hz loop pacing (moved from AudioSource)
+// Timing control for 60Hz loop pacing using sleep_until for accuracy
 struct LoopTimer {
-    std::chrono::steady_clock::time_point absoluteStartTime;
-    int iterationCount;
+    std::chrono::steady_clock::time_point nextWakeTime;
+    std::chrono::microseconds intervalUs;
 
-    LoopTimer() : absoluteStartTime(std::chrono::steady_clock::now()), iterationCount(0) {}
+    LoopTimer()
+        : nextWakeTime(std::chrono::steady_clock::now())
+        , intervalUs(static_cast<long long>(AudioLoopConfig::UPDATE_INTERVAL * 1000000.0))
+    {}
 
-    void sleepToMaintain60Hz() {
-        iterationCount++;
-        auto now = std::chrono::steady_clock::now();
-        auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - absoluteStartTime).count();
-        auto targetUs = static_cast<long long>(iterationCount * AudioLoopConfig::UPDATE_INTERVAL * 1000000);
-        auto sleepUs = targetUs - elapsedUs;
-
-        if (sleepUs > 0) {
-            std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
-        }
+    void waitUntilNextTick() {
+        nextWakeTime += intervalUs;
+        std::this_thread::sleep_until(nextWakeTime);
     }
 };
 
@@ -144,10 +140,6 @@ bool checkStarterMotorRPM(EngineSimHandle handle, const EngineSimAPI& api, doubl
         return true;
     }
     return false;
-}
-
-void performTimingControl(LoopTimer& timer) {
-    timer.sleepToMaintain60Hz();
 }
 
 bool shouldContinueLoop(double currentTime, double duration, input::IInputProvider* inputProvider) {
@@ -370,7 +362,8 @@ int runUnifiedAudioLoop(
         // Display via presentation (ConsolePresentation formats the complete output line)
         updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider);
 
-        performTimingControl(timer);
+        // Pace to 60Hz using sleep_until for accuracy
+        timer.waitUntilNextTick();
     }
 
     return 0;
