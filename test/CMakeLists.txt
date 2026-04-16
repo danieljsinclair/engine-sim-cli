@@ -12,6 +12,11 @@ add_subdirectory(integration)
 add_subdirectory(unit)
 
 # -----------------------------------------------------------------------------
+# Telemetry ISP tests (per-component telemetry interfaces)
+# -----------------------------------------------------------------------------
+add_subdirectory(telemetry)
+
+# -----------------------------------------------------------------------------
 # Smoke tests
 # CLI output is written to a log file, test names shown in terminal
 # -----------------------------------------------------------------------------
