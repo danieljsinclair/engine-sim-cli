@@ -167,18 +167,14 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
                         const EngineSimStats& stats, double throttle,
                         int underrunCount, IAudioStrategy& audioStrategy,
                         input::IInputProvider* inputProvider,
-                        double lastThroughputUpdate) {
+                        telemetry::ITelemetryReader* telemetryReader) {
     if (!presentation) return;
 
-    // Update throughput rates once per second
-    static double s_lastThroughputTime = 0.0;
-    double elapsedSinceUpdate = currentTime - s_lastThroughputTime;
-    if (elapsedSinceUpdate >= 1.0) {
-        audioStrategy.updateDiagnosticsThroughput(elapsedSinceUpdate);
-        s_lastThroughputTime = currentTime;
+    // Read audio timing diagnostics from telemetry (strategies push to telemetry after each render)
+    telemetry::AudioTimingTelemetry timing;
+    if (telemetryReader) {
+        timing = telemetryReader->getAudioTiming();
     }
-
-    auto snap = audioStrategy.getDiagnosticsSnapshot();
 
     presentation::EngineState state;
     state.timestamp = currentTime;
@@ -191,14 +187,14 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
     state.ignition = inputProvider ? inputProvider->GetIgnition() : true;
     state.starterMotor = false;
     state.exhaustFlow = stats.exhaustFlow;
-    state.renderMs = snap.lastRenderMs;
-    state.headroomMs = snap.lastHeadroomMs;
-    state.budgetPct = snap.lastBudgetPct;
-    state.framesRequested = snap.lastFramesRequested;
-    state.framesRendered = snap.lastFramesRendered;
-    state.callbackRateHz = snap.callbackRateHz;
-    state.generatingRateFps = snap.generatingRateFps;
-    state.trendPct = snap.trendPct;
+    state.renderMs = timing.renderMs;
+    state.headroomMs = timing.headroomMs;
+    state.budgetPct = timing.budgetPct;
+    state.framesRequested = timing.framesRequested;
+    state.framesRendered = timing.framesRendered;
+    state.callbackRateHz = timing.callbackRateHz;
+    state.generatingRateFps = timing.generatingRateFps;
+    state.trendPct = timing.trendPct;
     state.sampleRate = 48000;
 
     presentation->ShowEngineState(state);
@@ -370,7 +366,7 @@ int runUnifiedAudioLoop(
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
         // Display via presentation (ConsolePresentation formats the complete output line)
-        updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider, 0.0);
+        updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider, telemetryReader);
 
         // Pace to 60Hz using sleep_until for accuracy
         timer.waitUntilNextTick();

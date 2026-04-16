@@ -5,7 +5,6 @@
 #define MOCK_AUDIO_STRATEGY_H
 
 #include "IAudioStrategy.h"
-#include "Diagnostics.h"
 #include <cstring>
 #include <atomic>
 
@@ -41,8 +40,6 @@ public:
     void resetBufferAfterWarmup() override {}
     void updateSimulation(ISimulator* simulator, double deltaTimeMs) override {}
     void fillBufferFromEngine(ISimulator* simulator, int frames) override {}
-    Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return Diagnostics::Snapshot(); }
-    void updateDiagnosticsThroughput(double) override {}
 
 private:
     std::atomic<bool> playing_{false};

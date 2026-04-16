@@ -445,7 +445,7 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_UpdatesTotalFramesRendered)
     ASSERT_TRUE(strategy->render(&audioBuffer, FRAMES));
 
     // Assert: Diagnostics snapshot should reflect frames rendered
-    auto snap = strategy->getDiagnosticsSnapshot();
+    auto snap = strategy->diagnostics().getSnapshot();
     EXPECT_GT(snap.totalFramesRendered, 0)
         << "After render(), diagnostics.totalFramesRendered should be > 0. "
         << "Got 0 -- SyncPullStrategy does not propagate frame counts to Diagnostics.";
@@ -475,7 +475,7 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_AccumulatesFramesAcrossMult
     }
 
     // Assert: Total frames rendered should accumulate
-    auto snap = strategy->getDiagnosticsSnapshot();
+    auto snap = strategy->diagnostics().getSnapshot();
     EXPECT_EQ(snap.totalFramesRendered, static_cast<int64_t>(FRAMES_PER_CALL * NUM_CALLS))
         << "After " << NUM_CALLS << " renders of " << FRAMES_PER_CALL << " frames each, "
         << "totalFramesRendered should be " << (FRAMES_PER_CALL * NUM_CALLS)

@@ -7,6 +7,7 @@
 #include "CLIconfig.h"
 
 #include "IAudioStrategy.h"
+#include "ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
 #include "BridgeSimulator.h"
 #include "input/IInputProvider.h"
@@ -106,9 +107,16 @@ int main(int argc, char* argv[]) {
     const int sampleRate = 44100;
     SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
 
-    // Create strategy via factory - no adapter, no IAudioRenderer
+    // Create shared telemetry (strategies write, presentation reads)
+    auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
+
+    // Create strategy via factory - pass telemetry so strategies push diagnostics
     AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-    std::unique_ptr<IAudioStrategy> audioStrategy = IAudioStrategyFactory::createStrategy(mode, cliLogger.get());
+    std::unique_ptr<IAudioStrategy> audioStrategy = IAudioStrategyFactory::createStrategy(mode, cliLogger.get(), telemetry.get());
+
+    // Wire telemetry into simulation config for presentation reads
+    config.telemetryWriter = telemetry.get();
+    config.telemetryReader = telemetry.get();
 
     input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
     presentation::IPresentation* presentation = createPresentation(args);
