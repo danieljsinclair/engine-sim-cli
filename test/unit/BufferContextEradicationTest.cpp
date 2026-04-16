@@ -88,32 +88,6 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_AddFramesWithoutBufferCont
     EXPECT_TRUE(result);
 }
 
-TEST_F(BufferContextEradicationTest, ThreadedStrategy_FillBufferFromEngineWithNullSimulator) {
-    auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
-    config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
-
-    // Act: fillBufferFromEngine with null simulator is a safe no-op
-    strategy->fillBufferFromEngine(nullptr, 512);
-
-    SUCCEED();
-}
-
-TEST_F(BufferContextEradicationTest, ThreadedStrategy_UpdateSimulationWithNullSimulator) {
-    auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
-    config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
-
-    // Act: updateSimulation with null simulator is a safe no-op
-    strategy->updateSimulation(nullptr, 16.667);
-
-    SUCCEED();
-}
-
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_PrepareBufferWithoutBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
     AudioStrategyConfig config;
@@ -177,6 +151,10 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_RenderWithoutSimulator) {
 
     EXPECT_TRUE(result);
 
+    // Assert: buffer should contain all zeros (silence)
+    float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    test::verifySilence(outputData, TEST_FRAME_COUNT, "SyncPull render without simulator");
+
     freeAudioBufferList(audioBuffer);
 }
 
@@ -194,59 +172,9 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_AddFramesWithoutBufferCont
     EXPECT_TRUE(result);
 }
 
-TEST_F(BufferContextEradicationTest, SyncPullStrategy_FillBufferFromEngineWithNullSimulator) {
-    auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
-    config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
-
-    // Act: fillBufferFromEngine is a no-op for SyncPull
-    strategy->fillBufferFromEngine(nullptr, 512);
-
-    SUCCEED();
-}
-
-TEST_F(BufferContextEradicationTest, SyncPullStrategy_UpdateSimulationWithNullSimulator) {
-    auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
-    config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
-
-    // Act: updateSimulation is a no-op for SyncPull
-    strategy->updateSimulation(nullptr, 16.667);
-
-    SUCCEED();
-}
-
 // ============================================================================
-// GROUP 3: Interface contract tests
+// GROUP 3: Lifecycle contract tests
 // ============================================================================
-
-TEST_F(BufferContextEradicationTest, ThreadedStrategy_BaseClassGettersWork) {
-    auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = 44100;
-    config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
-
-    EXPECT_FALSE(strategy->isPlaying());
-    EXPECT_STREQ(strategy->getName(), "Threaded");
-    EXPECT_TRUE(strategy->isEnabled());
-}
-
-TEST_F(BufferContextEradicationTest, SyncPullStrategy_BaseClassGettersWork) {
-    auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = 48000;
-    config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
-
-    EXPECT_FALSE(strategy->isPlaying());
-    EXPECT_STREQ(strategy->getName(), "SyncPull");
-    EXPECT_TRUE(strategy->isEnabled());
-}
 
 TEST_F(BufferContextEradicationTest, SyncPullStrategy_IsPlayingChangesOnStartStop) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());

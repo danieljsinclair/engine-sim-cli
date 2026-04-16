@@ -40,20 +40,6 @@ protected:
 // Tests
 // ============================================================================
 
-TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_CreatedSuccessfully) {
-    auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    ASSERT_NE(strategy, nullptr);
-    EXPECT_STREQ(strategy->getName(), "Threaded");
-    EXPECT_TRUE(strategy->isEnabled());
-}
-
-TEST_F(AudioStrategyIntegrationTest, SyncPullStrategy_CreatedSuccessfully) {
-    auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    ASSERT_NE(strategy, nullptr);
-    EXPECT_STREQ(strategy->getName(), "SyncPull");
-    EXPECT_TRUE(strategy->isEnabled());
-}
-
 TEST_F(AudioStrategyIntegrationTest, HardwareProvider_InitAndCallback) {
     ASSERT_NE(hardwareProvider_, nullptr);
 

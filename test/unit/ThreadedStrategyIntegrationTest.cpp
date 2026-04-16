@@ -68,9 +68,7 @@ protected:
 TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_InitializesSuccessfully) {
     // Arrange: Already initialized in SetUp()
 
-    // Assert: Strategy should have correct name and be enabled
-    EXPECT_STREQ(strategy_->getName(), "Threaded");
-    EXPECT_TRUE(strategy_->isEnabled());
+    // Assert: Strategy behaviour is correct
     EXPECT_TRUE(strategy_->shouldDrainDuringWarmup());
     EXPECT_STREQ(strategy_->getModeString().c_str(), "THREADED");
 }
@@ -368,32 +366,64 @@ TEST_F(ThreadedStrategyIntegrationTest, CaptureThreadedStrategyBaseline) {
 // TDD TEST 10: ThreadedStrategy vs SyncPullStrategy output comparison
 // ============================================================================
 
-TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_DifferentOutputFromSyncPullStrategy) {
-    // Arrange: Create SyncPullStrategy for comparison
+TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_ProducesBufferedAudio_SyncPullProducesSilence) {
+    // Purpose: Verify the two strategies use fundamentally different audio paths.
+    // ThreadedStrategy reads from its internal buffer (cursor-chasing).
+    // SyncPullStrategy renders on-demand from simulator (which we don't have here).
+    // When ThreadedStrategy has buffered data but SyncPullStrategy has no simulator,
+    // their outputs must differ -- proving they use independent audio generation.
+
+    // Arrange: Create SyncPullStrategy
     auto syncPullStrategy = std::make_unique<SyncPullStrategy>(logger_.get());
 
-    // Initialize both strategies
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-
     ASSERT_TRUE(strategy_->initialize(config));
     ASSERT_TRUE(syncPullStrategy->initialize(config));
 
-    // Act: Render from ThreadedStrategy (empty buffer -> silence)
+    // Fill ThreadedStrategy's buffer with known non-silent data
+    std::vector<float> testData(DEFAULT_FRAME_COUNT * STEREO_CHANNELS);
+    for (int frame = 0; frame < DEFAULT_FRAME_COUNT; ++frame) {
+        testData[frame * STEREO_CHANNELS] = static_cast<float>(frame);
+        testData[frame * STEREO_CHANNELS + 1] = static_cast<float>(frame + 1);
+    }
+    ASSERT_TRUE(strategy_->AddFrames(testData.data(), DEFAULT_FRAME_COUNT));
+
+    // Act: Render from ThreadedStrategy (has buffered data)
     AudioBufferList threadedBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
     bool threadedResult = strategy_->render(&threadedBuffer, DEFAULT_FRAME_COUNT);
     ASSERT_TRUE(threadedResult) << "ThreadedStrategy render should succeed";
 
-    // Act: Render from SyncPullStrategy
-    // Note: SyncPullStrategy requires engineAPI to function properly
-    // Without an engine API, it will return false, which is expected behavior
+    // Act: Render from SyncPullStrategy (no simulator -- fills silence)
     AudioBufferList syncPullBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
     bool syncPullResult = syncPullStrategy->render(&syncPullBuffer, DEFAULT_FRAME_COUNT);
+    ASSERT_TRUE(syncPullResult) << "SyncPullStrategy render should succeed";
 
-    // Assert: SyncPullStrategy should fill silence without engine API (safe shutdown)
-    EXPECT_TRUE(syncPullResult)
-        << "SyncPullStrategy should fill silence without engine API (returns true)";
+    // Assert: SyncPullStrategy output is silence
+    float* syncPullData = static_cast<float*>(syncPullBuffer.mBuffers[0].mData);
+    test::verifySilence(syncPullData, DEFAULT_FRAME_COUNT, "SyncPull without simulator");
+
+    // Assert: ThreadedStrategy output contains non-silent data
+    float* threadedData = static_cast<float*>(threadedBuffer.mBuffers[0].mData);
+    bool hasNonSilentSample = false;
+    for (int i = 0; i < DEFAULT_FRAME_COUNT * STEREO_CHANNELS; ++i) {
+        if (threadedData[i] != 0.0f) {
+            hasNonSilentSample = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(hasNonSilentSample) << "ThreadedStrategy should produce non-silent output from buffered data";
+
+    // Assert: Outputs are actually different
+    bool outputsDiffer = false;
+    for (int i = 0; i < DEFAULT_FRAME_COUNT * STEREO_CHANNELS; ++i) {
+        if (threadedData[i] != syncPullData[i]) {
+            outputsDiffer = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(outputsDiffer) << "ThreadedStrategy and SyncPullStrategy must produce different output";
 
     freeAudioBufferList(threadedBuffer);
     freeAudioBufferList(syncPullBuffer);

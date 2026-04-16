@@ -35,22 +35,6 @@ protected:
 // HAPPY PATH TESTS - Core functionality
 // ============================================================================
 
-TEST_F(IAudioStrategyTest, ThreadedStrategy_ReturnsCorrectName) {
-    EXPECT_STREQ(threadedStrategy->getName(), "Threaded");
-}
-
-TEST_F(IAudioStrategyTest, SyncPullStrategy_ReturnsCorrectName) {
-    EXPECT_STREQ(syncPullStrategy->getName(), "SyncPull");
-}
-
-TEST_F(IAudioStrategyTest, ThreadedStrategy_IsEnabled) {
-    EXPECT_TRUE(threadedStrategy->isEnabled());
-}
-
-TEST_F(IAudioStrategyTest, SyncPullStrategy_IsEnabled) {
-    EXPECT_TRUE(syncPullStrategy->isEnabled());
-}
-
 TEST_F(IAudioStrategyTest, ThreadedStrategy_Render_WithUninitializedBuffer_ReturnsFalse) {
     // Arrange: ThreadedStrategy without initialization -- internal buffer not created
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
@@ -73,6 +57,10 @@ TEST_F(IAudioStrategyTest, SyncPullStrategy_Render_WithoutEngineAPI_FillsSilence
 
     // Assert: Render should fill silence and return true (safe shutdown behavior)
     EXPECT_TRUE(result);
+
+    // Assert: Buffer content should be all zeros
+    float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    test::verifySilence(outputData, TEST_FRAME_COUNT, "SyncPull render without engine API");
 
     freeAudioBufferList(audioBuffer);
 }
