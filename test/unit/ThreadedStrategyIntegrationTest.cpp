@@ -409,9 +409,9 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_DifferentOutputFromSync
     AudioBufferList syncPullBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
     bool syncPullResult = syncPullStrategy->render(&syncPullBuffer, DEFAULT_FRAME_COUNT);
 
-    // Assert: SyncPullStrategy should fail gracefully without engine API
-    EXPECT_FALSE(syncPullResult)
-        << "SyncPullStrategy should fail gracefully without engine API (returns false)";
+    // Assert: SyncPullStrategy should fill silence without engine API (safe shutdown)
+    EXPECT_TRUE(syncPullResult)
+        << "SyncPullStrategy should fill silence without engine API (returns true)";
 
     freeAudioBufferList(threadedBuffer);
     freeAudioBufferList(syncPullBuffer);

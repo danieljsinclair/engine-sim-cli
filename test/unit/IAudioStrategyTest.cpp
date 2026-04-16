@@ -82,15 +82,15 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_Render_WithUninitializedBuffer_Retur
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(IAudioStrategyTest, SyncPullStrategy_Render_WithoutEngineAPI_ReturnsFalse) {
+TEST_F(IAudioStrategyTest, SyncPullStrategy_Render_WithoutEngineAPI_FillsSilence) {
     // Arrange: SyncPullStrategy without engine API
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
 
     // Act: Try to render without engine API (not set since no initialize)
     bool result = syncPullStrategy->render(&audioBuffer, TEST_FRAME_COUNT);
 
-    // Assert: Render should fail gracefully
-    EXPECT_FALSE(result);
+    // Assert: Render should fill silence and return true (safe shutdown behavior)
+    EXPECT_TRUE(result);
 
     freeAudioBufferList(audioBuffer);
 }

@@ -188,10 +188,10 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_RenderWithoutSimulator) {
 
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
 
-    // Act: render without simulator set should return false (graceful failure)
+    // Act: render without simulator set should fill silence (safe shutdown behavior)
     bool result = strategy->render(&audioBuffer, TEST_FRAME_COUNT);
 
-    EXPECT_FALSE(result);
+    EXPECT_TRUE(result);
 
     freeAudioBufferList(audioBuffer);
 }
