@@ -67,7 +67,18 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
             << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << state.headroomMs
             << std::noshowpos << "ms"
             << " (" << budgetColor << std::setw(3) << std::setprecision(0)
-            << state.budgetPct << "% of budget" << ANSIColors::RESET << ")";
+            << state.budgetPct << "% of budget" << ANSIColors::RESET << ") ";
+    }
+
+    // Callback throughput metrics
+    if (state.callbackRateHz > 0.0) {
+        double neededKfps = state.sampleRate / 1000.0;
+        double generatingKfps = state.generatingRateFps / 1000.0;
+        out << "[callbacks=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
+            << "needed=" << std::setw(5) << std::setprecision(1) << neededKfps << "kfps "
+            << "generating=" << std::setw(5) << generatingKfps << "kfps "
+            << "trend=" << std::setw(5) << std::showpos << std::setprecision(1) << state.trendPct
+            << std::noshowpos << "%]";
     }
 
     return out.str();

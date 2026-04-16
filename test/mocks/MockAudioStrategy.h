@@ -42,6 +42,7 @@ public:
     void updateSimulation(ISimulator* simulator, double deltaTimeMs) override {}
     void fillBufferFromEngine(ISimulator* simulator, int frames) override {}
     Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return Diagnostics::Snapshot(); }
+    void updateDiagnosticsThroughput(double) override {}
 
 private:
     std::atomic<bool> playing_{false};

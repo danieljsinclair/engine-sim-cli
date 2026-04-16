@@ -166,8 +166,17 @@ double updateInputAndGetThrottle(input::IInputProvider* inputProvider, double cu
 void updatePresentation(presentation::IPresentation* presentation, double currentTime,
                         const EngineSimStats& stats, double throttle,
                         int underrunCount, IAudioStrategy& audioStrategy,
-                        input::IInputProvider* inputProvider) {
+                        input::IInputProvider* inputProvider,
+                        double lastThroughputUpdate) {
     if (!presentation) return;
+
+    // Update throughput rates once per second
+    static double s_lastThroughputTime = 0.0;
+    double elapsedSinceUpdate = currentTime - s_lastThroughputTime;
+    if (elapsedSinceUpdate >= 1.0) {
+        audioStrategy.updateDiagnosticsThroughput(elapsedSinceUpdate);
+        s_lastThroughputTime = currentTime;
+    }
 
     auto snap = audioStrategy.getDiagnosticsSnapshot();
 
@@ -187,6 +196,10 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
     state.budgetPct = snap.lastBudgetPct;
     state.framesRequested = snap.lastFramesRequested;
     state.framesRendered = snap.lastFramesRendered;
+    state.callbackRateHz = snap.callbackRateHz;
+    state.generatingRateFps = snap.generatingRateFps;
+    state.trendPct = snap.trendPct;
+    state.sampleRate = 48000;
 
     presentation->ShowEngineState(state);
 }
@@ -357,7 +370,7 @@ int runUnifiedAudioLoop(
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
         // Display via presentation (ConsolePresentation formats the complete output line)
-        updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider);
+        updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider, 0.0);
 
         // Pace to 60Hz using sleep_until for accuracy
         timer.waitUntilNextTick();

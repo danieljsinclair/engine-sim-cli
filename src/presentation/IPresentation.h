@@ -34,6 +34,10 @@ struct EngineState {
     double budgetPct = 0.0;
     int framesRequested = 0;
     int framesRendered = 0;
+    double callbackRateHz = 0.0;
+    double generatingRateFps = 0.0;
+    double trendPct = 0.0;
+    int sampleRate = 48000;
 };
 
 // ============================================================================
