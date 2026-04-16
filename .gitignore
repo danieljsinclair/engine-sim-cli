@@ -36,5 +36,8 @@ logs/*
 *.wav
 !es/sound-library/**/*.wav
 test_*.mr
+Testing/
+verification_output/
+*.dat
 
 .cache/
