@@ -1,9 +1,11 @@
 # ARCH-001: Phase 6 - IAudioStrategy Consolidation
 
 **Priority:** P0 - Critical Architecture
-**Status:** ✅ COMPLETE
+**Status:** ✅ COMPLETE (Historical)
 **Assignee:** @tech-architect
 **Reviewer:** @test-architect, @product-owner
+
+**Note:** This documents a historical phase (Phase 6) that has been superseded by the 7-phase refactor programme (ARCH-005). See ARCH-005 for current work.
 
 ## Overview
 
@@ -136,7 +138,17 @@ std::unique_ptr<IAudioStrategy> IAudioStrategyFactory::createStrategy(
 ---
 
 **Created:** 2026-04-08
-**Last Updated:** 2026-04-15
+**Last Updated:** 2026-04-16
 **Estimate:** 2-3 days
+
+## Recent Changes
+
+**2026-04-16:** Phase A cleanups completed (commit b857e00)
+- Removed `configure()` method from IAudioStrategy (was no-op)
+- Extracted audio callback lambda into `audioRenderCallback()` helper
+- Extracted hardware provider creation into `createHardwareProvider()` helper
+- These cleanups prepare for Phase B (BufferContext eradication) in the 7-phase programme
+
+See ARCH-005 for the complete 7-phase refactor programme details.
 
 

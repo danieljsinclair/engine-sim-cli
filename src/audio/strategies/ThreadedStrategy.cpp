@@ -1,9 +1,10 @@
 // ThreadedStrategy.cpp - Cursor-chasing audio strategy
 // SRP: Single responsibility - only implements threaded cursor-chasing rendering
 // OCP: New strategies can be added without modifying existing code
-// DIP: Depends on abstractions, not concrete implementations
+// DIP: Depends on abstractions (ISimulator), not concrete implementations
 
 #include "audio/strategies/ThreadedStrategy.h"
+#include "simulation/ISimulator.h"
 #include "ILogging.h"
 #include "Verification.h"
 
@@ -68,8 +69,8 @@ bool ThreadedStrategy::shouldDrainDuringWarmup() const {
     return true;
 }
 
-void ThreadedStrategy::fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) {
-    if (!handle) return;
+void ThreadedStrategy::fillBufferFromEngine(ISimulator* simulator, int defaultFramesPerUpdate) {
+    if (!simulator) return;
 
     // Cursor chasing: adjust how many frames to read based on buffer fill level
     size_t available = circularBuffer_.available();
@@ -92,7 +93,7 @@ void ThreadedStrategy::fillBufferFromEngine(EngineSimHandle handle, const Engine
 
     std::vector<float> buffer(framesToWrite * 2);
     int totalRead = 0;
-    api.ReadAudioBuffer(handle, buffer.data(), framesToWrite, &totalRead);
+    simulator->readAudioBuffer(buffer.data(), framesToWrite, &totalRead);
 
     if (totalRead > 0) {
         AddFrames(buffer.data(), totalRead);
@@ -141,18 +142,19 @@ void ThreadedStrategy::prepareBuffer() {
     logger_->debug(LogMask::AUDIO, "ThreadedStrategy::prepareBuffer: Pre-filled %d frames with silence", static_cast<int>(framesWritten));
 }
 
-bool ThreadedStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
-    if (!api || !handle) {
-        logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Invalid engine API or handle");
+bool ThreadedStrategy::startPlayback(ISimulator* simulator) {
+    if (!simulator) {
+        logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Invalid simulator");
         return false;
     }
 
-    EngineSimResult result = api->StartAudioThread(handle);
-    if (result != ESIM_SUCCESS) {
-        logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Failed to start audio thread (result=%d)", result);
+    bool result = simulator->startAudioThread();
+    if (!result) {
+        logger_->error(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Failed to start audio thread");
         return false;
     }
 
+    simulator_ = simulator;
     audioState_.isPlaying.store(true);
 
     logger_->info(LogMask::AUDIO, "ThreadedStrategy::startPlayback: Audio thread started");
@@ -160,11 +162,12 @@ bool ThreadedStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI*
     return true;
 }
 
-void ThreadedStrategy::stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
-    if (api && handle) {
+void ThreadedStrategy::stopPlayback(ISimulator* simulator) {
+    if (simulator) {
         logger_->debug(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Audio thread will stop with simulation");
     }
 
+    simulator_ = nullptr;
     audioState_.isPlaying.store(false);
 
     logger_->info(LogMask::AUDIO, "ThreadedStrategy::stopPlayback: Playback stopped");
@@ -176,13 +179,13 @@ void ThreadedStrategy::resetBufferAfterWarmup() {
     logger_->info(LogMask::AUDIO, "ThreadedStrategy::resetBufferAfterWarmup: Buffer reset complete");
 }
 
-void ThreadedStrategy::updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
-    if (handle && audioState_.isPlaying.load()) {
+void ThreadedStrategy::updateSimulation(ISimulator* simulator, double deltaTimeMs) {
+    if (simulator && audioState_.isPlaying.load()) {
         double deltaTimeSeconds = deltaTimeMs / 1000.0;
-        EngineSimResult result = api.Update(handle, deltaTimeSeconds);
+        bool result = simulator->update(deltaTimeSeconds);
 
-        if (result != ESIM_SUCCESS) {
-            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::updateSimulation: Engine update failed (result=%d)", result);
+        if (!result) {
+            logger_->warning(LogMask::AUDIO, "ThreadedStrategy::updateSimulation: Engine update failed");
         }
     }
 }

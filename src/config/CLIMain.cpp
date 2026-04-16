@@ -1,5 +1,6 @@
 // CLIMain.cpp - Main entry point implementation
 // Uses IAudioStrategyFactory directly (no adapter layer)
+// Phase E: Creates BridgeSimulator (ISimulator) instead of raw EngineSimAPI
 
 #include "CLIMain.h"
 
@@ -7,11 +8,11 @@
 
 #include "audio/strategies/IAudioStrategy.h"
 #include "simulation/SimulationLoop.h"
+#include "simulation/BridgeSimulator.h"
 #include "input/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "presentation/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
-#include "bridge/engine_sim_loader.h"
 #include "simulation/EngineConfig.h"
 #include "ILogging.h"
 
@@ -99,8 +100,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    EngineSimAPI engineAPI = {};
-    ShowConfigHeader(args, engineAPI.GetVersion());
+    BridgeSimulator simulator;
+    ShowConfigHeader(args, ISimulator::getVersion());
 
     const int sampleRate = 44100;
     SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
@@ -112,8 +113,8 @@ int main(int argc, char* argv[]) {
     input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
     presentation::IPresentation* presentation = createPresentation(args);
 
-    // Run simulation with IAudioStrategy directly
-    int result = runSimulation(config, engineAPI, audioStrategy.get(), inputProvider, presentation);
+    // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioStrategy -> IAudioHardwareProvider)
+    int result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation);
 
     delete inputProvider;
     delete presentation;

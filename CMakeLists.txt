@@ -27,6 +27,7 @@ add_executable(engine-sim-cli
     # Simulation layer
     src/simulation/SimulationLoop.cpp
     src/simulation/EngineConfig.cpp
+    src/simulation/BridgeSimulator.cpp
     # Presentation layer
     src/presentation/ConsolePresentation.cpp
     # Input layer

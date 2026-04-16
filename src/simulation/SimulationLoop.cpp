@@ -1,9 +1,11 @@
 // SimulationLoop.cpp - Simulation loop implementation
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
-// Uses IAudioStrategy directly (no adapter, no IAudioRenderer)
+// Phase E: Uses ISimulator* instead of EngineSimHandle/EngineSimAPI&
 
 #include "SimulationLoop.h"
 
+#include "simulation/ISimulator.h"
+#include "simulation/BridgeSimulator.h"
 #include "config/CLIconfig.h"
 #include "audio/hardware/IAudioHardwareProvider.h"
 #include "audio/hardware/CoreAudioHardwareProvider.h"
@@ -13,7 +15,6 @@
 #include "input/IInputProvider.h"
 #include "presentation/IPresentation.h"
 #include "simulation/EngineConfig.h"
-#include "bridge/engine_sim_loader.h"
 #include "ILogging.h"
 #include "ITelemetryProvider.h"
 #include "Verification.h"
@@ -77,7 +78,6 @@ struct LoopTimer {
 };
 
 // Named audio render callback -- bridges platform audio buffers to strategy->render()
-// Takes IAudioStrategy directly (not via refCon, which belongs to the hardware provider).
 int audioRenderCallback(IAudioStrategy* strategy, int numberFrames,
                         PlatformAudioBufferList* platformBufferList) {
     if (!strategy->isPlaying()) {
@@ -128,15 +128,14 @@ std::unique_ptr<IAudioHardwareProvider> createHardwareProvider(
     return provider;
 }
 
-void enableStarterMotor(EngineSimHandle handle, const EngineSimAPI& api) {
-    api.SetStarterMotor(handle, 1);
+void enableStarterMotor(ISimulator& simulator) {
+    simulator.setStarterMotor(true);
 }
 
-bool checkStarterMotorRPM(EngineSimHandle handle, const EngineSimAPI& api, double minSustainedRPM) {
-    EngineSimStats stats = {};
-    api.GetStats(handle, &stats);
+bool checkStarterMotorRPM(ISimulator& simulator, double minSustainedRPM) {
+    EngineSimStats stats = simulator.getStats();
     if (stats.currentRPM > minSustainedRPM) {
-        api.SetStarterMotor(handle, 0);
+        simulator.setStarterMotor(false);
         return true;
     }
     return false;
@@ -259,17 +258,16 @@ ScriptConfig prepareScriptConfig(const SimulationConfig& config) {
     return result;
 }
 
-void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
+void runWarmupPhase(ISimulator& simulator,
                    bool drainDuringWarmup) {
     double smoothedThrottle = 0.6;
     double currentTime = 0.0;
 
     for (int i = 0; i < AudioLoopConfig::WARMUP_ITERATIONS; i++) {
-        EngineSimStats stats = {};
-        engineAPI.GetStats(handle, &stats);
+        EngineSimStats stats = simulator.getStats();
 
-        engineAPI.SetThrottle(handle, smoothedThrottle);
-        engineAPI.Update(handle, AudioLoopConfig::UPDATE_INTERVAL);
+        simulator.setThrottle(smoothedThrottle);
+        simulator.update(AudioLoopConfig::UPDATE_INTERVAL);
 
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
@@ -279,7 +277,7 @@ void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
 
             for (int retry = 0; retry <= 3 && warmupRead < AudioLoopConfig::FRAMES_PER_UPDATE; retry++) {
                 int readThisTime = 0;
-                engineAPI.RenderOnDemand(handle,
+                simulator.renderOnDemand(
                     discardBuffer.data() + warmupRead * 2,
                     AudioLoopConfig::FRAMES_PER_UPDATE - warmupRead,
                     &readThisTime);
@@ -290,13 +288,12 @@ void runWarmupPhase(EngineSimHandle handle, EngineSimAPI& engineAPI,
     }
 }
 
-void cleanupSimulation(IAudioHardwareProvider* hardwareProvider, EngineSimHandle handle,
-                       EngineSimAPI& engineAPI) {
+void cleanupSimulation(IAudioHardwareProvider* hardwareProvider, ISimulator& simulator) {
     if (hardwareProvider) {
         hardwareProvider->stopPlayback();
         hardwareProvider->cleanup();
     }
-    engineAPI.Destroy(handle);
+    simulator.destroy();
 }
 
 void warnWavExportNotSupported(bool outputWavRequested, ILogging* logger) {
@@ -312,8 +309,7 @@ void warnWavExportNotSupported(bool outputWavRequested, ILogging* logger) {
 // ============================================================================
 
 int runUnifiedAudioLoop(
-    EngineSimHandle handle,
-    const EngineSimAPI& api,
+    ISimulator& simulator,
     const SimulationConfig& config,
     IAudioStrategy& audioStrategy,
     input::IInputProvider* inputProvider,
@@ -331,22 +327,21 @@ int runUnifiedAudioLoop(
     config.logger->info(LogMask::BRIDGE, "runUnifiedAudioLoop starting simulation loop with %s mode", config.sineMode ? "SINE" : "ENGINE");
 
     while (shouldContinueLoop(currentTime, config.duration, inputProvider)) {
-        checkStarterMotorRPM(handle, api, minSustainedRPM);
+        checkStarterMotorRPM(simulator, minSustainedRPM);
 
         throttle = updateInputAndGetThrottle(inputProvider, currentTime);
-        api.SetThrottle(handle, throttle);
+        simulator.setThrottle(throttle);
 
         bool ignition = inputProvider ? inputProvider->GetIgnition() : true;
-        api.SetIgnition(handle, ignition ? 1 : 0);
+        simulator.setIgnition(ignition);
 
         // Update simulation via strategy (threaded mode updates here; sync-pull is no-op)
-        audioStrategy.updateSimulation(handle, api, AudioLoopConfig::UPDATE_INTERVAL * 1000.0);
+        audioStrategy.updateSimulation(&simulator, AudioLoopConfig::UPDATE_INTERVAL * 1000.0);
 
-        EngineSimStats stats = {};
-        api.GetStats(handle, &stats);
+        EngineSimStats stats = simulator.getStats();
 
         // Generate audio: strategy decides whether to fill buffer (Threaded fills, SyncPull no-ops)
-        audioStrategy.fillBufferFromEngine(handle, api, AudioLoopConfig::FRAMES_PER_UPDATE);
+        audioStrategy.fillBufferFromEngine(&simulator, AudioLoopConfig::FRAMES_PER_UPDATE);
 
         writeTelemetry(telemetryWriter, stats, currentTime, throttle, ignition);
 
@@ -375,7 +370,7 @@ int runUnifiedAudioLoop(
 
 int runSimulation(
     const SimulationConfig& config,
-    EngineSimAPI& engineAPI,
+    ISimulator& simulator,
     IAudioStrategy* audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation) {
@@ -394,40 +389,38 @@ int runSimulation(
     EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
     engineConfig.sineMode = config.sineMode ? 1 : 0;
 
-    EngineSimHandle handle = nullptr;
-
-    EngineSimResult result = engineAPI.Create(&engineConfig, &handle);
-    if (result != ESIM_SUCCESS || !handle) {
-        const char* err = handle ? engineAPI.GetLastError(handle) : "Unknown error";
-        config.logger->error(LogMask::BRIDGE, "Failed to create simulator: %s", err);
+    if (!simulator.create(engineConfig)) {
+        config.logger->error(LogMask::BRIDGE, "Failed to create simulator: %s", simulator.getLastError().c_str());
         return 1;
     }
 
-    const char* scriptPathPtr = scriptConfig.scriptPath.empty() ? nullptr : scriptConfig.scriptPath.c_str();
-    const char* assetBasePtr = scriptConfig.assetBasePath.empty() ? nullptr : scriptConfig.assetBasePath.c_str();
-
-    EngineSimResult logResult = engineAPI.SetLogging(handle, config.logger);
-    if (logResult != ESIM_SUCCESS) {
-        config.logger->warning(LogMask::BRIDGE, "Failed to set logging: result=%d", logResult);
+    if (!simulator.setLogging(config.logger)) {
+        config.logger->warning(LogMask::BRIDGE, "Failed to set logging");
     }
 
-    result = engineAPI.LoadScript(handle, scriptPathPtr, assetBasePtr);
-    if (result != ESIM_SUCCESS) {
-        config.logger->error(LogMask::SCRIPT, "Failed to load script: %s", engineAPI.GetLastError(handle));
-        engineAPI.Destroy(handle);
-        return 1;
+    if (!scriptConfig.scriptPath.empty()) {
+        if (!simulator.loadScript(scriptConfig.scriptPath, scriptConfig.assetBasePath)) {
+            config.logger->error(LogMask::SCRIPT, "Failed to load script: %s", simulator.getLastError().c_str());
+            simulator.destroy();
+            return 1;
+        }
+    } else {
+        // Sine mode or no script -- still need to initialize synthesizer
+        if (!simulator.loadScript("", "")) {
+            config.logger->error(LogMask::SCRIPT, "Failed to initialize synthesizer: %s", simulator.getLastError().c_str());
+            simulator.destroy();
+            return 1;
+        }
     }
 
     // Initialize strategy
     AudioStrategyConfig strategyConfig;
     strategyConfig.sampleRate = sampleRate;
     strategyConfig.channels = 2;
-    strategyConfig.engineHandle = handle;
-    strategyConfig.engineAPI = &engineAPI;
 
     if (!audioStrategy->initialize(strategyConfig)) {
         config.logger->error(LogMask::AUDIO, "Failed to initialize audio strategy");
-        engineAPI.Destroy(handle);
+        simulator.destroy();
         return 1;
     }
 
@@ -445,7 +438,7 @@ int runSimulation(
     auto hardwareProvider = createHardwareProvider(sampleRate, callback, config.logger);
     if (!hardwareProvider) {
         config.logger->error(LogMask::AUDIO, "Failed to initialize audio hardware");
-        engineAPI.Destroy(handle);
+        simulator.destroy();
         return 1;
     }
 
@@ -453,20 +446,20 @@ int runSimulation(
                          audioStrategy->getName(), sampleRate);
 
     // Start strategy playback
-    if (!audioStrategy->startPlayback(handle, &engineAPI)) {
+    if (!audioStrategy->startPlayback(&simulator)) {
         config.logger->error(LogMask::AUDIO, "Failed to start audio playback");
         hardwareProvider->cleanup();
-        engineAPI.Destroy(handle);
+        simulator.destroy();
         return 1;
     }
 
     // Set volume
     hardwareProvider->setVolume(config.volume);
 
-    enableStarterMotor(handle, engineAPI);
+    enableStarterMotor(simulator);
 
     bool drainDuringWarmup = config.playAudio && audioStrategy->shouldDrainDuringWarmup();
-    runWarmupPhase(handle, engineAPI, drainDuringWarmup);
+    runWarmupPhase(simulator, drainDuringWarmup);
 
     // Prepare buffer via strategy (threaded: pre-fills, sync-pull: no-op)
     audioStrategy->prepareBuffer();
@@ -479,11 +472,11 @@ int runSimulation(
         config.logger->error(LogMask::AUDIO, "Failed to start hardware playback");
     }
 
-    int exitCode = runUnifiedAudioLoop(handle, engineAPI, config, *audioStrategy, inputProvider, presentation, config.telemetryWriter, config.telemetryReader);
+    int exitCode = runUnifiedAudioLoop(simulator, config, *audioStrategy, inputProvider, presentation, config.telemetryWriter, config.telemetryReader);
 
     // Cleanup
-    audioStrategy->stopPlayback(handle, &engineAPI);
-    cleanupSimulation(hardwareProvider.get(), handle, engineAPI);
+    audioStrategy->stopPlayback(&simulator);
+    cleanupSimulation(hardwareProvider.get(), simulator);
 
     warnWavExportNotSupported(config.outputWav, config.logger);
 

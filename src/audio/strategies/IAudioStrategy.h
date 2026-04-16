@@ -3,6 +3,8 @@
 // SRP: Single responsibility for audio generation strategy
 // OCP: New strategies can be added without modifying core code
 // DI: Strategy is injected via IAudioStrategyFactory
+//
+// Phase E: All methods take ISimulator* instead of EngineSimHandle/EngineSimAPI
 
 #ifndef IAUDIO_STRATEGY_H
 #define IAUDIO_STRATEGY_H
@@ -14,17 +16,15 @@
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
 
-#include "engine_sim_bridge.h"
-#include "bridge/engine_sim_loader.h"
 #include "audio/state/Diagnostics.h"
 #include "ILogging.h"
+
+class ISimulator;
 
 // Simulation configuration
 struct AudioStrategyConfig {
     int sampleRate;
     int channels;
-    EngineSimHandle engineHandle = nullptr;
-    const EngineSimAPI* engineAPI = nullptr;
 };
 
 // Audio mode enumeration
@@ -78,8 +78,8 @@ public:
     virtual bool initialize(const AudioStrategyConfig& config) = 0;
     virtual void prepareBuffer() = 0;
 
-    virtual bool startPlayback(EngineSimHandle handle, const EngineSimAPI* api) = 0;
-    virtual void stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) = 0;
+    virtual bool startPlayback(ISimulator* simulator) = 0;
+    virtual void stopPlayback(ISimulator* simulator) = 0;
     virtual void resetBufferAfterWarmup() = 0;
 
     // === Strategy-Specific Methods ===
@@ -87,17 +87,17 @@ public:
     virtual bool shouldDrainDuringWarmup() const = 0;
 
     /**
-     * Fill internal buffer with audio from the engine.
+     * Fill internal buffer with audio from the simulator.
      * Called by the main simulation loop each iteration.
-     * ThreadedStrategy: reads from engine via ReadAudioBuffer, applies cursor chasing.
+     * ThreadedStrategy: reads from simulator via readAudioBuffer, applies cursor chasing.
      * SyncPullStrategy: no-op (audio is generated on-demand in render callback).
      */
-    virtual void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) = 0;
+    virtual void fillBufferFromEngine(ISimulator* simulator, int defaultFramesPerUpdate) = 0;
 
     virtual std::string getModeString() const = 0;
     virtual void reset() = 0;
 
-    virtual void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) = 0;
+    virtual void updateSimulation(ISimulator* simulator, double deltaTimeMs) = 0;
 
     // Returns render timing diagnostics snapshot for presentation
     virtual Diagnostics::Snapshot getDiagnosticsSnapshot() const = 0;

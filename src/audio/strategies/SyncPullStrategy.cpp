@@ -2,10 +2,11 @@
 // Implements synchronous audio generation where simulation advances with audio playback
 // SRP: Single responsibility - only implements synchronous lock-step rendering
 // OCP: New strategies can be added without modifying existing code
-// DIP: Depends on abstractions, not concrete implementations
+// DIP: Depends on abstractions (ISimulator), not concrete implementations
 
 #include "audio/strategies/SyncPullStrategy.h"
 #include "audio/strategies/IAudioStrategy.h"
+#include "simulation/ISimulator.h"
 #include "ILogging.h"
 #include "Verification.h"
 
@@ -40,8 +41,8 @@ bool SyncPullStrategy::shouldDrainDuringWarmup() const {
     return false;
 }
 
-void SyncPullStrategy::fillBufferFromEngine(EngineSimHandle, const EngineSimAPI&, int) {
-    // SyncPull generates audio on-demand in the render callback via RenderOnDemand.
+void SyncPullStrategy::fillBufferFromEngine(ISimulator*, int) {
+    // SyncPull generates audio on-demand in the render callback via ISimulator.
 }
 
 // ============================================================================
@@ -54,9 +55,6 @@ bool SyncPullStrategy::initialize(const AudioStrategyConfig& config) {
     audioState_.sampleRate = config.sampleRate;
     audioState_.isPlaying = false;
 
-    engineHandle_ = config.engineHandle;
-    engineAPI_ = config.engineAPI;
-
     logger_->info(LogMask::AUDIO,
                   "SyncPullStrategy initialized: sampleRate=%dHz, channels=%d",
                   config.sampleRate, config.channels);
@@ -68,7 +66,8 @@ void SyncPullStrategy::prepareBuffer() {
     logger_->debug(LogMask::AUDIO, "SyncPullStrategy::prepareBuffer: No-op for sync-pull mode");
 }
 
-bool SyncPullStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
+bool SyncPullStrategy::startPlayback(ISimulator* simulator) {
+    simulator_ = simulator;
     audioState_.isPlaying.store(true);
 
     logger_->info(LogMask::AUDIO, "SyncPullStrategy::startPlayback: On-demand rendering started");
@@ -76,7 +75,8 @@ bool SyncPullStrategy::startPlayback(EngineSimHandle handle, const EngineSimAPI*
     return true;
 }
 
-void SyncPullStrategy::stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) {
+void SyncPullStrategy::stopPlayback(ISimulator* simulator) {
+    simulator_ = nullptr;
     audioState_.isPlaying.store(false);
 
     logger_->info(LogMask::AUDIO, "SyncPullStrategy::stopPlayback: On-demand rendering stopped");
@@ -86,7 +86,7 @@ void SyncPullStrategy::resetBufferAfterWarmup() {
     logger_->debug(LogMask::AUDIO, "SyncPullStrategy::resetBufferAfterWarmup: No-op for sync-pull mode");
 }
 
-void SyncPullStrategy::updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) {
+void SyncPullStrategy::updateSimulation(ISimulator* simulator, double deltaTimeMs) {
     // Sync-pull mode updates simulation during render callback
 }
 
@@ -98,7 +98,7 @@ bool SyncPullStrategy::render(
         return false;
     }
 
-    if (!engineAPI_) {
+    if (!simulator_) {
         return false;
     }
 
@@ -112,15 +112,14 @@ bool SyncPullStrategy::render(
 
     while (remainingFrames > 0 && framesRendered < framesToGenerate) {
         int32_t framesWritten = 0;
-        EngineSimResult result = engineAPI_->RenderOnDemand(
-            engineHandle_,
+        bool result = simulator_->renderOnDemand(
             audioData + (framesRendered * 2),
             remainingFrames,
             &framesWritten
         );
 
-        if (result != 0) {
-            logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand failed (result=%d)", result);
+        if (!result) {
+            logger_->error(LogMask::AUDIO, "SyncPullStrategy::render: renderOnDemand failed");
             return false;
         }
 
@@ -128,7 +127,7 @@ bool SyncPullStrategy::render(
         remainingFrames -= framesWritten;
 
         if (framesWritten == 0 && remainingFrames > 0) {
-            logger_->warning(LogMask::AUDIO, "SyncPullStrategy::render: RenderOnDemand returned 0 frames, breaking loop");
+            logger_->warning(LogMask::AUDIO, "SyncPullStrategy::render: renderOnDemand returned 0 frames, breaking loop");
             break;
         }
     }

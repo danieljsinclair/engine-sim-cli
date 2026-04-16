@@ -2,7 +2,7 @@
 // Implements synchronous audio generation where simulation advances with audio playback
 // SRP: Single responsibility - only implements synchronous lock-step rendering
 // OCP: New strategies can be added without modifying existing code
-// DIP: Depends on abstractions, not concrete implementations
+// DIP: Depends on abstractions (ISimulator), not concrete implementations
 // Owns its own state: AudioState, Diagnostics
 
 #ifndef SYNC_PULL_STRATEGY_H
@@ -17,11 +17,13 @@
 #include "audio/state/Diagnostics.h"
 #include "ILogging.h"
 
+class ISimulator;
+
 /**
  * SyncPullStrategy - Lock-step audio generation strategy
  *
  * Engine simulation advances in sync with audio playback.
- * Audio is rendered on-demand synchronously from engine simulator.
+ * Audio is rendered on-demand synchronously from the simulator via ISimulator.
  * No separate audio thread is needed.
  *
  * Owns its own state: AudioState, Diagnostics.
@@ -34,7 +36,7 @@ public:
     bool isEnabled() const override;
     bool isPlaying() const override;
     bool shouldDrainDuringWarmup() const override;
-    void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
+    void fillBufferFromEngine(ISimulator* simulator, int defaultFramesPerUpdate) override;
 
     bool render(AudioBufferList* ioData, UInt32 numberFrames) override;
     bool AddFrames(float* buffer, int frameCount) override;
@@ -42,10 +44,10 @@ public:
     // Lifecycle Methods
     bool initialize(const AudioStrategyConfig& config) override;
     void prepareBuffer() override;
-    bool startPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
-    void stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
+    bool startPlayback(ISimulator* simulator) override;
+    void stopPlayback(ISimulator* simulator) override;
     void resetBufferAfterWarmup() override;
-    void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
+    void updateSimulation(ISimulator* simulator, double deltaTimeMs) override;
 
     void reset() override;
     std::string getModeString() const override;
@@ -59,13 +61,12 @@ private:
     std::unique_ptr<ILogging> defaultLogger_;
     ILogging* logger_;
 
-    // Owned state (previously in BufferContext)
+    // Owned state
     AudioState audioState_;
     Diagnostics diagnostics_;
 
-    // Engine connection (set during initialize)
-    EngineSimHandle engineHandle_ = nullptr;
-    const EngineSimAPI* engineAPI_ = nullptr;
+    // Simulator reference (set during startPlayback)
+    ISimulator* simulator_ = nullptr;
 };
 
 #endif // SYNC_PULL_STRATEGY_H

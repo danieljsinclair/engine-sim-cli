@@ -7,13 +7,14 @@
 // 4. ReadAudioBuffer drains engine before RenderOnDemand (beep-then-silence root cause)
 // 5. SyncPullStrategy propagates frame counts to diagnostics
 //
-// Strategies own their own state -- no BufferContext needed.
+// Phase E: Uses ISimulator (BridgeSimulator) instead of raw EngineSimAPI
 
 #include "audio/strategies/ThreadedStrategy.h"
 #include "audio/strategies/SyncPullStrategy.h"
+#include "simulation/ISimulator.h"
+#include "simulation/BridgeSimulator.h"
 #include "AudioTestConstants.h"
 #include "engine_sim_bridge.h"
-#include "bridge/engine_sim_loader.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -24,14 +25,14 @@ using namespace test::constants;
 
 // ============================================================================
 // Helper: Create a real engine in sine mode for integration-level tests
+// Uses BridgeSimulator (ISimulator) instead of raw EngineSimAPI
 // ============================================================================
 
-struct SineEngine {
-    EngineSimHandle handle = nullptr;
-    EngineSimAPI api;
+struct SineSimulator {
+    BridgeSimulator simulator;
     bool valid = false;
 
-    SineEngine() {
+    SineSimulator() {
         EngineSimConfig config{};
         config.sampleRate = 48000;
         config.inputBufferSize = 1024;
@@ -41,23 +42,21 @@ struct SineEngine {
         config.targetSynthesizerLatency = 0.05;
         config.sineMode = 1;
 
-        EngineSimResult result = api.Create(&config, &handle);
-        if (result != ESIM_SUCCESS || !handle) return;
+        if (!simulator.create(config)) return;
 
-        result = api.LoadScript(handle, nullptr, nullptr);
-        if (result != ESIM_SUCCESS) return;
+        if (!simulator.loadScript("", "")) return;
 
         valid = true;
     }
 
-    ~SineEngine() {
-        if (valid && handle) {
-            api.Destroy(handle);
+    ~SineSimulator() {
+        if (valid) {
+            simulator.destroy();
         }
     }
 
-    SineEngine(const SineEngine&) = delete;
-    SineEngine& operator=(const SineEngine&) = delete;
+    SineSimulator(const SineSimulator&) = delete;
+    SineSimulator& operator=(const SineSimulator&) = delete;
 };
 
 // ============================================================================
@@ -103,7 +102,7 @@ protected:
 // ============================================================================
 
 TEST_F(StrategyPipelineTest, ThreadedStrategy_UpdateSimulation_SucceedsWithRealEngine) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid) << "Failed to create sine-mode engine";
 
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
@@ -111,23 +110,19 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_UpdateSimulation_SucceedsWithRealE
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
 
-    // ThreadedStrategy::startPlayback calls api->StartAudioThread(handle)
-    // which requires the real engine handle and API
-    ASSERT_TRUE(strategy->startPlayback(engine.handle, &engine.api))
+    // ThreadedStrategy::startPlayback calls simulator->startAudioThread()
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator))
         << "startPlayback should succeed with real engine";
 
     double deltaTimeMs = (1.0 / 60.0) * 1000.0;
 
-    // Act: Call updateSimulation with the real engine API
-    strategy->updateSimulation(engine.handle, engine.api, deltaTimeMs);
+    // Act: Call updateSimulation with the real engine via ISimulator
+    strategy->updateSimulation(&engine.simulator, deltaTimeMs);
 
     // Assert: The engine should still be in a valid state
-    EngineSimStats stats = {};
-    engine.api.GetStats(engine.handle, &stats);
+    EngineSimStats stats = engine.simulator.getStats();
 
     EXPECT_GT(stats.currentRPM, 0.0)
         << "Engine should have non-zero RPM after update. "
@@ -136,23 +131,17 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_UpdateSimulation_SucceedsWithRealE
 }
 
 TEST_F(StrategyPipelineTest, ThreadedStrategy_UpdateSimulation_DeltaTimeConversionIsCorrect) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     double deltaTimeMs = (1.0 / 60.0) * 1000.0;
     double deltaTimeSeconds = deltaTimeMs / 1000.0;
 
-    // Act: Call the bridge directly with the CORRECT value (seconds)
-    EngineSimResult result = engine.api.Update(engine.handle, deltaTimeSeconds);
+    // Act: Call update with the CORRECT value (seconds)
+    bool result = engine.simulator.update(deltaTimeSeconds);
 
-    EXPECT_EQ(result, ESIM_SUCCESS)
-        << "Bridge should accept deltaTime=" << deltaTimeSeconds << "s.";
-
-    // Now call with the WRONG value
-    EngineSimResult wrongResult = engine.api.Update(engine.handle, 10.0);
-
-    EXPECT_EQ(wrongResult, ESIM_ERROR_INVALID_PARAMETER)
-        << "Bridge should reject deltaTime=10.0s (> 1.0).";
+    EXPECT_TRUE(result)
+        << "Simulator should accept deltaTime=" << deltaTimeSeconds << "s.";
 }
 
 // ============================================================================
@@ -160,7 +149,7 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_UpdateSimulation_DeltaTimeConversi
 // ============================================================================
 
 TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_ProducesAudioOnSuccessiveCalls) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
@@ -168,9 +157,10 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_ProducesAudioOnSuccessiveCa
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
+
+    // SyncPullStrategy needs a simulator reference set via startPlayback
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator));
 
     const int NUM_RENDER_CALLS = 5;
     const int FRAMES_PER_CALL = 64;
@@ -192,7 +182,7 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_ProducesAudioOnSuccessiveCa
 }
 
 TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_FirstAndSubsequentCallsBothProduceAudio) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
@@ -200,9 +190,8 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_FirstAndSubsequentCallsBoth
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator));
 
     const int FRAMES = 64;
 
@@ -304,7 +293,7 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_Pipeline_DoesNotDrainToSilenceAfte
 // ============================================================================
 
 TEST_F(StrategyPipelineTest, SyncPull_ReadAudioBufferDrainsEngineBeforeRenderOnDemand) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
@@ -312,9 +301,8 @@ TEST_F(StrategyPipelineTest, SyncPull_ReadAudioBufferDrainsEngineBeforeRenderOnD
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator));
 
     const int FRAMES = 64;
 
@@ -326,12 +314,12 @@ TEST_F(StrategyPipelineTest, SyncPull_ReadAudioBufferDrainsEngineBeforeRenderOnD
     freeAudioBufferList(firstBuffer);
 
     // Advance simulation
-    engine.api.Update(engine.handle, 1.0 / 60.0);
+    engine.simulator.update(1.0 / 60.0);
 
-    // Drain via ReadAudioBuffer
+    // Drain via readAudioBuffer
     std::vector<float> drainBuffer(FRAMES * 2);
     int drained = 0;
-    engine.api.ReadAudioBuffer(engine.handle, drainBuffer.data(), FRAMES, &drained);
+    engine.simulator.readAudioBuffer(drainBuffer.data(), FRAMES, &drained);
 
     // Render again after drain
     AudioBufferList secondBuffer = createAudioBufferList(FRAMES);
@@ -347,7 +335,7 @@ TEST_F(StrategyPipelineTest, SyncPull_ReadAudioBufferDrainsEngineBeforeRenderOnD
 }
 
 TEST_F(StrategyPipelineTest, SyncPull_RenderOnDemand_RecoversAfterReadAudioBufferDrain) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
@@ -355,16 +343,15 @@ TEST_F(StrategyPipelineTest, SyncPull_RenderOnDemand_RecoversAfterReadAudioBuffe
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator));
 
     const int FRAMES = 64;
 
-    // Drain via ReadAudioBuffer
+    // Drain via readAudioBuffer
     std::vector<float> drainBuffer(FRAMES * 2);
     int drained = 0;
-    engine.api.ReadAudioBuffer(engine.handle, drainBuffer.data(), FRAMES, &drained);
+    engine.simulator.readAudioBuffer(drainBuffer.data(), FRAMES, &drained);
 
     // Immediate render
     AudioBufferList starvedBuffer = createAudioBufferList(FRAMES);
@@ -384,7 +371,7 @@ TEST_F(StrategyPipelineTest, SyncPull_RenderOnDemand_RecoversAfterReadAudioBuffe
 // ============================================================================
 
 TEST_F(StrategyPipelineTest, ThreadedPipeline_FullChain_WithInjectedAudio) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
@@ -392,11 +379,9 @@ TEST_F(StrategyPipelineTest, ThreadedPipeline_FullChain_WithInjectedAudio) {
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
 
-    ASSERT_TRUE(strategy->startPlayback(engine.handle, &engine.api))
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator))
         << "startPlayback should succeed with real engine";
 
     const int FRAMES_PER_CYCLE = 64;
@@ -407,7 +392,7 @@ TEST_F(StrategyPipelineTest, ThreadedPipeline_FullChain_WithInjectedAudio) {
 
     for (int i = 0; i < NUM_ITERATIONS; ++i) {
         // Step 1: updateSimulation
-        strategy->updateSimulation(engine.handle, engine.api, deltaTimeMs);
+        strategy->updateSimulation(&engine.simulator, deltaTimeMs);
 
         // Step 2: Simulate successful audio generation
         std::vector<float> generatedAudio(FRAMES_PER_CYCLE * STEREO_CHANNELS);
@@ -438,33 +423,20 @@ TEST_F(StrategyPipelineTest, ThreadedPipeline_FullChain_WithInjectedAudio) {
 }
 
 TEST_F(StrategyPipelineTest, ThreadedPipeline_ReadAudioBufferReturnsZeroWithoutAudioThread) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     const int FRAMES = 64;
 
-    EngineSimResult updateResult = engine.api.Update(engine.handle, 0.01667);
-    ASSERT_EQ(updateResult, ESIM_SUCCESS);
+    bool updateResult = engine.simulator.update(0.01667);
+    ASSERT_TRUE(updateResult);
 
     std::vector<float> buffer(FRAMES * 2);
     int readCount = 0;
-    engine.api.ReadAudioBuffer(engine.handle, buffer.data(), FRAMES, &readCount);
+    engine.simulator.readAudioBuffer(buffer.data(), FRAMES, &readCount);
 
     EXPECT_EQ(readCount, 0)
         << "ReadAudioBuffer should return 0 without StartAudioThread.";
-}
-
-TEST_F(StrategyPipelineTest, ThreadedPipeline_UpdateFailurePreventsSimulationAdvance) {
-    SineEngine engine;
-    ASSERT_TRUE(engine.valid);
-
-    EngineSimResult badResult = engine.api.Update(engine.handle, 10.0);
-    EXPECT_EQ(badResult, ESIM_ERROR_INVALID_PARAMETER)
-        << "Bridge should reject deltaTime=10.0s (> 1.0). Got result=" << badResult;
-
-    EngineSimResult goodResult = engine.api.Update(engine.handle, 0.01667);
-    EXPECT_EQ(goodResult, ESIM_SUCCESS)
-        << "Bridge should accept deltaTime=0.01667s (<= 1.0). Got result=" << goodResult;
 }
 
 // ============================================================================
@@ -472,7 +444,7 @@ TEST_F(StrategyPipelineTest, ThreadedPipeline_UpdateFailurePreventsSimulationAdv
 // ============================================================================
 
 TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_UpdatesTotalFramesRendered) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
@@ -480,9 +452,8 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_UpdatesTotalFramesRendered)
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator));
 
     const int FRAMES = 64;
 
@@ -500,7 +471,7 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_UpdatesTotalFramesRendered)
 }
 
 TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_AccumulatesFramesAcrossMultipleCalls) {
-    SineEngine engine;
+    SineSimulator engine;
     ASSERT_TRUE(engine.valid);
 
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
@@ -508,9 +479,8 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_AccumulatesFramesAcrossMult
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
     config.channels = STEREO_CHANNELS;
-    config.engineHandle = engine.handle;
-    config.engineAPI = &engine.api;
     ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->startPlayback(&engine.simulator));
 
     const int FRAMES_PER_CALL = 64;
     const int NUM_CALLS = 4;

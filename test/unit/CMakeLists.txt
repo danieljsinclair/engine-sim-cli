@@ -17,6 +17,7 @@ add_executable(unit_tests
     MockSimulatorDebugTest.cpp
     StrategyPipelineTest.cpp
     BufferContextEradicationTest.cpp
+    ISimulatorTest.cpp
     # Source files under test (direct inclusion for unit tests)
     ../../src/audio/common/CircularBuffer.cpp
     ../../src/config/ANSIColors.cpp # Required for display
@@ -41,6 +42,9 @@ target_sources(unit_tests
         ../../src/audio/strategies/SyncPullStrategy.cpp
         ../../src/audio/hardware/AudioHardwareProviderFactory.cpp
         ../../src/audio/hardware/CoreAudioHardwareProvider.cpp
+        ../../src/simulation/BridgeSimulator.cpp
+        ../../src/simulation/EngineConfig.cpp
+        ../../src/simulation/SimulationLoop.cpp
 )
 
 target_include_directories(unit_tests

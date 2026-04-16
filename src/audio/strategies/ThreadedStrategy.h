@@ -19,6 +19,8 @@
 #include "ITelemetryProvider.h"
 #include "ILogging.h"
 
+class ISimulator;
+
 /**
  * ThreadedStrategy - Cursor-chasing audio strategy
  *
@@ -44,14 +46,14 @@ public:
     // Lifecycle Methods
     bool initialize(const AudioStrategyConfig& config) override;
     void prepareBuffer() override;
-    bool startPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
-    void stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) override;
+    bool startPlayback(ISimulator* simulator) override;
+    void stopPlayback(ISimulator* simulator) override;
     void resetBufferAfterWarmup() override;
-    void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override;
+    void updateSimulation(ISimulator* simulator, double deltaTimeMs) override;
 
     // Strategy-Specific Methods
     bool shouldDrainDuringWarmup() const override;
-    void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int defaultFramesPerUpdate) override;
+    void fillBufferFromEngine(ISimulator* simulator, int defaultFramesPerUpdate) override;
     void reset() override;
     std::string getModeString() const override;
 
@@ -68,13 +70,16 @@ private:
     std::unique_ptr<telemetry::ITelemetryWriter> defaultTelemetry_;
     telemetry::ITelemetryWriter* telemetry_;
 
-    // Owned state (previously in BufferContext)
+    // Owned state
     AudioState audioState_;
     Diagnostics diagnostics_;
     CircularBuffer circularBuffer_;
 
     // Internal underrun tracking
     int underrunCount_ = 0;
+
+    // Simulator reference (set during startPlayback)
+    ISimulator* simulator_ = nullptr;
 
     int getAvailableFrames() const;
     void updateDiagnostics(int availableFrames, int framesRequested);

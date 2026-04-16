@@ -1,4 +1,5 @@
 // MockAudioStrategy.h - Mock implementation for testing IAudioStrategy
+// Phase E: Updated to use ISimulator* instead of EngineSimHandle/EngineSimAPI
 
 #ifndef MOCK_AUDIO_STRATEGY_H
 #define MOCK_AUDIO_STRATEGY_H
@@ -30,16 +31,16 @@ public:
 
     bool initialize(const AudioStrategyConfig& config) override { return true; }
     void prepareBuffer() override {}
-    bool startPlayback(EngineSimHandle handle, const EngineSimAPI* api) override {
+    bool startPlayback(ISimulator* simulator) override {
         playing_.store(true);
         return true;
     }
-    void stopPlayback(EngineSimHandle handle, const EngineSimAPI* api) override {
+    void stopPlayback(ISimulator* simulator) override {
         playing_.store(false);
     }
     void resetBufferAfterWarmup() override {}
-    void updateSimulation(EngineSimHandle handle, const EngineSimAPI& api, double deltaTimeMs) override {}
-    void fillBufferFromEngine(EngineSimHandle handle, const EngineSimAPI& api, int frames) override {}
+    void updateSimulation(ISimulator* simulator, double deltaTimeMs) override {}
+    void fillBufferFromEngine(ISimulator* simulator, int frames) override {}
     Diagnostics::Snapshot getDiagnosticsSnapshot() const override { return Diagnostics::Snapshot(); }
 
 private:

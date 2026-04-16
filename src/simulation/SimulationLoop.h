@@ -1,14 +1,14 @@
 // SimulationLoop.h - Simulation loop functions
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
+// Phase E: Takes ISimulator* instead of EngineSimHandle/EngineSimAPI&
 
 #ifndef SIMULATION_LOOP_H
 #define SIMULATION_LOOP_H
 
-#include "engine_sim_bridge.h"
 #include "simulation/EngineConfig.h"
-#include "bridge/engine_sim_loader.h"
 
 class IAudioStrategy;
+class ISimulator;
 
 // Forward declarations for injectable interfaces
 namespace input { class IInputProvider; }
@@ -56,12 +56,11 @@ private:
 
 // ============================================================================
 // Main simulation entry point
-// Dependencies injected: strategy, inputProvider, presentation
+// Dependencies injected: simulator, strategy, inputProvider, presentation
 // ============================================================================
 
 int runUnifiedAudioLoop(
-    EngineSimHandle handle,
-    const EngineSimAPI& api,
+    ISimulator& simulator,
     const SimulationConfig& config,
     IAudioStrategy& audioStrategy,
     input::IInputProvider* inputProvider,
@@ -69,16 +68,9 @@ int runUnifiedAudioLoop(
     telemetry::ITelemetryWriter* telemetryWriter,
     telemetry::ITelemetryReader* telemetryReader);
 
-struct EngineLoaderResult {
-    EngineSimHandle handle = nullptr;
-    std::string configPath;
-    std::string assetBasePath;
-    bool success = false;
-};
-
 int runSimulation(
     const SimulationConfig& config,
-    EngineSimAPI& engineAPI,
+    ISimulator& simulator,
     IAudioStrategy* audioStrategy,
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation

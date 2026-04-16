@@ -123,5 +123,15 @@ No adapter layer between CLIMain and the strategies. Both strategies are truly s
 ---
 
 **Created:** 2026-04-12
-**Last Updated:** 2026-04-15
+**Last Updated:** 2026-04-16
 **Estimate:** 2-3 hours
+
+## Recent Changes
+
+**2026-04-16:** Phase A cleanups completed (commit b857e00)
+- Removed `configure()` method from IAudioStrategy interface (was no-op)
+- Strategies no longer require configure() call from AudioPlayer
+- This simplifies the interface and prepares for Phase B (BufferContext eradication)
+
+See ARCH-005 for the complete 7-phase refactor programme details.
+
