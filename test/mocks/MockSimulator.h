@@ -5,8 +5,8 @@
 #ifndef MOCK_SIMULATOR_H
 #define MOCK_SIMULATOR_H
 
-#include "ISimulator.h"
-#include "engine_sim_bridge.h"
+#include "simulator/ISimulator.h"
+#include "simulator/engine_sim_bridge.h"
 #include <cstring>
 #include <vector>
 #include <atomic>

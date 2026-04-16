@@ -6,15 +6,15 @@
 
 #include "CLIconfig.h"
 
-#include "IAudioStrategy.h"
-#include "ITelemetryProvider.h"
-#include "SimulationLoop.h"
-#include "BridgeSimulator.h"
-#include "IInputProvider.h"
+#include "strategy/IAudioStrategy.h"
+#include "telemetry/ITelemetryProvider.h"
+#include "simulation/SimulationLoop.h"
+#include "simulator/BridgeSimulator.h"
+#include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
-#include "IPresentation.h"
+#include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
-#include "ILogging.h"
+#include "common/ILogging.h"
 #include "config/ANSIColors.h"
 
 #include <iostream>

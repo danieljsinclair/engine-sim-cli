@@ -3,9 +3,9 @@
 #ifndef KEYBOARD_INPUT_PROVIDER_H
 #define KEYBOARD_INPUT_PROVIDER_H
 
-#include "IInputProvider.h"
+#include "io/IInputProvider.h"
 #include "KeyboardInput.h"
-#include "ILogging.h"
+#include "common/ILogging.h"
 #include <memory>
 
 namespace input {

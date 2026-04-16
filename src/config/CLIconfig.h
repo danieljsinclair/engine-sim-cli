@@ -7,7 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstddef>
-#include "AudioLoopConfig.h"
+#include "strategy/AudioLoopConfig.h"
 
 // ============================================================================
 // Command Line Arguments

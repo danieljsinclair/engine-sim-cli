@@ -34,9 +34,9 @@
 #ifndef MOCK_ENGINE_SIM_API_H
 #define MOCK_ENGINE_SIM_API_H
 
-#include "engine_sim_bridge.h"
-#include "engine_sim_loader.h"
-#include "ILogging.h"
+#include "simulator/engine_sim_bridge.h"
+#include "simulator/engine_sim_loader.h"
+#include "common/ILogging.h"
 
 #include <atomic>
 #include <cstring>

@@ -4,8 +4,8 @@
 // Captures baseline output for regression verification
 // Strategies own their own state -- no BufferContext needed
 
-#include "ThreadedStrategy.h"
-#include "SyncPullStrategy.h"
+#include "strategy/ThreadedStrategy.h"
+#include "strategy/SyncPullStrategy.h"
 #include "../mocks/MockDataSimulator.h"
 #include "../mocks/MockAudioUnit.h"
 #include "AudioTestHelpers.h"
@@ -15,7 +15,7 @@
 #include <fstream>
 #include <cstring>
 
-#include "ITelemetryProvider.h"
+#include "telemetry/ITelemetryProvider.h"
 
 using namespace test::constants;
 

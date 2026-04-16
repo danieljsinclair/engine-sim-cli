@@ -19,7 +19,7 @@
 #include <vector>
 #include <atomic>
 
-#include "ITelemetryProvider.h"
+#include "telemetry/ITelemetryProvider.h"
 
 using namespace telemetry;
 

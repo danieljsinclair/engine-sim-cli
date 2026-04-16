@@ -22,12 +22,12 @@
 #include <string>
 
 // These headers do not exist yet -- RED phase
-#include "ISimulator.h"
-#include "BridgeSimulator.h"
+#include "simulator/ISimulator.h"
+#include "simulator/BridgeSimulator.h"
 #include "MockSimulator.h"
-#include "IAudioStrategy.h"
-#include "ThreadedStrategy.h"
-#include "SyncPullStrategy.h"
+#include "strategy/IAudioStrategy.h"
+#include "strategy/ThreadedStrategy.h"
+#include "strategy/SyncPullStrategy.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
 #include <thread>

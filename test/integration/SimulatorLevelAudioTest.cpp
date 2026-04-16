@@ -10,10 +10,10 @@
 #include <thread>
 
 // Bridge includes
-#include "engine_sim_bridge.h"
-#include "sine_wave_simulator.h"
-#include "engine_sim_loader.h"
-#include "ILogging.h"
+#include "simulator/engine_sim_bridge.h"
+#include "simulator/sine_wave_simulator.h"
+#include "simulator/engine_sim_loader.h"
+#include "common/ILogging.h"
 
 // Audio includes
 #include "AudioTestConstants.h"

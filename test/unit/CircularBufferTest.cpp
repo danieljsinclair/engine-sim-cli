@@ -2,7 +2,7 @@
 // Tests wrap-around math, pointer arithmetic, capacity management
 // TDD approach: RED -> GREEN -> REFACTOR
 
-#include "CircularBuffer.h"
+#include "common/CircularBuffer.h"
 #include "AudioTestHelpers.h"
 #include "AudioTestConstants.h"
 

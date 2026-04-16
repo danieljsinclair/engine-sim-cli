@@ -3,7 +3,7 @@
 #include <iostream>
 
 #include "ANSIColors.h"
-#include "engine_sim_bridge.h"
+#include "simulator/engine_sim_bridge.h"
 
 
 namespace ANSIColors {

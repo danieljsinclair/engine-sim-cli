@@ -4,7 +4,7 @@
 #ifndef MOCK_AUDIO_STRATEGY_H
 #define MOCK_AUDIO_STRATEGY_H
 
-#include "IAudioStrategy.h"
+#include "strategy/IAudioStrategy.h"
 #include <cstring>
 #include <atomic>
 

@@ -2,7 +2,7 @@
 #define CONSOLE_COLORS_H
 
 #include <string>
-#include "engine_sim_bridge.h"
+#include "simulator/engine_sim_bridge.h"
 
 namespace ANSIColors {
     const std::string GREEN = "\x1b[32m";

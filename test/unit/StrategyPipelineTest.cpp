@@ -9,13 +9,13 @@
 //
 // Phase E: Uses ISimulator (BridgeSimulator) instead of raw EngineSimAPI
 
-#include "ThreadedStrategy.h"
-#include "SyncPullStrategy.h"
-#include "ISimulator.h"
-#include "BridgeSimulator.h"
+#include "strategy/ThreadedStrategy.h"
+#include "strategy/SyncPullStrategy.h"
+#include "simulator/ISimulator.h"
+#include "simulator/BridgeSimulator.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
-#include "engine_sim_bridge.h"
+#include "simulator/engine_sim_bridge.h"
 
 #include <gtest/gtest.h>
 #include <memory>

@@ -10,9 +10,9 @@
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
 
-#include "IAudioStrategy.h"
-#include "ThreadedStrategy.h"
-#include "SyncPullStrategy.h"
+#include "strategy/IAudioStrategy.h"
+#include "strategy/ThreadedStrategy.h"
+#include "strategy/SyncPullStrategy.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
 
