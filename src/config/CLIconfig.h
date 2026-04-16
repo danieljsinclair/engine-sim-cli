@@ -4,9 +4,6 @@
 #ifndef CLI_CONFIG_H
 #define CLI_CONFIG_H
 
-#include "engine_sim_bridge.h"
-#include "bridge/engine_sim_loader.h"
-
 #include <atomic>
 #include <cstdint>
 #include <cstddef>

@@ -1,7 +1,7 @@
 # ARCH-005: Seven-Phase Refactor to Holy Trinity Architecture
 
 **Priority:** P0 - Critical Architecture
-**Status:** Phase A COMPLETE, Phase B COMPLETE, Phase C COMPLETE, Phase D COMPLETE, Phase E IN PROGRESS
+**Status:** Phase A COMPLETE, Phase B COMPLETE, Phase C COMPLETE, Phase D COMPLETE, Phase E COMPLETE, Phase F IN PROGRESS
 **Assignee:** @tech-architect
 **Reviewer:** @test-architect, @doc-writer
 
@@ -34,8 +34,8 @@ IAudioHardwareProvider (platform audio I/O)
 | **Phase B** | ✅ COMPLETE | BufferContext eradication + strategies own state |
 | **Phase C** | ✅ COMPLETE | Diagnostics to ConsolePresentation via telemetry |
 | **Phase D** | ✅ COMPLETE | SimulationLoop cleanup (remove dead code) |
-| **Phase E** | 🔄 IN PROGRESS | ISimulator refactor (MAJOR - establishes holy trinity) |
-| **Phase F** | ⏳ PENDING | Bridge consolidation (move non-console code to bridge) |
+| **Phase E** | ✅ COMPLETE | ISimulator refactor (MAJOR - establishes holy trinity) |
+| **Phase F** | 🔄 IN PROGRESS | Bridge consolidation (move non-console code to bridge) |
 | **Phase G** | ⏳ PENDING | Cleanup (orphan files, empty dirs, .gitignore) |
 | **FINAL** | ⏳ PENDING | Rename IAudioStrategy to IAudioBuffer (git mv) |
 
@@ -317,44 +317,166 @@ Phase D completes the cleanup phases (A-D). The simulation loop is now clean wit
 
 ---
 
-## Phase E: ISimulator Refactor (MAJOR) (🔄 IN PROGRESS)
+## Phase E: ISimulator Refactor (MAJOR) (✅ COMPLETE)
 
-### Objectives
+**Commit:** `e8c69b9` - "refactor: Phase E -- ISimulator refactor establishes Holy Trinity"
 
-1. **Create ISimulator interface** - Abstraction for simulation logic
-2. **Establish holy trinity** - ISimulator → IAudioStrategy → IAudioHardwareProvider
-3. **Remove direct EngineSimAPI coupling** - Use ISimulator instead
+**⚠️ MAJOR MILESTONE:** Holy Trinity architecture established!
 
-### To-Be Design
+### Changes Made
 
-```cpp
-// Holy trinity: ISimulator → IAudioStrategy → IAudioHardwareProvider
-class ISimulator {
-public:
-    virtual ~ISimulator() = default;
-    virtual bool initialize() = 0;
-    virtual void start() = 0;
-    virtual void stop() = 0;
-    virtual void update(double deltaTimeMs) = 0;
-    // ...
-};
+1. **ISimulator interface created** - Pure virtual interface for engine simulation
+   ```cpp
+   class ISimulator {
+   public:
+       virtual ~ISimulator() = default;
 
-// IAudioStrategy (will be renamed to IAudioBuffer in FINAL phase)
-class IAudioStrategy {
-public:
-    virtual ~IAudioStrategy() = default;
-    virtual bool render(AudioBufferList* ioData, UInt32 numberFrames) = 0;
-    // Owns buffer and state, no BufferContext*
-};
+       // Lifecycle
+       virtual bool create(const EngineSimConfig& config) = 0;
+       virtual bool loadScript(const std::string& path, const std::string& assetBase) = 0;
+       virtual bool setLogging(ILogging* logger) = 0;
+       virtual bool destroy() = 0;
+       virtual std::string getLastError() const = 0;
 
-// IAudioHardwareProvider (already exists)
-class IAudioHardwareProvider {
-public:
-    virtual ~IAudioHardwareProvider() = default;
-    virtual bool initialize(const AudioStreamFormat& format) = 0;
-    // Platform audio I/O
-};
+       // Simulation
+       virtual bool update(double deltaTime) = 0;
+       virtual EngineSimStats getStats() const = 0;
+
+       // Control inputs
+       virtual bool setThrottle(double position) = 0;
+       virtual bool setIgnition(bool on) = 0;
+       virtual bool setStarterMotor(bool on) = 0;
+
+       // Audio frame production
+       virtual bool renderOnDemand(float* buffer, int32_t frames, int32_t* written) = 0;
+       virtual bool readAudioBuffer(float* buffer, int32_t frames, int32_t* read) = 0;
+       virtual bool startAudioThread() = 0;
+
+       // Version (static -- not instance-dependent)
+       static const char* getVersion();
+   };
+   ```
+
+2. **BridgeSimulator wrapper created** - Production implementation of ISimulator
+   ```cpp
+   class BridgeSimulator : public ISimulator {
+   public:
+       BridgeSimulator();
+       ~BridgeSimulator() override;
+
+       // Wraps C-style EngineSimAPI behind ISimulator interface
+       bool create(const EngineSimConfig& config) override;
+       bool loadScript(const std::string& path, const std::string& assetBase) override;
+       bool setLogging(ILogging* logger) override;
+       bool destroy() override;
+       std::string getLastError() const override;
+
+       bool update(double deltaTime) override;
+       EngineSimStats getStats() const override;
+
+       bool setThrottle(double position) override;
+       bool setIgnition(bool on) override;
+       bool setStarterMotor(bool on) override;
+
+       bool renderOnDemand(float* buffer, int32_t frames, int32_t* written) override;
+       bool readAudioBuffer(float* buffer, int32_t frames, int32_t* read) override;
+       bool startAudioThread() override;
+
+   private:
+       EngineSimAPI api_;
+       EngineSimHandle handle_ = nullptr;
+       ILogging* pendingLogger_ = nullptr;
+       bool created_ = false;
+   };
+   ```
+
+3. **MockSimulator created** - Test double for ISimulator
+   - Returns predictable values for deterministic testing
+   - Does NOT depend on engine-sim library
+   - Proper virtual dispatch through ISimulator interface
+   - Used in ISimulatorTest.cpp (674 lines of comprehensive tests)
+
+4. **IAudioStrategy decoupled from bridge types**
+   ```cpp
+   // AudioStrategyConfig - removed bridge types
+   struct AudioStrategyConfig {
+       int sampleRate;
+       int channels;
+       // REMOVED: EngineSimHandle engineHandle = nullptr;
+       // REMOVED: const EngineSimAPI* engineAPI = nullptr;
+   };
+
+   // IAudioStrategy methods - now take ISimulator* instead
+   virtual bool startPlayback(ISimulator* simulator) = 0;
+   virtual void stopPlayback(ISimulator* simulator) = 0;
+   virtual void fillBufferFromEngine(ISimulator* simulator, int defaultFramesPerUpdate) = 0;
+   virtual void updateSimulation(ISimulator* simulator, double deltaTimeMs) = 0;
+   ```
+
+5. **SimulationLoop simplified** - Uses ISimulator& reference
+   - No EngineSimHandle/EngineSimAPI in SimulationLoop
+   - Clean dependency flow: SimulationLoop → ISimulator → IAudioStrategy
+
+6. **CLIMain updated** - Creates BridgeSimulator
+   - CLIMain owns BridgeSimulator instance
+   - Passes ISimulator* to strategies
+   - No direct bridge types in console code
+
+### Files Created
+- `src/simulation/ISimulator.h` - Pure virtual interface (44 lines)
+- `src/simulation/BridgeSimulator.h` - Production wrapper (46 lines)
+- `src/simulation/BridgeSimulator.cpp` - Implementation (126 lines)
+- `test/mocks/MockSimulator.h` - Test double (112 lines)
+- `test/unit/ISimulatorTest.cpp` - Comprehensive tests (674 lines)
+
+### Files Modified
+- `src/audio/strategies/IAudioStrategy.h` - Removed EngineSimHandle/EngineSimAPI
+- `src/audio/strategies/ThreadedStrategy.cpp/.h` - Use ISimulator* instead
+- `src/audio/strategies/SyncPullStrategy.cpp/.h` - Use ISimulator* instead
+- `src/simulation/SimulationLoop.cpp/.h` - Use ISimulator& reference
+- `src/config/CLIMain.cpp` - Create BridgeSimulator
+- `test/mocks/MockAudioStrategy.h` - Updated interface
+- `test/unit/StrategyPipelineTest.cpp` - Updated for ISimulator
+- `test/unit/BufferContextEradicationTest.cpp` - Simplified (147 lines removed)
+- `CMakeLists.txt` - Added new test suite
+
+### Holy Trinity Status
+
 ```
+✅ ISimulator (produces frames) -- CREATED
+✅ IAudioStrategy (orchestrates) -- CLEAN, no bridge types
+✅ IAudioHardwareProvider (consumes frames) -- unchanged
+```
+
+### SOLID Compliance
+
+| Principle | Achievement |
+|-----------|-------------|
+| **SRP** | ISimulator has single responsibility (simulation logic). Strategies orchestrate audio. Hardware handles I/O. |
+| **OCP** | New simulators (Mock, Production) can be added without modifying strategies. New strategies can be added without modifying ISimulator. |
+| **LSP** | BridgeSimulator and MockSimulator both honor ISimulator contract. |
+| **ISP** | Focused interfaces with no unnecessary methods. Each interface has cohesive methods. |
+| **DIP** | Strategies depend on ISimulator abstraction, not on concrete EngineSimAPI/EngineSimHandle. This is the key improvement! |
+
+### Test Results
+- 4/4 test suites passing
+- 674 lines of ISimulator tests (new)
+- All tests passing (100% pass rate)
+
+### Architecture Achievement
+
+**Holy Trinity established with clean dependency flow:**
+```
+SimulationLoop (main loop)
+    ↓ depends on
+ISimulator (produces audio frames)
+    ↓ depends on
+IAudioStrategy (orchestrates buffering/rendering)
+    ↓ depends on
+IAudioHardwareProvider (consumes frames via platform audio)
+```
+
+**Key improvement:** IAudioStrategy no longer depends on bridge types (EngineSimHandle, EngineSimAPI). Strategies depend on ISimulator abstraction, enabling proper DI and testability.
 
 ---
 
@@ -458,11 +580,15 @@ git mv src/audio/strategies/SyncPullStrategy.h src/audio/strategies/SyncPullAudi
 - [x] Main loop simplified (direct call to waitUntilNextTick())
 - [x] Clean loop with no unnecessary wrappers
 
-### Phase E (🔄 IN PROGRESS)
-- [ ] ISimulator interface created
-- [ ] Holy trinity established
-- [ ] EngineSimAPI coupling removed
-- [ ] Tests passing
+### Phase E (✅ COMPLETE)
+- [x] ISimulator interface created (pure virtual interface)
+- [x] BridgeSimulator wrapper created (wraps C-style EngineSimAPI)
+- [x] MockSimulator created (test double, no engine-sim dependency)
+- [x] IAudioStrategy decoupled from bridge types (EngineSimHandle, EngineSimAPI)
+- [x] SimulationLoop uses ISimulator& reference
+- [x] Holy trinity established (ISimulator → IAudioStrategy → IAudioHardwareProvider)
+- [x] SOLID compliance achieved (especially DIP - strategies depend on abstraction)
+- [x] All tests passing (4/4 test suites, 100% pass rate)
 
 ### Phase F (⏳ PENDING)
 - [ ] Bridge owns non-console code
@@ -495,6 +621,18 @@ git mv src/audio/strategies/SyncPullStrategy.h src/audio/strategies/SyncPullAudi
 **Estimate:** 2-3 weeks for all phases
 
 ## Recent Changes
+
+**2026-04-16:** Phase E completed (commit e8c69b9) -- 🎉 MAJOR MILESTONE: Holy Trinity Established!
+- ISimulator interface created (pure virtual abstraction)
+- BridgeSimulator wrapper created (wraps C-style EngineSimAPI)
+- MockSimulator created (test double, no engine-sim dependency)
+- IAudioStrategy decoupled from bridge types (EngineSimHandle, EngineSimAPI removed)
+- SimulationLoop uses ISimulator& reference (clean dependency flow)
+- CLIMain creates BridgeSimulator (proper DI)
+- All tests passing (4/4 test suites, 100% pass rate)
+- Holy Trinity established: ISimulator → IAudioStrategy → IAudioHardwareProvider
+- SOLID compliance achieved (especially DIP - strategies depend on abstraction)
+- Phase F (Bridge consolidation) now IN PROGRESS
 
 **2026-04-16:** Phase D completed (commit 7200bcc)
 - LoopTimer refactored: sleep_for() replaced with sleep_until() for more accurate timing
