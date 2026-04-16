@@ -20,6 +20,7 @@
 #include "Verification.h"
 
 #include <cstring>
+#include <stdexcept>
 #include <atomic>
 #include <csignal>
 #include <iostream>
@@ -30,12 +31,7 @@
 // SimulationConfig Implementation
 // ============================================================================
 
-ConsoleLogger& SimulationConfig::defaultLogger() {
-    static ConsoleLogger instance;
-    return instance;
-}
-
-SimulationConfig::SimulationConfig(ILogging* logger)
+SimulationConfig::SimulationConfig()
     : configPath()
     , assetBasePath()
     , duration(3.0)
@@ -50,8 +46,8 @@ SimulationConfig::SimulationConfig(ILogging* logger)
     , outputWav(nullptr)
     , simulationFrequency(10000)
     , preFillMs(50)
-    , logger(logger ? logger : &defaultLogger())
     , telemetryWriter(nullptr)
+    , telemetryReader(nullptr)
 {
 }
 
@@ -105,7 +101,7 @@ int audioRenderCallback(IAudioStrategy* strategy, int numberFrames,
     return 0;
 }
 
-// Create and initialize the audio hardware provider
+// Create and initialize the audio hardware provider. Throws on failure.
 std::unique_ptr<IAudioHardwareProvider> createHardwareProvider(
     int sampleRate,
     const IAudioHardwareProvider::AudioCallback& callback,
@@ -122,7 +118,7 @@ std::unique_ptr<IAudioHardwareProvider> createHardwareProvider(
     format.isInterleaved = true;
 
     if (!provider->initialize(format)) {
-        return nullptr;
+        throw std::runtime_error("Failed to initialize audio hardware");
     }
 
     return provider;
@@ -139,21 +135,6 @@ bool checkStarterMotorRPM(ISimulator& simulator, double minSustainedRPM) {
         return true;
     }
     return false;
-}
-
-bool shouldContinueLoop(double currentTime, double duration, input::IInputProvider* inputProvider) {
-    if (inputProvider) {
-        return inputProvider->ShouldContinue();
-    }
-    return currentTime < duration;
-}
-
-double getThrottle(input::IInputProvider* inputProvider) {
-    if (inputProvider) {
-        inputProvider->Update(AudioLoopConfig::UPDATE_INTERVAL);
-        return inputProvider->GetThrottle();
-    }
-    return 0.1;
 }
 
 // Get input for non-interactive (timed) mode: ramp throttle from 0 to 1 over 0.5s
@@ -225,10 +206,6 @@ void writeTelemetry(telemetry::ITelemetryWriter* telemetryWriter,
     // Note: AudioDiagnostics and AudioTiming are pushed by strategies
 }
 
-EngineSimConfig createDefaultEngineSimConfig(int sampleRate, int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY) {
-    return EngineConfig::createDefault(sampleRate, simulationFrequency);
-}
-
 struct ScriptConfig {
     std::string scriptPath;
     std::string assetBasePath;
@@ -255,6 +232,47 @@ ScriptConfig prepareScriptConfig(const SimulationConfig& config) {
 
     result.valid = true;
     return result;
+}
+
+// Initialize the simulator: create, set logging, load script or sine mode.
+// Throws std::runtime_error on failure.
+void initializeSimulator(
+    ISimulator& simulator,
+    const SimulationConfig& config,
+    ILogging* logger,
+    int sampleRate)
+{
+    ScriptConfig scriptConfig = prepareScriptConfig(config);
+    if (!scriptConfig.valid) {
+        throw std::runtime_error(scriptConfig.errorMessage);
+    }
+
+    logger->info(LogMask::BRIDGE, "Loading simulator: %s%s%s",
+                        ANSIColors::CYAN.c_str(),
+                        config.sineMode ? "[SINE]" : scriptConfig.scriptPath.c_str(),
+                        ANSIColors::RESET.c_str());
+
+    EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
+    engineConfig.sineMode = config.sineMode ? 1 : 0;
+
+    if (!simulator.create(engineConfig)) {
+        throw std::runtime_error("Failed to create simulator: " + simulator.getLastError());
+    }
+
+    if (!simulator.setLogging(logger)) {
+        logger->warning(LogMask::BRIDGE, "Failed to set logging");
+    }
+
+    if (!scriptConfig.scriptPath.empty()) {
+        if (!simulator.loadScript(scriptConfig.scriptPath, scriptConfig.assetBasePath)) {
+            throw std::runtime_error("Failed to load script: " + simulator.getLastError());
+        }
+    } else {
+        // Sine mode or no script -- still need to initialize synthesizer
+        if (!simulator.loadScript("", "")) {
+            throw std::runtime_error("Failed to initialize synthesizer: " + simulator.getLastError());
+        }
+    }
 }
 
 void runWarmupPhase(ISimulator& simulator,
@@ -314,7 +332,8 @@ int runUnifiedAudioLoop(
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
     telemetry::ITelemetryWriter* telemetryWriter,
-    telemetry::ITelemetryReader* telemetryReader)
+    telemetry::ITelemetryReader* telemetryReader,
+    ILogging* logger)
 {
     double currentTime = 0.0;
     LoopTimer timer;
@@ -324,7 +343,7 @@ int runUnifiedAudioLoop(
     double throttle = 0.1;
     bool ignition = true;
 
-    config.logger->info(LogMask::BRIDGE, "runUnifiedAudioLoop starting simulation loop with %s mode", config.sineMode ? "SINE" : "ENGINE");
+    logger->info(LogMask::BRIDGE, "runUnifiedAudioLoop starting simulation loop with %s mode", config.sineMode ? "SINE" : "ENGINE");
 
     while (true) {
         checkStarterMotorRPM(simulator, minSustainedRPM);
@@ -387,45 +406,15 @@ int runSimulation(
     ISimulator& simulator,
     IAudioStrategy* audioStrategy,
     input::IInputProvider* inputProvider,
-    presentation::IPresentation* presentation) {
+    presentation::IPresentation* presentation,
+    ILogging* logger)
+{
     const int sampleRate = AudioLoopConfig::SAMPLE_RATE;
 
-    ASSERT(audioStrategy, "audioStrategy must be provided", [&config]() { config.logger->error(LogMask::AUDIO, "ERROR: audioStrategy must be injected"); });
+    ASSERT(audioStrategy, "audioStrategy must be provided");
 
-    ScriptConfig scriptConfig = prepareScriptConfig(config);
-    if (!scriptConfig.valid) {
-        config.logger->error(LogMask::BRIDGE, "%s", scriptConfig.errorMessage.c_str());
-        return 1;
-    }
-
-    config.logger->info(LogMask::BRIDGE, "Loading simulator: %s%s%s", ANSIColors::CYAN.c_str(), config.sineMode ? "[SINE]" : scriptConfig.scriptPath.c_str(), ANSIColors::RESET.c_str());
-
-    EngineSimConfig engineConfig = EngineConfig::createDefault(sampleRate, config.simulationFrequency);
-    engineConfig.sineMode = config.sineMode ? 1 : 0;
-
-    if (!simulator.create(engineConfig)) {
-        config.logger->error(LogMask::BRIDGE, "Failed to create simulator: %s", simulator.getLastError().c_str());
-        return 1;
-    }
-
-    if (!simulator.setLogging(config.logger)) {
-        config.logger->warning(LogMask::BRIDGE, "Failed to set logging");
-    }
-
-    if (!scriptConfig.scriptPath.empty()) {
-        if (!simulator.loadScript(scriptConfig.scriptPath, scriptConfig.assetBasePath)) {
-            config.logger->error(LogMask::SCRIPT, "Failed to load script: %s", simulator.getLastError().c_str());
-            simulator.destroy();
-            return 1;
-        }
-    } else {
-        // Sine mode or no script -- still need to initialize synthesizer
-        if (!simulator.loadScript("", "")) {
-            config.logger->error(LogMask::SCRIPT, "Failed to initialize synthesizer: %s", simulator.getLastError().c_str());
-            simulator.destroy();
-            return 1;
-        }
-    }
+    // Initialize simulator (throws on failure)
+    initializeSimulator(simulator, config, logger, sampleRate);
 
     // Initialize strategy
     AudioStrategyConfig strategyConfig;
@@ -433,12 +422,10 @@ int runSimulation(
     strategyConfig.channels = 2;
 
     if (!audioStrategy->initialize(strategyConfig)) {
-        config.logger->error(LogMask::AUDIO, "Failed to initialize audio strategy");
-        simulator.destroy();
-        return 1;
+        throw std::runtime_error("Failed to initialize audio strategy");
     }
 
-    // Create and initialize audio hardware provider
+    // Create and initialize audio hardware provider (throws on failure)
     auto callback = [audioStrategy](void* refCon, void* actionFlags,
                            const void* timeStamp, int busNumber, int numberFrames,
                            PlatformAudioBufferList* platformBufferList) -> int {
@@ -449,22 +436,14 @@ int runSimulation(
         return audioRenderCallback(audioStrategy, numberFrames, platformBufferList);
     };
 
-    auto hardwareProvider = createHardwareProvider(sampleRate, callback, config.logger);
-    if (!hardwareProvider) {
-        config.logger->error(LogMask::AUDIO, "Failed to initialize audio hardware");
-        simulator.destroy();
-        return 1;
-    }
+    auto hardwareProvider = createHardwareProvider(sampleRate, callback, logger);
 
-    config.logger->info(LogMask::AUDIO, "Audio initialized: strategy=%s, sr=%d",
+    logger->info(LogMask::AUDIO, "Audio initialized: strategy=%s, sr=%d",
                          audioStrategy->getName(), sampleRate);
 
     // Start strategy playback
     if (!audioStrategy->startPlayback(&simulator)) {
-        config.logger->error(LogMask::AUDIO, "Failed to start audio playback");
-        hardwareProvider->cleanup();
-        simulator.destroy();
-        return 1;
+        throw std::runtime_error("Failed to start audio playback");
     }
 
     // Set volume
@@ -483,16 +462,16 @@ int runSimulation(
 
     // Start audio hardware playback
     if (!hardwareProvider->startPlayback()) {
-        config.logger->error(LogMask::AUDIO, "Failed to start hardware playback");
+        logger->error(LogMask::AUDIO, "Failed to start hardware playback");
     }
 
-    int exitCode = runUnifiedAudioLoop(simulator, config, *audioStrategy, inputProvider, presentation, config.telemetryWriter, config.telemetryReader);
+    int exitCode = runUnifiedAudioLoop(simulator, config, *audioStrategy, inputProvider, presentation, config.telemetryWriter, config.telemetryReader, logger);
 
     // Cleanup
     audioStrategy->stopPlayback(&simulator);
     cleanupSimulation(hardwareProvider.get(), simulator);
 
-    warnWavExportNotSupported(config.outputWav, config.logger);
+    warnWavExportNotSupported(config.outputWav, logger);
 
     return exitCode;
 }

@@ -17,12 +17,12 @@ class ILogging;
 namespace telemetry { class ITelemetryWriter; class ITelemetryReader; }
 
 // ============================================================================
-// SimulationConfig - Minimal config for simulation (OCP compliance)
+// SimulationConfig - Simulation parameters only (no infrastructure deps)
 // ============================================================================
 
 class SimulationConfig {
 public:
-    explicit SimulationConfig(ILogging* logger = nullptr);
+    SimulationConfig();
 
     SimulationConfig(const SimulationConfig&) = delete;
     SimulationConfig& operator=(const SimulationConfig&) = delete;
@@ -46,17 +46,14 @@ public:
     int simulationFrequency = 10000;
     int preFillMs = 50;
 
-    ILogging* logger;
     telemetry::ITelemetryWriter* telemetryWriter = nullptr;
     telemetry::ITelemetryReader* telemetryReader = nullptr;
-
-private:
-    static ConsoleLogger& defaultLogger();
 };
 
 // ============================================================================
 // Main simulation entry point
-// Dependencies injected: simulator, strategy, inputProvider, presentation
+// Dependencies injected: simulator, strategy, inputProvider, presentation, logger
+// Throws std::runtime_error on initialization failure (fail-fast).
 // ============================================================================
 
 int runUnifiedAudioLoop(
@@ -66,14 +63,16 @@ int runUnifiedAudioLoop(
     input::IInputProvider* inputProvider,
     presentation::IPresentation* presentation,
     telemetry::ITelemetryWriter* telemetryWriter,
-    telemetry::ITelemetryReader* telemetryReader);
+    telemetry::ITelemetryReader* telemetryReader,
+    ILogging* logger);
 
 int runSimulation(
     const SimulationConfig& config,
     ISimulator& simulator,
     IAudioStrategy* audioStrategy,
     input::IInputProvider* inputProvider,
-    presentation::IPresentation* presentation
+    presentation::IPresentation* presentation,
+    ILogging* logger
 );
 
 #endif // SIMULATION_LOOP_H

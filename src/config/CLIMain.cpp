@@ -20,6 +20,7 @@
 #include <iostream>
 #include <csignal>
 #include <memory>
+#include <stdexcept>
 
 // ============================================================================
 // Signal Handler
@@ -61,8 +62,8 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
 
 } // anonymous namespace
 
-SimulationConfig CreateSimulationConfig(const CommandLineArgs& args, ILogging* logger) {
-    SimulationConfig config(logger);
+SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
+    SimulationConfig config;
 
     config.configPath = args.engineConfig ? args.engineConfig : "";
     config.assetBasePath = "";
@@ -105,7 +106,7 @@ int main(int argc, char* argv[]) {
     ShowConfigHeader(args, ISimulator::getVersion());
 
     const int sampleRate = 44100;
-    SimulationConfig config = CreateSimulationConfig(args, cliLogger.get());
+    SimulationConfig config = CreateSimulationConfig(args);
 
     // Create shared telemetry (simulator and strategies write, presentation reads)
     auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
@@ -123,7 +124,13 @@ int main(int argc, char* argv[]) {
     presentation::IPresentation* presentation = createPresentation(args);
 
     // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioStrategy -> IAudioHardwareProvider)
-    int result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation);
+    int result = 0;
+    try {
+        result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation, cliLogger.get());
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR: " << e.what() << std::endl;
+        result = 1;
+    }
 
     delete inputProvider;
     delete presentation;
