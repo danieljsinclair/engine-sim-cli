@@ -27,12 +27,8 @@ target_link_libraries(unit_tests
         ${AUDIO_LIBRARY}
 )
 
-# Add source files that stay in CLI to be compiled with the unit tests
-target_sources(unit_tests
-    PRIVATE
-        ../../src/simulation/EngineConfig.cpp
-        ../../src/simulation/SimulationLoop.cpp
-)
+# SimulationLoop and EngineConfig are now in engine-sim-bridge library
+# (linked via target_link_libraries above)
 
 target_include_directories(unit_tests
     PRIVATE

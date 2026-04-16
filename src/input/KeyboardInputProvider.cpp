@@ -1,7 +1,7 @@
 // KeyboardInputProvider.cpp - Keyboard input provider implementation
 // Wraps existing KeyboardInput for IInputProvider interface
 
-#include "input/KeyboardInputProvider.h"
+#include "KeyboardInputProvider.h"
 
 #include <algorithm>
 

@@ -3,7 +3,7 @@
 #ifndef KEYBOARD_INPUT_PROVIDER_H
 #define KEYBOARD_INPUT_PROVIDER_H
 
-#include "input/IInputProvider.h"
+#include "IInputProvider.h"
 #include "KeyboardInput.h"
 #include "ILogging.h"
 #include <memory>

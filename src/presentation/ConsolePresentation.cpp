@@ -2,7 +2,7 @@
 // Implements IPresentation for text output to console
 // SRP: Single responsibility - formats and outputs EngineState to console
 
-#include "presentation/ConsolePresentation.h"
+#include "ConsolePresentation.h"
 
 #include <iostream>
 #include <iomanip>

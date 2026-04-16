@@ -3,7 +3,7 @@
 #ifndef CONSOLE_PRESENTATION_H
 #define CONSOLE_PRESENTATION_H
 
-#include "presentation/IPresentation.h"
+#include "IPresentation.h"
 #include "config/ANSIColors.h"
 #include <chrono>
 

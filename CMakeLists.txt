@@ -18,16 +18,13 @@ endif()
 # Add engine-sim-bridge submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 
-# CLI executable - refactored into modular folder structure
-# Phase F: Audio strategy/buffer/hardware/BridgeSimulator moved to engine-sim-bridge
+# CLI executable - thin CLI layer only
+# Phase F: SimulationLoop, EngineConfig, IInputProvider, IPresentation moved to engine-sim-bridge
 add_executable(engine-sim-cli
     # Config layer
     src/config/CLIconfig.cpp
     src/config/CLIMain.cpp
     src/config/ANSIColors.cpp
-    # Simulation layer
-    src/simulation/SimulationLoop.cpp
-    src/simulation/EngineConfig.cpp
     # Presentation layer
     src/presentation/ConsolePresentation.cpp
     # Input layer

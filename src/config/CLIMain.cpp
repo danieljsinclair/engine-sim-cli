@@ -8,13 +8,12 @@
 
 #include "IAudioStrategy.h"
 #include "ITelemetryProvider.h"
-#include "simulation/SimulationLoop.h"
+#include "SimulationLoop.h"
 #include "BridgeSimulator.h"
-#include "input/IInputProvider.h"
+#include "IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
-#include "presentation/IPresentation.h"
+#include "IPresentation.h"
 #include "presentation/ConsolePresentation.h"
-#include "simulation/EngineConfig.h"
 #include "ILogging.h"
 
 #include <iostream>
