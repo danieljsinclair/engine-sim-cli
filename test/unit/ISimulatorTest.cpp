@@ -153,7 +153,7 @@ TEST_F(ISimulatorTest, MockSimulator_StartAudioThread_Succeeds) {
     auto sim = std::make_unique<MockSimulator>();
 
     // Act: Start audio thread
-    bool result = sim->startAudioThread();
+    bool result = sim->start();
 
     // Assert: MockSimulator should accept this (no-op or simulated thread)
     EXPECT_TRUE(result);
@@ -255,7 +255,7 @@ TEST_F(ISimulatorTest, BridgeSimulator_SineMode_ReadAudioBufferReturnsData) {
     auto sim = std::make_unique<BridgeSimulator>();
     ASSERT_TRUE(sim->create(config));
     ASSERT_TRUE(sim->loadScript("", ""));
-    ASSERT_TRUE(sim->startAudioThread());
+    ASSERT_TRUE(sim->start());
 
     // Advance simulation so audio thread has data to produce
     sim->update(0.016667);
@@ -652,7 +652,7 @@ TEST_F(ISimulatorTest, BridgeSimulator_FullLifecycle_SineMode) {
     auto stats = sim->getStats();
     EXPECT_GE(stats.currentRPM, 0.0);
 
-    ASSERT_TRUE(sim->startAudioThread());
+    ASSERT_TRUE(sim->start());
     sim->destroy();
 
     SUCCEED();

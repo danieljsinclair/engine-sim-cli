@@ -97,7 +97,7 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_UpdateSimulation_SucceedsWithRealE
     config.channels = STEREO_CHANNELS;
     ASSERT_TRUE(strategy->initialize(config));
 
-    // ThreadedStrategy::startPlayback calls simulator->startAudioThread()
+    // ThreadedStrategy::startPlayback calls simulator->start()
     ASSERT_TRUE(strategy->startPlayback(&engine.simulator))
         << "startPlayback should succeed with real engine";
 

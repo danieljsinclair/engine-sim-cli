@@ -86,7 +86,7 @@ public:
         return true;
     }
 
-    bool startAudioThread() override {
+    bool start() override {
         audioThreadRunning_ = true;
         return true;
     }
