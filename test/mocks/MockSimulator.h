@@ -91,6 +91,10 @@ public:
         return true;
     }
 
+    void stop() override {
+        audioThreadRunning_ = false;
+    }
+
 private:
     EngineSimConfig config_{};
     EngineSimStats stats_{};
