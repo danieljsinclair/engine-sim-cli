@@ -32,22 +32,6 @@ protected:
         }
     }
 
-    AudioBufferList createAudioBufferList(UInt32 frames) {
-        AudioBufferList bufferList;
-        bufferList.mNumberBuffers = 1;
-        bufferList.mBuffers[0].mNumberChannels = STEREO_CHANNELS;
-        bufferList.mBuffers[0].mDataByteSize = frames * STEREO_CHANNELS * sizeof(float);
-        bufferList.mBuffers[0].mData = new float[frames * STEREO_CHANNELS]();
-        return bufferList;
-    }
-
-    void freeAudioBufferList(AudioBufferList& bufferList) {
-        if (bufferList.mBuffers[0].mData) {
-            delete[] static_cast<float*>(bufferList.mBuffers[0].mData);
-            bufferList.mBuffers[0].mData = nullptr;
-        }
-    }
-
     std::unique_ptr<ConsoleLogger> logger_;
     std::unique_ptr<IAudioHardwareProvider> hardwareProvider_;
 };

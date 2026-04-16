@@ -44,24 +44,6 @@ protected:
         }
     }
 
-    // Helper: Create AudioBufferList for testing
-    AudioBufferList createAudioBufferList(UInt32 frames) {
-        AudioBufferList bufferList;
-        bufferList.mNumberBuffers = 1;
-        bufferList.mBuffers[0].mNumberChannels = STEREO_CHANNELS;
-        bufferList.mBuffers[0].mDataByteSize = frames * STEREO_CHANNELS * sizeof(float);
-        bufferList.mBuffers[0].mData = new float[frames * STEREO_CHANNELS]();
-        return bufferList;
-    }
-
-    // Helper: Free AudioBufferList
-    void freeAudioBufferList(AudioBufferList& bufferList) {
-        if (bufferList.mBuffers[0].mData) {
-            delete[] static_cast<float*>(bufferList.mBuffers[0].mData);
-            bufferList.mBuffers[0].mData = nullptr;
-        }
-    }
-
     // Helper: Capture baseline to file
     void captureBaseline(const float* data, int frames, const char* filename) {
         std::ofstream baselineFile(filename, std::ios::binary);

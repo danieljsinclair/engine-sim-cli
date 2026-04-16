@@ -14,6 +14,7 @@
 #include "ISimulator.h"
 #include "BridgeSimulator.h"
 #include "AudioTestConstants.h"
+#include "AudioTestHelpers.h"
 #include "engine_sim_bridge.h"
 
 #include <gtest/gtest.h>
@@ -70,22 +71,6 @@ protected:
     }
 
     void TearDown() override {}
-
-    AudioBufferList createAudioBufferList(UInt32 frames) {
-        AudioBufferList bufferList;
-        bufferList.mNumberBuffers = 1;
-        bufferList.mBuffers[0].mNumberChannels = STEREO_CHANNELS;
-        bufferList.mBuffers[0].mDataByteSize = frames * STEREO_CHANNELS * sizeof(float);
-        bufferList.mBuffers[0].mData = new float[frames * STEREO_CHANNELS]();
-        return bufferList;
-    }
-
-    void freeAudioBufferList(AudioBufferList& bufferList) {
-        if (bufferList.mBuffers[0].mData) {
-            delete[] static_cast<float*>(bufferList.mBuffers[0].mData);
-            bufferList.mBuffers[0].mData = nullptr;
-        }
-    }
 
     bool isAllSilence(const float* data, int frames) const {
         for (int i = 0; i < frames * STEREO_CHANNELS; ++i) {

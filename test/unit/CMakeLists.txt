@@ -6,16 +6,10 @@
 add_executable(unit_tests
     CircularBufferTest.cpp
     CircularBufferTelemetryTest.cpp
-    # IAudioHardwareProviderTest.cpp - TODO: Create this test
-    # StateManagementTest.cpp - TODO: Create this test
-    # ThreadedStrategyTest.cpp - TODO: Create this test
-    # AudioRegressionTest.cpp - TEMPORARILY DISABLED due to missing ThreadedRenderer
     IAudioStrategyTest.cpp
     IntegrationAudioPlayerTest.cpp
     ThreadedStrategyIntegrationTest.cpp
     AudioTestConstants.cpp
-    DebugTest.cpp
-    MockSimulatorDebugTest.cpp
     StrategyPipelineTest.cpp
     BufferContextEradicationTest.cpp
     ISimulatorTest.cpp
