@@ -90,7 +90,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_InitializesSuccessfully
     EXPECT_STREQ(strategy_->getName(), "Threaded");
     EXPECT_TRUE(strategy_->isEnabled());
     EXPECT_TRUE(strategy_->shouldDrainDuringWarmup());
-    EXPECT_STREQ(strategy_->getModeString().c_str(), "Threaded mode");
+    EXPECT_STREQ(strategy_->getModeString().c_str(), "THREADED");
 }
 
 // ============================================================================

@@ -60,10 +60,10 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     // Audio timing diagnostics
     if (state.renderMs > 0.0) {
         std::string budgetColor = ANSIColors::getDispositionColour(state.budgetPct < 80, state.budgetPct < 100);
-        out << "[" << state.audioMode << "] "
-            << "req=" << std::setw(3) << state.framesRequested
-            << " got=" << std::setw(3) << state.framesRendered << " "
-            << "rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << state.renderMs << "ms"
+        out << "[" << state.audioMode << "]"
+            << " req=" << std::setw(3) << state.framesRequested
+            << " got=" << std::setw(3) << state.framesRendered
+            << " rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << state.renderMs << "ms"
             << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << state.headroomMs
             << std::noshowpos << "ms"
             << " (" << budgetColor << std::setw(3) << std::setprecision(0)
