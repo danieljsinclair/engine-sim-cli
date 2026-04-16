@@ -42,54 +42,29 @@ bool KeyboardInputProvider::IsConnected() const {
     return true;  // Keyboard is always connected in CLI
 }
 
-std::optional<EngineInput> KeyboardInputProvider::OnUpdateSimulation(double dt) {
-    if (!g_running.load()) {
-        return std::nullopt;
-    }
-
-    Update(dt);
-
-    return GetEngineInput();
-}
-
-EngineInput KeyboardInputProvider::GetEngineInput() const {
-    EngineInput input;
-    input.throttle = throttle_;
-    input.ignition = ignition_;
-    input.starterMotor = starterSwitch_;
-    return input;
-}
-
-double KeyboardInputProvider::GetThrottle() const {
-    return throttle_;
-}
-
-bool KeyboardInputProvider::GetIgnition() const {
-    return ignition_;
-}
-
-bool KeyboardInputProvider::GetStarterSwitch() const {
-    return starterSwitch_;
-}
-
-void KeyboardInputProvider::Update(double dt) {
+EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     (void)dt;
-    
-    if (!keyboardInput_) {
-        return;
+
+    if (!keyboardInput_ || !g_running.load()) {
+        EngineInput input;
+        input.shouldContinue = false;
+        return input;
     }
-    
+
     int key = keyboardInput_->getKey();
     processKeyPress(key);
-    
+
     // Decay throttle if W not pressed
     if (throttle_ > baselineThrottle_) {
         throttle_ = std::max(baselineThrottle_, throttle_ * 0.5);
     }
-}
 
-bool KeyboardInputProvider::ShouldContinue() const {
-    return g_running.load();
+    EngineInput input;
+    input.throttle = throttle_;
+    input.ignition = ignition_;
+    input.starterMotor = starterSwitch_;
+    input.shouldContinue = true;
+    return input;
 }
 
 void KeyboardInputProvider::processKeyPress(int key) {
@@ -97,11 +72,11 @@ void KeyboardInputProvider::processKeyPress(int key) {
         lastKey_ = -1;
         return;
     }
-    
+
     if (key == lastKey_) {
         return;
     }
-    
+
     switch (key) {
         case 27: case 'q': case 'Q':
             g_running.store(false);

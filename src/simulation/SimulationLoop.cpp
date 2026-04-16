@@ -143,13 +143,13 @@ input::EngineInput getTimedInput(double currentTime) {
     input.throttle = currentTime < 0.5 ? currentTime / 0.5 : 1.0;
     input.ignition = true;
     input.starterMotor = false;
+    input.shouldContinue = true;
     return input;
 }
 
 void updatePresentation(presentation::IPresentation* presentation, double currentTime,
-                        const EngineSimStats& stats, double throttle,
+                        const EngineSimStats& stats, double throttle, bool ignition,
                         int underrunCount, IAudioStrategy& audioStrategy,
-                        input::IInputProvider* inputProvider,
                         telemetry::ITelemetryReader* telemetryReader) {
     if (!presentation) return;
 
@@ -167,7 +167,7 @@ void updatePresentation(presentation::IPresentation* presentation, double curren
     state.speed = 0;
     state.underrunCount = underrunCount;
     state.audioMode = audioStrategy.getModeString();
-    state.ignition = inputProvider ? inputProvider->GetIgnition() : true;
+    state.ignition = ignition;
     state.starterMotor = false;
     state.exhaustFlow = stats.exhaustFlow;
     state.renderMs = timing.renderMs;
@@ -350,12 +350,12 @@ int runUnifiedAudioLoop(
 
         // Poll input: interactive mode uses OnUpdateSimulation, timed mode uses duration check
         if (inputProvider) {
-            auto engineInput = inputProvider->OnUpdateSimulation(AudioLoopConfig::UPDATE_INTERVAL);
-            if (!engineInput) {
+            input::EngineInput engineInput = inputProvider->OnUpdateSimulation(AudioLoopConfig::UPDATE_INTERVAL);
+            if (!engineInput.shouldContinue) {
                 break;  // Input provider signalled termination
             }
-            throttle = engineInput->throttle;
-            ignition = engineInput->ignition;
+            throttle = engineInput.throttle;
+            ignition = engineInput.ignition;
         } else {
             if (currentTime >= config.duration) {
                 break;
@@ -388,7 +388,7 @@ int runUnifiedAudioLoop(
         currentTime += AudioLoopConfig::UPDATE_INTERVAL;
 
         // Display via presentation (ConsolePresentation formats the complete output line)
-        updatePresentation(presentation, currentTime, stats, throttle, underrunCount, audioStrategy, inputProvider, telemetryReader);
+        updatePresentation(presentation, currentTime, stats, throttle, ignition, underrunCount, audioStrategy, telemetryReader);
 
         // Pace to 60Hz using sleep_until for accuracy
         timer.waitUntilNextTick();

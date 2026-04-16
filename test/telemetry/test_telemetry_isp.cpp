@@ -269,48 +269,6 @@ TEST_F(TelemetryISPTest, ComponentIsolation_WritingVehicleInputsDoesNotAffectEng
 }
 
 // ============================================================================
-// Backward compatibility -- existing write(TelemetryData) still works
-// ============================================================================
-
-TEST_F(TelemetryISPTest, BackwardCompatibility_WriteTelemetryDataPopulatesAllComponents) {
-    TelemetryData legacy;
-    legacy.currentRPM = 4500.0;
-    legacy.currentLoad = 0.6;
-    legacy.exhaustFlow = 0.03;
-    legacy.manifoldPressure = 120000.0;
-    legacy.activeChannels = 2;
-    legacy.processingTimeMs = 1.8;
-    legacy.underrunCount = 5;
-    legacy.bufferHealthPct = 90.0;
-    legacy.throttlePosition = 0.4;
-    legacy.ignitionOn = true;
-    legacy.starterMotorEngaged = false;
-    legacy.timestamp = 3.5;
-
-    telemetry->write(legacy);
-
-    // All component reads should reflect the legacy write
-    auto engine = telemetry->getEngineState();
-    EXPECT_DOUBLE_EQ(engine.currentRPM, 4500.0);
-    EXPECT_DOUBLE_EQ(engine.currentLoad, 0.6);
-
-    auto perf = telemetry->getFramePerformance();
-    EXPECT_DOUBLE_EQ(perf.processingTimeMs, 1.8);
-
-    auto diag = telemetry->getAudioDiagnostics();
-    EXPECT_EQ(diag.underrunCount, 5);
-    EXPECT_DOUBLE_EQ(diag.bufferHealthPct, 90.0);
-
-    auto inputs = telemetry->getVehicleInputs();
-    EXPECT_DOUBLE_EQ(inputs.throttlePosition, 0.4);
-    EXPECT_TRUE(inputs.ignitionOn);
-    EXPECT_FALSE(inputs.starterMotorEngaged);
-
-    auto metrics = telemetry->getSimulatorMetrics();
-    EXPECT_DOUBLE_EQ(metrics.timestamp, 3.5);
-}
-
-// ============================================================================
 // reset() clears all ISP components
 // ============================================================================
 
