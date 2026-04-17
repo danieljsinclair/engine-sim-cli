@@ -4,13 +4,13 @@
 // a proper C++ interface, decoupling the audio pipeline from the raw bridge.
 //
 // Phase E establishes the "Holy Trinity":
-//   ISimulator (produces frames) -> IAudioStrategy (orchestrates) -> IAudioHardwareProvider (consumes)
+//   ISimulator (produces frames) -> IAudioBuffer (orchestrates) -> IAudioHardwareProvider (consumes)
 //
 // TARGET ARCHITECTURE:
 //   1. ISimulator is a pure virtual C++ interface wrapping EngineSimAPI
 //   2. BridgeSimulator implements ISimulator, forwarding to EngineSim C functions
 //   3. MockSimulator implements ISimulator for testing (no engine-sim dependency)
-//   4. IAudioStrategy methods take ISimulator* instead of EngineSimHandle/EngineSimAPI&
+//   4. IAudioBuffer methods take ISimulator* instead of EngineSimHandle/EngineSimAPI&
 //   5. SimulationLoop takes ISimulator* instead of EngineSimHandle + EngineSimAPI&
 //
 // RED PHASE: These tests will NOT compile because ISimulator.h,
@@ -25,7 +25,7 @@
 #include "simulator/ISimulator.h"
 #include "simulator/BridgeSimulator.h"
 #include "MockSimulator.h"
-#include "strategy/IAudioStrategy.h"
+#include "strategy/IAudioBuffer.h"
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
 #include "AudioTestConstants.h"
@@ -339,7 +339,7 @@ TEST_F(ISimulatorTest, BridgeSimulator_SetThrottle_Succeeds) {
 }
 
 // ============================================================================
-// GROUP 3: IAudioStrategy uses ISimulator* instead of EngineSimHandle/API
+// GROUP 3: IAudioBuffer uses ISimulator* instead of EngineSimHandle/API
 //
 // TARGET: Strategy methods take ISimulator* instead of raw engine types.
 // This decouples the audio pipeline from the bridge implementation.

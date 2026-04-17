@@ -1,9 +1,9 @@
-// IAudioStrategyTest.cpp - Unit tests for IAudioStrategy interface
+// IAudioBufferTest.cpp - Unit tests for IAudioBuffer interface
 // TDD approach: RED -> GREEN -> REFACTOR
-// Tests the IAudioStrategy interface with ThreadedStrategy and SyncPullStrategy
+// Tests the IAudioBuffer interface with ThreadedStrategy and SyncPullStrategy
 // Strategies own their own state -- no BufferContext needed
 
-#include "strategy/IAudioStrategy.h"
+#include "strategy/IAudioBuffer.h"
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
 #include "AudioTestHelpers.h"
@@ -14,8 +14,8 @@
 
 using namespace test::constants;
 
-// Test fixture for IAudioStrategy tests
-class IAudioStrategyTest : public ::testing::Test {
+// Test fixture for IAudioBuffer tests
+class IAudioBufferTest : public ::testing::Test {
 protected:
     void SetUp() override {
         threadedStrategy = std::make_unique<ThreadedStrategy>();
@@ -27,15 +27,15 @@ protected:
         syncPullStrategy.reset();
     }
 
-    std::unique_ptr<IAudioStrategy> threadedStrategy;
-    std::unique_ptr<IAudioStrategy> syncPullStrategy;
+    std::unique_ptr<IAudioBuffer> threadedStrategy;
+    std::unique_ptr<IAudioBuffer> syncPullStrategy;
 };
 
 // ============================================================================
 // HAPPY PATH TESTS - Core functionality
 // ============================================================================
 
-TEST_F(IAudioStrategyTest, ThreadedStrategy_Render_WithUninitializedBuffer_ReturnsFalse) {
+TEST_F(IAudioBufferTest, ThreadedStrategy_Render_WithUninitializedBuffer_ReturnsFalse) {
     // Arrange: ThreadedStrategy without initialization -- internal buffer not created
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
 
@@ -48,7 +48,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_Render_WithUninitializedBuffer_Retur
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(IAudioStrategyTest, SyncPullStrategy_Render_WithoutEngineAPI_FillsSilence) {
+TEST_F(IAudioBufferTest, SyncPullStrategy_Render_WithoutEngineAPI_FillsSilence) {
     // Arrange: SyncPullStrategy without engine API
     AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
 
@@ -69,7 +69,7 @@ TEST_F(IAudioStrategyTest, SyncPullStrategy_Render_WithoutEngineAPI_FillsSilence
 // STRATEGY-SPECIFIC BEHAVIOR TESTS
 // ============================================================================
 
-TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_ReadsAvailableFrames) {
+TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsAvailableFrames) {
     // Arrange: Initialize strategy so it creates its internal circular buffer
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -97,7 +97,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_ReadsAvailableFrames) 
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough) {
+TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough) {
     // Arrange: Initialize strategy
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -130,7 +130,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_WrapAroundRead) {
+TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_WrapAroundRead) {
     // Arrange: Initialize strategy with a small sample rate for manageable buffer
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -168,7 +168,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_CursorChasing_WrapAroundRead) {
     freeAudioBufferList(audioBuffer);
 }
 
-TEST_F(IAudioStrategyTest, SyncPullStrategy_AlwaysReturnsTrueOnAddFrames) {
+TEST_F(IAudioBufferTest, SyncPullStrategy_AlwaysReturnsTrueOnAddFrames) {
     // Arrange: AddFrames is a no-op for SyncPull, always returns true
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
 
@@ -183,20 +183,20 @@ TEST_F(IAudioStrategyTest, SyncPullStrategy_AlwaysReturnsTrueOnAddFrames) {
 // STRATEGY FACTORY TESTS
 // ============================================================================
 
-TEST_F(IAudioStrategyTest, Factory_CreateThreadedStrategy) {
-    auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::Threaded, nullptr);
+TEST_F(IAudioBufferTest, Factory_CreateThreadedStrategy) {
+    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::Threaded, nullptr);
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "Threaded");
 }
 
-TEST_F(IAudioStrategyTest, Factory_CreateSyncPullStrategy) {
-    auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::SyncPull, nullptr);
+TEST_F(IAudioBufferTest, Factory_CreateSyncPullStrategy) {
+    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::SyncPull, nullptr);
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "SyncPull");
 }
 
-TEST_F(IAudioStrategyTest, Factory_CreateUnknownMode_ReturnsNull) {
-    auto strategy = IAudioStrategyFactory::createStrategy(static_cast<AudioMode>(999), nullptr);
+TEST_F(IAudioBufferTest, Factory_CreateUnknownMode_ReturnsNull) {
+    auto strategy = IAudioBufferFactory::createStrategy(static_cast<AudioMode>(999), nullptr);
     EXPECT_EQ(strategy, nullptr);
 }
 
@@ -204,7 +204,7 @@ TEST_F(IAudioStrategyTest, Factory_CreateUnknownMode_ReturnsNull) {
 // ERROR CONDITION TESTS
 // ============================================================================
 
-TEST_F(IAudioStrategyTest, ThreadedStrategy_AddFrames_WithNullBuffer_ReturnsFalse) {
+TEST_F(IAudioBufferTest, ThreadedStrategy_AddFrames_WithNullBuffer_ReturnsFalse) {
     // Arrange: Initialize strategy first
     AudioStrategyConfig config;
     config.sampleRate = DEFAULT_SAMPLE_RATE;
@@ -218,7 +218,7 @@ TEST_F(IAudioStrategyTest, ThreadedStrategy_AddFrames_WithNullBuffer_ReturnsFals
     EXPECT_FALSE(result);
 }
 
-TEST_F(IAudioStrategyTest, SyncPullStrategy_Render_WithNullBuffer_ReturnsFalse) {
+TEST_F(IAudioBufferTest, SyncPullStrategy_Render_WithNullBuffer_ReturnsFalse) {
     // Arrange: null buffer
     bool result = syncPullStrategy->render(nullptr, TEST_FRAME_COUNT);
 
@@ -230,10 +230,10 @@ TEST_F(IAudioStrategyTest, SyncPullStrategy_Render_WithNullBuffer_ReturnsFalse) 
 // STRATEGY-SPECIFIC METHOD TESTS
 // ============================================================================
 
-TEST_F(IAudioStrategyTest, ThreadedStrategy_ShouldDrainDuringWarmup) {
+TEST_F(IAudioBufferTest, ThreadedStrategy_ShouldDrainDuringWarmup) {
     EXPECT_TRUE(threadedStrategy->shouldDrainDuringWarmup());
 }
 
-TEST_F(IAudioStrategyTest, SyncPullStrategy_ShouldNotDrainDuringWarmup) {
+TEST_F(IAudioBufferTest, SyncPullStrategy_ShouldNotDrainDuringWarmup) {
     EXPECT_FALSE(syncPullStrategy->shouldDrainDuringWarmup());
 }

@@ -10,7 +10,7 @@
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
 
-#include "strategy/IAudioStrategy.h"
+#include "strategy/IAudioBuffer.h"
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
 #include "AudioTestConstants.h"
@@ -277,7 +277,7 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_MultipleRenderCycles_NoBuf
 // ============================================================================
 
 TEST_F(BufferContextEradicationTest, Factory_CreatesThreadedStrategy_InitWithoutBufferContext) {
-    auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::Threaded, logger_.get());
+    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::Threaded, logger_.get());
     ASSERT_NE(strategy, nullptr);
 
     AudioStrategyConfig config;
@@ -287,7 +287,7 @@ TEST_F(BufferContextEradicationTest, Factory_CreatesThreadedStrategy_InitWithout
 }
 
 TEST_F(BufferContextEradicationTest, Factory_CreatesSyncPullStrategy_InitWithoutBufferContext) {
-    auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::SyncPull, logger_.get());
+    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::SyncPull, logger_.get());
     ASSERT_NE(strategy, nullptr);
 
     AudioStrategyConfig config;

@@ -1,12 +1,12 @@
 // CLIMain.cpp - Main entry point implementation
-// Uses IAudioStrategyFactory directly (no adapter layer)
+// Uses IAudioBufferFactory directly (no adapter layer)
 // Phase E: Creates BridgeSimulator (ISimulator) instead of raw EngineSimAPI
 
 #include "CLIMain.h"
 
 #include "CLIconfig.h"
 
-#include "strategy/IAudioStrategy.h"
+#include "strategy/IAudioBuffer.h"
 #include "telemetry/ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
 #include "simulator/BridgeSimulator.h"
@@ -115,11 +115,11 @@ int main(int argc, char* argv[]) {
         // Create strategy via factory - pass telemetry so strategies push diagnostics
         SimulationConfig config = CreateSimulationConfig(args);
         AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-        std::unique_ptr<IAudioStrategy> audioStrategy = IAudioStrategyFactory::createStrategy(mode, cliLogger.get(), telemetry.get());
+        std::unique_ptr<IAudioBuffer> audioStrategy = IAudioBufferFactory::createStrategy(mode, cliLogger.get(), telemetry.get());
         input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
         presentation::IPresentation* presentation = createPresentation(args);
 
-        // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioStrategy -> IAudioHardwareProvider)
+        // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)
         try
         {
             result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());

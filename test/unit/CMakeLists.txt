@@ -6,7 +6,7 @@
 add_executable(unit_tests
     CircularBufferTest.cpp
     CircularBufferTelemetryTest.cpp
-    IAudioStrategyTest.cpp
+    IAudioBufferTest.cpp
     IntegrationAudioPlayerTest.cpp
     ThreadedStrategyIntegrationTest.cpp
     AudioTestConstants.cpp

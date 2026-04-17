@@ -2,7 +2,7 @@
 // TDD: Tests verify strategy/hardware integration works correctly
 // Strategies own their own state -- no BufferContext needed
 
-#include "strategy/IAudioStrategy.h"
+#include "strategy/IAudioBuffer.h"
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
 #include "hardware/IAudioHardwareProvider.h"
@@ -105,19 +105,19 @@ TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_WrapsAroundCorrectly) {
 }
 
 TEST_F(AudioStrategyIntegrationTest, Factory_CreatesThreadedStrategy) {
-    auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::Threaded, logger_.get());
+    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::Threaded, logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "Threaded");
 }
 
 TEST_F(AudioStrategyIntegrationTest, Factory_CreatesSyncPullStrategy) {
-    auto strategy = IAudioStrategyFactory::createStrategy(AudioMode::SyncPull, logger_.get());
+    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::SyncPull, logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "SyncPull");
 }
 
 TEST_F(AudioStrategyIntegrationTest, Factory_ReturnsNullForUnknownMode) {
-    auto strategy = IAudioStrategyFactory::createStrategy(static_cast<AudioMode>(999), logger_.get());
+    auto strategy = IAudioBufferFactory::createStrategy(static_cast<AudioMode>(999), logger_.get());
     EXPECT_EQ(strategy, nullptr);
 }
 

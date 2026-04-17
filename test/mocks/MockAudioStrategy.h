@@ -1,14 +1,14 @@
-// MockAudioStrategy.h - Mock implementation for testing IAudioStrategy
+// MockAudioStrategy.h - Mock implementation for testing IAudioBuffer
 // Phase E: Updated to use ISimulator* instead of EngineSimHandle/EngineSimAPI
 
 #ifndef MOCK_AUDIO_STRATEGY_H
 #define MOCK_AUDIO_STRATEGY_H
 
-#include "strategy/IAudioStrategy.h"
+#include "strategy/IAudioBuffer.h"
 #include <cstring>
 #include <atomic>
 
-class MockAudioStrategy : public IAudioStrategy {
+class MockAudioStrategy : public IAudioBuffer {
 public:
     const char* getName() const override { return "Mock"; }
     bool isEnabled() const override { return true; }
