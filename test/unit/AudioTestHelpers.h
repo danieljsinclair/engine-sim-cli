@@ -1,6 +1,6 @@
 // AudioTestHelpers.h - Shared helper functions for audio tests
 // DRY: Extracted from 7 test files that duplicated these helpers
-// Updated: Uses AudioBufferDescriptor instead of CoreAudio AudioBufferList
+// Updated: Uses AudioBufferView instead of CoreAudio AudioBufferList
 
 #ifndef AUDIO_TEST_HELPERS_H
 #define AUDIO_TEST_HELPERS_H
@@ -13,17 +13,17 @@
 // Forward declarations
 class CircularBuffer;
 
-// Helper: Create AudioBufferDescriptor for testing
-inline AudioBufferDescriptor createAudioBuffer(int frames, int channels = test::constants::STEREO_CHANNELS) {
+// Helper: Create AudioBufferView for testing
+inline AudioBufferView createAudioBuffer(int frames, int channels = test::constants::STEREO_CHANNELS) {
     float* data = new float[frames * channels]();
-    return AudioBufferDescriptor(data, frames, channels);
+    return AudioBufferView(data, frames, channels);
 }
 
 // Helper: Free buffer created by createAudioBuffer
-inline void freeAudioBuffer(AudioBufferDescriptor& buffer) {
-    if (buffer.buffer) {
-        delete[] buffer.buffer;
-        buffer.buffer = nullptr;
+inline void freeAudioBuffer(AudioBufferView& buffer) {
+    if (buffer.samples) {
+        delete[] static_cast<float*>(buffer.samples);
+        buffer.samples = nullptr;
     }
 }
 

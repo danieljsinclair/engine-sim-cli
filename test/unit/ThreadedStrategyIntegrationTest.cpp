@@ -3,7 +3,7 @@
 // Uses MockDataSimulator for predictable audio generation
 // Captures baseline output for regression verification
 // Strategies own their own state -- no BufferContext needed
-// Phase G: Uses AudioBufferDescriptor instead of CoreAudio AudioBufferList
+// Phase G: Uses AudioBufferView instead of CoreAudio AudioBufferList
 
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
@@ -91,7 +91,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_RendersFromCircularBuff
     ASSERT_TRUE(strategy_->AddFrames(testData.data(), DEFAULT_FRAME_COUNT));
 
     // Act: Render audio from internal buffer
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool renderResult = strategy_->render(audioBuffer);
 
     // Assert: Render should succeed
@@ -103,9 +103,9 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_RendersFromCircularBuff
         float expectedLeft = static_cast<float>(frame);
         float expectedRight = static_cast<float>(frame + 1);
 
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS], expectedLeft)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS], expectedLeft)
             << "Left channel mismatch at frame " << frame;
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS + 1], expectedRight)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS + 1], expectedRight)
             << "Right channel mismatch at frame " << frame;
     }
 
@@ -121,7 +121,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesBufferUnderrunGr
     strategy_->resetBufferAfterWarmup();
 
     // Act: Render with no data available
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool renderResult = strategy_->render(audioBuffer);
 
     // Assert: Render should succeed (output silence for underrun)
@@ -130,9 +130,9 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesBufferUnderrunGr
 
     // Verify: Output should be silence (0.0)
     for (int frame = 0; frame < DEFAULT_FRAME_COUNT; ++frame) {
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS], 0.0f)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS], 0.0f)
             << "Left channel should be silent at frame " << frame;
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS + 1], 0.0f)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS + 1], 0.0f)
             << "Right channel should be silent at frame " << frame;
     }
 
@@ -162,7 +162,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesBufferWrapAround
     ASSERT_TRUE(strategy_->AddFrames(testData.data(), 100));
 
     // Act: Render should read correctly from internal buffer
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(50);
+    AudioBufferView audioBuffer = createAudioBuffer(50);
     bool renderResult = strategy_->render(audioBuffer);
 
     // Assert: Render should succeed
@@ -174,9 +174,9 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesBufferWrapAround
         float expectedLeft = static_cast<float>(frame * 2);
         float expectedRight = static_cast<float>(frame * 2 + 1);
 
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS], expectedLeft)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS], expectedLeft)
             << "Left channel mismatch at frame " << frame;
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS + 1], expectedRight)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS + 1], expectedRight)
             << "Right channel mismatch at frame " << frame;
     }
 
@@ -203,7 +203,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_AddFramesCorrectly) {
         << "ThreadedStrategy::AddFrames should succeed";
 
     // Verify: Data should be readable via render
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool renderResult = strategy_->render(audioBuffer);
     ASSERT_TRUE(renderResult) << "Failed to render after AddFrames";
 
@@ -212,9 +212,9 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_AddFramesCorrectly) {
         float expectedLeft = static_cast<float>(frame * 3);
         float expectedRight = static_cast<float>(frame * 3 + 1);
 
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS], expectedLeft)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS], expectedLeft)
             << "Left channel mismatch at frame " << frame;
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS + 1], expectedRight)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS + 1], expectedRight)
             << "Right channel mismatch at frame " << frame;
     }
 
@@ -234,7 +234,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_PrepareBufferCorrectly)
 
     // Assert: Strategy should remain functional after prepareBuffer
     // We can verify by rendering and checking it doesn't crash
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool result = strategy_->render(audioBuffer);
     EXPECT_TRUE(result) << "Render should succeed after prepareBuffer";
     freeAudioBuffer(audioBuffer);
@@ -253,11 +253,11 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_ResetBufferAfterWarmupC
     strategy_->resetBufferAfterWarmup();
 
     // Verify: Rendering should output silence (buffer was reset)
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     ASSERT_TRUE(strategy_->render(audioBuffer));
 
     for (int i = 0; i < DEFAULT_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], 0.0f)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[i], 0.0f)
             << "Output should be silence after reset at sample " << i;
     }
 
@@ -287,21 +287,21 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesConcurrentWriteR
     ASSERT_TRUE(addResult) << "AddFrames should succeed";
 
     // Render original data
-    AudioBufferDescriptor audioBuffer1 = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView audioBuffer1 = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool renderResult1 = strategy_->render(audioBuffer1);
     ASSERT_TRUE(renderResult1) << "First render should succeed";
 
     // Verify first render matches original data
     for (int frame = 0; frame < DEFAULT_FRAME_COUNT; ++frame) {
-        EXPECT_FLOAT_EQ(audioBuffer1.buffer[frame * STEREO_CHANNELS], static_cast<float>(frame * 4))
+        EXPECT_FLOAT_EQ(audioBuffer1.asFloat()[frame * STEREO_CHANNELS], static_cast<float>(frame * 4))
             << "First render left channel mismatch at frame " << frame;
-        EXPECT_FLOAT_EQ(audioBuffer1.buffer[frame * STEREO_CHANNELS + 1], static_cast<float>(frame * 4 + 1))
+        EXPECT_FLOAT_EQ(audioBuffer1.asFloat()[frame * STEREO_CHANNELS + 1], static_cast<float>(frame * 4 + 1))
             << "First render right channel mismatch at frame " << frame;
     }
     freeAudioBuffer(audioBuffer1);
 
     // Render newly added data
-    AudioBufferDescriptor audioBuffer2 = createAudioBuffer(50);
+    AudioBufferView audioBuffer2 = createAudioBuffer(50);
     bool renderResult2 = strategy_->render(audioBuffer2);
     ASSERT_TRUE(renderResult2) << "Second render should succeed";
 
@@ -309,9 +309,9 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_HandlesConcurrentWriteR
     for (int frame = 0; frame < 50; ++frame) {
         float expectedLeft = static_cast<float>((DEFAULT_FRAME_COUNT + frame) * 4);
         float expectedRight = static_cast<float>((DEFAULT_FRAME_COUNT + frame) * 4 + 1);
-        EXPECT_FLOAT_EQ(audioBuffer2.buffer[frame * STEREO_CHANNELS], expectedLeft)
+        EXPECT_FLOAT_EQ(audioBuffer2.asFloat()[frame * STEREO_CHANNELS], expectedLeft)
             << "Second render left channel mismatch at frame " << frame;
-        EXPECT_FLOAT_EQ(audioBuffer2.buffer[frame * STEREO_CHANNELS + 1], expectedRight)
+        EXPECT_FLOAT_EQ(audioBuffer2.asFloat()[frame * STEREO_CHANNELS + 1], expectedRight)
             << "Second render right channel mismatch at frame " << frame;
     }
     freeAudioBuffer(audioBuffer2);
@@ -332,7 +332,7 @@ TEST_F(ThreadedStrategyIntegrationTest, CaptureThreadedStrategyBaseline) {
     ASSERT_TRUE(strategy_->AddFrames(testData.data(), DEFAULT_FRAME_COUNT));
 
     // Act: Render audio to capture baseline
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool renderResult = strategy_->render(audioBuffer);
 
     // Assert: Render should succeed
@@ -340,13 +340,13 @@ TEST_F(ThreadedStrategyIntegrationTest, CaptureThreadedStrategyBaseline) {
         << "Baseline capture render should succeed";
 
     // Capture baseline to file for regression testing
-    captureBaseline(audioBuffer.buffer, DEFAULT_FRAME_COUNT, "threaded_strategy_baseline.dat");
+    captureBaseline(audioBuffer.asFloat(), DEFAULT_FRAME_COUNT, "threaded_strategy_baseline.dat");
 
     // Verify captured baseline matches expected pattern
     for (int frame = 0; frame < DEFAULT_FRAME_COUNT; ++frame) {
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS], static_cast<float>(frame))
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS], static_cast<float>(frame))
             << "Baseline left channel mismatch at frame " << frame;
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[frame * STEREO_CHANNELS + 1], static_cast<float>(frame + 1))
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[frame * STEREO_CHANNELS + 1], static_cast<float>(frame + 1))
             << "Baseline right channel mismatch at frame " << frame;
     }
 
@@ -384,22 +384,22 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_ProducesBufferedAudio_S
     ASSERT_TRUE(strategy_->AddFrames(testData.data(), DEFAULT_FRAME_COUNT));
 
     // Act: Render from ThreadedStrategy (has buffered data)
-    AudioBufferDescriptor threadedBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView threadedBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool threadedResult = strategy_->render(threadedBuffer);
     ASSERT_TRUE(threadedResult) << "ThreadedStrategy render should succeed";
 
     // Act: Render from SyncPullStrategy (no simulator -- fills silence)
-    AudioBufferDescriptor syncPullBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    AudioBufferView syncPullBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
     bool syncPullResult = syncPullStrategy->render(syncPullBuffer);
     ASSERT_TRUE(syncPullResult) << "SyncPullStrategy render should succeed";
 
     // Assert: SyncPullStrategy output is silence
-    test::verifySilence(syncPullBuffer.buffer, DEFAULT_FRAME_COUNT, "SyncPull without simulator");
+    test::verifySilence(syncPullBuffer.asFloat(), DEFAULT_FRAME_COUNT, "SyncPull without simulator");
 
     // Assert: ThreadedStrategy output contains non-silent data
     bool hasNonSilentSample = false;
     for (int i = 0; i < DEFAULT_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-        if (threadedBuffer.buffer[i] != 0.0f) {
+        if (threadedBuffer.asFloat()[i] != 0.0f) {
             hasNonSilentSample = true;
             break;
         }
@@ -409,7 +409,7 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_ProducesBufferedAudio_S
     // Assert: Outputs are actually different
     bool outputsDiffer = false;
     for (int i = 0; i < DEFAULT_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-        if (threadedBuffer.buffer[i] != syncPullBuffer.buffer[i]) {
+        if (threadedBuffer.asFloat()[i] != syncPullBuffer.asFloat()[i]) {
             outputsDiffer = true;
             break;
         }

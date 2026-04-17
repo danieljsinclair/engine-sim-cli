@@ -1,6 +1,6 @@
 // BufferContextEradicationTest.cpp - TDD tests for Phase B (BufferContext removal)
 // Updated for Phase E: Uses ISimulator* instead of EngineSimHandle/EngineSimAPI&
-// Updated for Phase G: Uses AudioBufferDescriptor instead of CoreAudio AudioBufferList
+// Updated for Phase G: Uses AudioBufferView instead of CoreAudio AudioBufferList
 //
 // Purpose: Assert that strategies work WITHOUT BufferContext.
 // Phase B: Each strategy owns its own AudioState and Diagnostics.
@@ -64,7 +64,7 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_RenderWithoutBufferContext
     config.channels = STEREO_CHANNELS;
     ASSERT_TRUE(strategy->initialize(config));
 
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
     bool result = strategy->render(audioBuffer);
 
@@ -143,7 +143,7 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_RenderWithoutSimulator) {
     config.channels = STEREO_CHANNELS;
     ASSERT_TRUE(strategy->initialize(config));
 
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
     // Act: render without simulator set should fill silence (safe shutdown behavior)
     bool result = strategy->render(audioBuffer);
@@ -151,7 +151,7 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_RenderWithoutSimulator) {
     EXPECT_TRUE(result);
 
     // Assert: buffer should contain all zeros (silence)
-    test::verifySilence(audioBuffer.buffer, TEST_FRAME_COUNT, "SyncPull render without simulator");
+    test::verifySilence(audioBuffer.asFloat(), TEST_FRAME_COUNT, "SyncPull render without simulator");
 
     freeAudioBuffer(audioBuffer);
 }
@@ -228,13 +228,13 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_FullPipeline_NoBufferConte
     std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
     ASSERT_TRUE(strategy->AddFrames(input.data(), TEST_FRAME_COUNT));
 
-    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+    AudioBufferView audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
     bool renderResult = strategy->render(audioBuffer);
 
     EXPECT_TRUE(renderResult);
 
     for (int i = 0; i < TEST_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], TEST_SIGNAL_VALUE_1)
+        EXPECT_FLOAT_EQ(audioBuffer.asFloat()[i], TEST_SIGNAL_VALUE_1)
             << "Sample mismatch at index " << i;
     }
 
@@ -255,12 +255,12 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_MultipleRenderCycles_NoBuf
         std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, signalValue);
         ASSERT_TRUE(strategy->AddFrames(input.data(), TEST_FRAME_COUNT));
 
-        AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+        AudioBufferView audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
         bool renderResult = strategy->render(audioBuffer);
         ASSERT_TRUE(renderResult) << "Render failed on cycle " << (cycle + 1);
 
         for (int i = 0; i < TEST_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-            EXPECT_FLOAT_EQ(audioBuffer.buffer[i], signalValue)
+            EXPECT_FLOAT_EQ(audioBuffer.asFloat()[i], signalValue)
                 << "Cycle " << (cycle + 1) << " sample mismatch at index " << i;
         }
 
