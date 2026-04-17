@@ -8,15 +8,26 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Find required packages
 find_package(Threads REQUIRED)
 
+# Add engine-sim-bridge submodule
+add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
+
+# -------------------------------------------------------------------
+# iOS builds: only build the bridge static library, skip CLI and tests
+# -------------------------------------------------------------------
+if(IOS)
+    return()
+endif()
+
+# -------------------------------------------------------------------
+# macOS CLI executable (not built for iOS)
+# -------------------------------------------------------------------
+
 # Platform-specific audio libraries
 if(APPLE)
     set(AUDIO_LIBRARY "-framework AudioToolbox -framework CoreAudio -framework CoreFoundation")
 else()
     message(FATAL_ERROR "engine-sim-cli only supports macOS with AudioQueue. Linux/Windows support has been removed.")
 endif()
-
-# Add engine-sim-bridge submodule
-add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 
 # CLI executable - thin CLI layer only
 # Phase F: SimulationLoop, EngineConfig, IInputProvider, IPresentation moved to engine-sim-bridge
