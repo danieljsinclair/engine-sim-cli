@@ -1,21 +1,48 @@
 // MockSimulator.h - Test double for ISimulator
 // Returns predictable values for deterministic testing.
 // Does NOT depend on the engine-sim library.
+// Uses input provider for shutdown signaling (production-like behavior).
 
 #ifndef MOCK_SIMULATOR_H
 #define MOCK_SIMULATOR_H
 
 #include "simulator/ISimulator.h"
 #include "simulator/engine_sim_bridge.h"
+#include "MockInputProvider.h"
 #include <cstring>
 #include <vector>
 #include <atomic>
 #include <string>
+#include <memory>
 
 class MockSimulator : public ISimulator {
 public:
     MockSimulator() = default;
     ~MockSimulator() override = default;
+
+    // ================================================================
+    // Input Provider Integration
+    // ================================================================
+
+    /**
+     * Set input provider for shutdown signaling.
+     * Production-like behavior: shutdown comes from input provider,
+     * not from direct stop() calls.
+     */
+    void setInputProvider(test::MockInputProvider* provider) {
+        inputProvider_ = provider;
+    }
+
+    /**
+     * Signal shutdown via input provider.
+     * Production-like: sets shouldContinue=false on input provider.
+     * No sleeps or CPU spinning.
+     */
+    void signalShutdown() {
+        if (inputProvider_) {
+            inputProvider_->setShouldContinue(false);
+        }
+    }
 
     // Lifecycle
     bool create(const EngineSimConfig& config) override {
@@ -92,6 +119,9 @@ public:
     }
 
     void stop() override {
+        // Production-like shutdown: use input provider mechanism
+        // No sleeps or CPU spinning - clean, immediate shutdown
+        signalShutdown();
         audioThreadRunning_ = false;
     }
 
@@ -108,6 +138,11 @@ private:
     bool created_ = false;
     bool audioThreadRunning_ = false;
     double deltaTime_ = 0.0;
+
+    // ================================================================
+    // Input Provider
+    // ================================================================
+    test::MockInputProvider* inputProvider_ = nullptr;
 };
 
 #endif // MOCK_SIMULATOR_H

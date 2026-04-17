@@ -15,11 +15,10 @@ public:
     bool isPlaying() const override { return playing_.load(); }
     bool shouldDrainDuringWarmup() const override { return false; }
 
-    bool render(AudioBufferList* ioData, UInt32 numberFrames) override {
-        if (ioData && ioData->mBuffers[0].mData) {
-            float* data = static_cast<float*>(ioData->mBuffers[0].mData);
-            size_t samples = numberFrames * 2;
-            std::memset(data, 0, samples * sizeof(float));
+    bool render(AudioBufferDescriptor& buffer) override {
+        if (buffer.buffer) {
+            size_t samples = static_cast<size_t>(buffer.frameCount) * buffer.channelCount;
+            std::memset(buffer.buffer, 0, samples * sizeof(float));
         }
         return true;
     }

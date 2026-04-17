@@ -52,8 +52,8 @@ protected:
 
 TEST_F(CircularBufferTelemetryTest, UnderrunPushedToTelemetry_WhenBufferEmpty) {
     // Act: Render with no data available (buffer is empty after init)
-    AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    bool renderResult = strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    bool renderResult = strategy_->render(audioBuffer);
 
     // Assert: Render should succeed (output silence)
     EXPECT_TRUE(renderResult);
@@ -63,7 +63,7 @@ TEST_F(CircularBufferTelemetryTest, UnderrunPushedToTelemetry_WhenBufferEmpty) {
     EXPECT_GT(diag.underrunCount, 0)
         << "Underrun should be published to telemetry when buffer is empty";
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 // ============================================================================
@@ -80,8 +80,8 @@ TEST_F(CircularBufferTelemetryTest, NoUnderrunInTelemetry_WhenBufferHasData) {
     strategy_->AddFrames(testData.data(), DEFAULT_FRAME_COUNT);
 
     // Act: Render with data available
-    AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    bool renderResult = strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    bool renderResult = strategy_->render(audioBuffer);
 
     // Assert: Render should succeed
     EXPECT_TRUE(renderResult);
@@ -91,7 +91,7 @@ TEST_F(CircularBufferTelemetryTest, NoUnderrunInTelemetry_WhenBufferHasData) {
     EXPECT_EQ(diag.underrunCount, 0)
         << "No underrun should be published when buffer has sufficient data";
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 // ============================================================================
@@ -101,9 +101,9 @@ TEST_F(CircularBufferTelemetryTest, NoUnderrunInTelemetry_WhenBufferHasData) {
 TEST_F(CircularBufferTelemetryTest, MultipleUnderruns_AccumulateInTelemetry) {
     // Act: Render multiple times with no data (buffer empty after init)
     for (int i = 0; i < 5; ++i) {
-        AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-        strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
-        freeAudioBufferList(audioBuffer);
+        AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+        strategy_->render(audioBuffer);
+        freeAudioBuffer(audioBuffer);
     }
 
     // Assert: All underruns should be in telemetry
@@ -123,15 +123,15 @@ TEST_F(CircularBufferTelemetryTest, BufferHealthPublishedToTelemetry) {
     strategy_->AddFrames(testData.data(), halfCapacity);
 
     // Act: Render a small amount
-    AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    strategy_->render(&audioBuffer, DEFAULT_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    strategy_->render(audioBuffer);
 
     // Assert: Buffer health should be published
     auto diag = telemetry_->getAudioDiagnostics();
     EXPECT_GT(diag.bufferHealthPct, 0.0)
         << "Buffer health should be published to telemetry";
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 // ============================================================================
@@ -150,13 +150,13 @@ TEST_F(CircularBufferTelemetryTest, SyncPullStrategy_DoesNotPushAudioDiagnostics
 
     // Act: SyncPullStrategy.render() will fail without engine API,
     //      but it should NOT push audio diagnostics to telemetry
-    AudioBufferList audioBuffer = createAudioBufferList(DEFAULT_FRAME_COUNT);
-    syncStrategy->render(&audioBuffer, DEFAULT_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(DEFAULT_FRAME_COUNT);
+    syncStrategy->render(audioBuffer);
 
     // Assert: Audio diagnostics should remain at zero (SyncPull does not push)
     auto diag = telemetry_->getAudioDiagnostics();
     EXPECT_EQ(diag.underrunCount, 0)
         << "SyncPullStrategy should not push audio diagnostics to telemetry";
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }

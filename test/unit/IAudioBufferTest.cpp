@@ -37,32 +37,31 @@ protected:
 
 TEST_F(IAudioBufferTest, ThreadedStrategy_Render_WithUninitializedBuffer_ReturnsFalse) {
     // Arrange: ThreadedStrategy without initialization -- internal buffer not created
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
     // Act: Try to render without calling initialize()
-    bool result = threadedStrategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    bool result = threadedStrategy->render(audioBuffer);
 
     // Assert: Render should fail gracefully
     EXPECT_FALSE(result);
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(IAudioBufferTest, SyncPullStrategy_Render_WithoutEngineAPI_FillsSilence) {
     // Arrange: SyncPullStrategy without engine API
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
     // Act: Try to render without engine API (not set since no initialize)
-    bool result = syncPullStrategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    bool result = syncPullStrategy->render(audioBuffer);
 
     // Assert: Render should fill silence and return true (safe shutdown behavior)
     EXPECT_TRUE(result);
 
     // Assert: Buffer content should be all zeros
-    float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
-    test::verifySilence(outputData, TEST_FRAME_COUNT, "SyncPull render without engine API");
+    test::verifySilence(audioBuffer.buffer, TEST_FRAME_COUNT, "SyncPull render without engine API");
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 // ============================================================================
@@ -80,21 +79,20 @@ TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsAvailableFrames) {
     std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
     ASSERT_TRUE(threadedStrategy->AddFrames(input.data(), TEST_FRAME_COUNT));
 
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
     // Act: Render available frames
-    bool result = threadedStrategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    bool result = threadedStrategy->render(audioBuffer);
 
     // Assert: Render should succeed and return the expected frames
     EXPECT_TRUE(result);
 
     // Verify buffer contains expected data
-    float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
     for (int i = 0; i < TEST_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(outputData[i], TEST_SIGNAL_VALUE_1);
+        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], TEST_SIGNAL_VALUE_1);
     }
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough) {
@@ -108,26 +106,25 @@ TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough) 
     std::vector<float> input((TEST_FRAME_COUNT / 2) * STEREO_CHANNELS, TEST_SIGNAL_VALUE_2);
     ASSERT_TRUE(threadedStrategy->AddFrames(input.data(), TEST_FRAME_COUNT / 2));
 
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
     // Act: Request more frames than available
-    bool result = threadedStrategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    bool result = threadedStrategy->render(audioBuffer);
 
     // Assert: Render should succeed but only read available frames
     EXPECT_TRUE(result);
 
     // Verify only TEST_FRAME_COUNT/2 frames contain data
-    float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
     for (int i = 0; i < (TEST_FRAME_COUNT / 2) * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(outputData[i], TEST_SIGNAL_VALUE_2);
+        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], TEST_SIGNAL_VALUE_2);
     }
 
     // Verify remaining frames are silence
     for (int i = (TEST_FRAME_COUNT / 2) * STEREO_CHANNELS; i < TEST_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(outputData[i], 0.0f);
+        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], 0.0f);
     }
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_WrapAroundRead) {
@@ -143,29 +140,28 @@ TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_WrapAroundRead) {
     ASSERT_TRUE(threadedStrategy->AddFrames(input1.data(), halfFrames));
 
     // Read some frames to advance read pointer
-    AudioBufferList readBuffer = createAudioBufferList(halfFrames);
-    ASSERT_TRUE(threadedStrategy->render(&readBuffer, halfFrames));
-    freeAudioBufferList(readBuffer);
+    AudioBufferDescriptor readBuffer = createAudioBuffer(halfFrames);
+    ASSERT_TRUE(threadedStrategy->render(readBuffer));
+    freeAudioBuffer(readBuffer);
 
     // Write more frames
     std::vector<float> input2(halfFrames * STEREO_CHANNELS, TEST_SIGNAL_VALUE_3);
     ASSERT_TRUE(threadedStrategy->AddFrames(input2.data(), halfFrames));
 
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
     // Act: Render frames that were written after advancing
-    bool result = threadedStrategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    bool result = threadedStrategy->render(audioBuffer);
 
     // Assert: Render should succeed (even if partially silent)
     EXPECT_TRUE(result);
 
     // Verify the first half contains the signal
-    float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
     for (int i = 0; i < halfFrames * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(outputData[i], TEST_SIGNAL_VALUE_3);
+        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], TEST_SIGNAL_VALUE_3);
     }
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(IAudioBufferTest, SyncPullStrategy_AlwaysReturnsTrueOnAddFrames) {
@@ -220,7 +216,8 @@ TEST_F(IAudioBufferTest, ThreadedStrategy_AddFrames_WithNullBuffer_ReturnsFalse)
 
 TEST_F(IAudioBufferTest, SyncPullStrategy_Render_WithNullBuffer_ReturnsFalse) {
     // Arrange: null buffer
-    bool result = syncPullStrategy->render(nullptr, TEST_FRAME_COUNT);
+    AudioBufferDescriptor nullDesc(nullptr, TEST_FRAME_COUNT, STEREO_CHANNELS);
+    bool result = syncPullStrategy->render(nullDesc);
 
     // Assert: Should fail gracefully
     EXPECT_FALSE(result);

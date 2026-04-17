@@ -437,13 +437,13 @@ TEST_F(ISimulatorStrategyTest, ThreadedStrategy_FullPipeline_WithMockSimulator) 
     strategy->fillBufferFromEngine(mockSim_.get(), 512);
 
     // Act: Render what we got
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
-    bool renderResult = strategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+    bool renderResult = strategy->render(audioBuffer);
 
     // Assert: Should succeed (may be silence from mock, but no crash)
     EXPECT_TRUE(renderResult);
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(ISimulatorStrategyTest, SyncPullStrategy_Render_UsesISimulator) {
@@ -458,13 +458,13 @@ TEST_F(ISimulatorStrategyTest, SyncPullStrategy_Render_UsesISimulator) {
     ASSERT_TRUE(strategy->startPlayback(mockSim_.get()));
 
     // Act: Render audio (SyncPull renders on-demand from ISimulator)
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
-    bool renderResult = strategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+    bool renderResult = strategy->render(audioBuffer);
 
     // Assert: Should succeed -- SyncPull calls renderOnDemand() on ISimulator
     EXPECT_TRUE(renderResult);
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
     strategy->stopPlayback(mockSim_.get());
 }
 

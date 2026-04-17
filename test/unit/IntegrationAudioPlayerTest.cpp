@@ -43,11 +43,8 @@ protected:
 TEST_F(AudioStrategyIntegrationTest, HardwareProvider_InitAndCallback) {
     ASSERT_NE(hardwareProvider_, nullptr);
 
-    auto mockCallback = +[](void* refCon, void* actionFlags,
-                                const void* timestamp, int busNumber, int numberFrames,
-                                PlatformAudioBufferList* ioData) -> int {
-        (void)refCon; (void)actionFlags; (void)timestamp;
-        (void)busNumber; (void)numberFrames; (void)ioData;
+    auto mockCallback = [](AudioBufferDescriptor& buffer) -> int {
+        (void)buffer;
         return 0;
     };
 
@@ -72,11 +69,11 @@ TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_RendersWithInitializedBuff
     config.channels = STEREO_CHANNELS;
     ASSERT_TRUE(strategy->initialize(config));
 
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
-    bool result = strategy->render(&audioBuffer, TEST_FRAME_COUNT);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+    bool result = strategy->render(audioBuffer);
     // With empty buffer, should still succeed (output silence)
     EXPECT_TRUE(result);
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_WrapsAroundCorrectly) {
@@ -91,17 +88,16 @@ TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_WrapsAroundCorrectly) {
     std::vector<float> wrapSignal(wrapFrames * STEREO_CHANNELS, TEST_SIGNAL_VALUE_3);
     ASSERT_TRUE(strategy->AddFrames(wrapSignal.data(), wrapFrames));
 
-    AudioBufferList audioBuffer = createAudioBufferList(wrapFrames);
-    bool result = strategy->render(&audioBuffer, wrapFrames);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(wrapFrames);
+    bool result = strategy->render(audioBuffer);
     EXPECT_TRUE(result);
 
     // Verify output matches input
-    float* output = static_cast<float*>(audioBuffer.mBuffers[0].mData);
     for (int i = 0; i < wrapFrames * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(output[i], TEST_SIGNAL_VALUE_3);
+        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], TEST_SIGNAL_VALUE_3);
     }
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(AudioStrategyIntegrationTest, Factory_CreatesThreadedStrategy) {
@@ -134,13 +130,12 @@ TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_AddFrames) {
     EXPECT_TRUE(result);
 
     // Verify data can be rendered back
-    AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
-    ASSERT_TRUE(strategy->render(&audioBuffer, TEST_FRAME_COUNT));
-    float* output = static_cast<float*>(audioBuffer.mBuffers[0].mData);
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+    ASSERT_TRUE(strategy->render(audioBuffer));
     for (int i = 0; i < TEST_FRAME_COUNT * STEREO_CHANNELS; ++i) {
-        EXPECT_FLOAT_EQ(output[i], TEST_SIGNAL_VALUE_1);
+        EXPECT_FLOAT_EQ(audioBuffer.buffer[i], TEST_SIGNAL_VALUE_1);
     }
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(AudioStrategyIntegrationTest, SyncPullStrategy_AddFrames) {

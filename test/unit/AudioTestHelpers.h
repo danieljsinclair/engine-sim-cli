@@ -1,33 +1,29 @@
 // AudioTestHelpers.h - Shared helper functions for audio tests
 // DRY: Extracted from 7 test files that duplicated these helpers
+// Updated: Uses AudioBufferDescriptor instead of CoreAudio AudioBufferList
 
 #ifndef AUDIO_TEST_HELPERS_H
 #define AUDIO_TEST_HELPERS_H
 
 #include <vector>
 #include <gtest/gtest.h>
-#include <AudioUnit/AudioUnit.h>
-#include <AudioToolbox/AudioToolbox.h>
+#include "hardware/AudioTypes.h"
 #include "AudioTestConstants.h"
 
 // Forward declarations
 class CircularBuffer;
 
-// Helper: Create AudioBufferList for testing
-inline AudioBufferList createAudioBufferList(UInt32 frames) {
-    AudioBufferList bufferList;
-    bufferList.mNumberBuffers = 1;
-    bufferList.mBuffers[0].mNumberChannels = test::constants::STEREO_CHANNELS;
-    bufferList.mBuffers[0].mDataByteSize = frames * test::constants::STEREO_CHANNELS * sizeof(float);
-    bufferList.mBuffers[0].mData = new float[frames * test::constants::STEREO_CHANNELS]();
-    return bufferList;
+// Helper: Create AudioBufferDescriptor for testing
+inline AudioBufferDescriptor createAudioBuffer(int frames, int channels = test::constants::STEREO_CHANNELS) {
+    float* data = new float[frames * channels]();
+    return AudioBufferDescriptor(data, frames, channels);
 }
 
-// Helper: Free AudioBufferList created by createAudioBufferList
-inline void freeAudioBufferList(AudioBufferList& bufferList) {
-    if (bufferList.mBuffers[0].mData) {
-        delete[] static_cast<float*>(bufferList.mBuffers[0].mData);
-        bufferList.mBuffers[0].mData = nullptr;
+// Helper: Free buffer created by createAudioBuffer
+inline void freeAudioBuffer(AudioBufferDescriptor& buffer) {
+    if (buffer.buffer) {
+        delete[] buffer.buffer;
+        buffer.buffer = nullptr;
     }
 }
 

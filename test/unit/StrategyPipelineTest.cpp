@@ -8,6 +8,7 @@
 // 5. SyncPullStrategy propagates frame counts to diagnostics
 //
 // Phase E: Uses ISimulator (BridgeSimulator) instead of raw EngineSimAPI
+// Phase G: Uses AudioBufferDescriptor instead of CoreAudio AudioBufferList
 
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
@@ -150,18 +151,16 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_ProducesAudioOnSuccessiveCa
     const int FRAMES_PER_CALL = 64;
 
     for (int call = 0; call < NUM_RENDER_CALLS; ++call) {
-        AudioBufferList audioBuffer = createAudioBufferList(FRAMES_PER_CALL);
+        AudioBufferDescriptor audioBuffer = createAudioBuffer(FRAMES_PER_CALL);
 
-        bool result = strategy->render(&audioBuffer, FRAMES_PER_CALL);
+        bool result = strategy->render(audioBuffer);
         ASSERT_TRUE(result) << "render() should succeed on call " << (call + 1);
 
-        float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
-
-        bool silent = isAllSilence(outputData, FRAMES_PER_CALL);
+        bool silent = isAllSilence(audioBuffer.buffer, FRAMES_PER_CALL);
         EXPECT_FALSE(silent) << "render() call " << (call + 1)
             << " produced silence -- expected non-silent audio from sine engine";
 
-        freeAudioBufferList(audioBuffer);
+        freeAudioBuffer(audioBuffer);
     }
 }
 
@@ -180,26 +179,24 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_FirstAndSubsequentCallsBoth
     const int FRAMES = 64;
 
     // First render
-    AudioBufferList firstBuffer = createAudioBufferList(FRAMES);
-    bool firstResult = strategy->render(&firstBuffer, FRAMES);
+    AudioBufferDescriptor firstBuffer = createAudioBuffer(FRAMES);
+    bool firstResult = strategy->render(firstBuffer);
     ASSERT_TRUE(firstResult);
 
-    float* firstData = static_cast<float*>(firstBuffer.mBuffers[0].mData);
-    bool firstSilent = isAllSilence(firstData, FRAMES);
+    bool firstSilent = isAllSilence(firstBuffer.buffer, FRAMES);
 
     // Second render
-    AudioBufferList secondBuffer = createAudioBufferList(FRAMES);
-    bool secondResult = strategy->render(&secondBuffer, FRAMES);
+    AudioBufferDescriptor secondBuffer = createAudioBuffer(FRAMES);
+    bool secondResult = strategy->render(secondBuffer);
     ASSERT_TRUE(secondResult);
 
-    float* secondData = static_cast<float*>(secondBuffer.mBuffers[0].mData);
-    bool secondSilent = isAllSilence(secondData, FRAMES);
+    bool secondSilent = isAllSilence(secondBuffer.buffer, FRAMES);
 
     EXPECT_FALSE(firstSilent) << "First render() should produce non-silent audio";
     EXPECT_FALSE(secondSilent) << "Second render() should produce non-silent audio";
 
-    freeAudioBufferList(firstBuffer);
-    freeAudioBufferList(secondBuffer);
+    freeAudioBuffer(firstBuffer);
+    freeAudioBuffer(secondBuffer);
 }
 
 // ============================================================================
@@ -224,16 +221,14 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_Pipeline_ProducesContinuousAudioAf
         bool addResult = strategy->AddFrames(generatedAudio.data(), FRAMES_PER_CYCLE);
         ASSERT_TRUE(addResult) << "AddFrames failed on cycle " << (cycle + 1);
 
-        AudioBufferList audioBuffer = createAudioBufferList(FRAMES_PER_CYCLE);
-        bool renderResult = strategy->render(&audioBuffer, FRAMES_PER_CYCLE);
+        AudioBufferDescriptor audioBuffer = createAudioBuffer(FRAMES_PER_CYCLE);
+        bool renderResult = strategy->render(audioBuffer);
         ASSERT_TRUE(renderResult) << "render failed on cycle " << (cycle + 1);
 
-        float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
-
-        EXPECT_FALSE(isAllSilence(outputData, FRAMES_PER_CYCLE))
+        EXPECT_FALSE(isAllSilence(audioBuffer.buffer, FRAMES_PER_CYCLE))
             << "Pipeline cycle " << (cycle + 1) << " produced silence.";
 
-        freeAudioBufferList(audioBuffer);
+        freeAudioBuffer(audioBuffer);
     }
 }
 
@@ -255,16 +250,15 @@ TEST_F(StrategyPipelineTest, ThreadedStrategy_Pipeline_DoesNotDrainToSilenceAfte
     // Render 3 times from the same buffer
     int silentRenderCount = 0;
     for (int render = 0; render < 3; ++render) {
-        AudioBufferList audioBuffer = createAudioBufferList(TEST_FRAME_COUNT);
-        bool renderResult = strategy->render(&audioBuffer, TEST_FRAME_COUNT);
+        AudioBufferDescriptor audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
+        bool renderResult = strategy->render(audioBuffer);
         ASSERT_TRUE(renderResult);
 
-        float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
-        if (isAllSilence(outputData, TEST_FRAME_COUNT)) {
+        if (isAllSilence(audioBuffer.buffer, TEST_FRAME_COUNT)) {
             silentRenderCount++;
         }
 
-        freeAudioBufferList(audioBuffer);
+        freeAudioBuffer(audioBuffer);
     }
 
     EXPECT_EQ(silentRenderCount, 0)
@@ -291,11 +285,10 @@ TEST_F(StrategyPipelineTest, SyncPull_ReadAudioBufferDrainsEngineBeforeRenderOnD
     const int FRAMES = 64;
 
     // First render (baseline)
-    AudioBufferList firstBuffer = createAudioBufferList(FRAMES);
-    ASSERT_TRUE(strategy->render(&firstBuffer, FRAMES));
-    float* firstData = static_cast<float*>(firstBuffer.mBuffers[0].mData);
-    bool firstSilent = isAllSilence(firstData, FRAMES);
-    freeAudioBufferList(firstBuffer);
+    AudioBufferDescriptor firstBuffer = createAudioBuffer(FRAMES);
+    ASSERT_TRUE(strategy->render(firstBuffer));
+    bool firstSilent = isAllSilence(firstBuffer.buffer, FRAMES);
+    freeAudioBuffer(firstBuffer);
 
     // Advance simulation
     engine.simulator.update(1.0 / 60.0);
@@ -306,11 +299,10 @@ TEST_F(StrategyPipelineTest, SyncPull_ReadAudioBufferDrainsEngineBeforeRenderOnD
     engine.simulator.readAudioBuffer(drainBuffer.data(), FRAMES, &drained);
 
     // Render again after drain
-    AudioBufferList secondBuffer = createAudioBufferList(FRAMES);
-    ASSERT_TRUE(strategy->render(&secondBuffer, FRAMES));
-    float* secondData = static_cast<float*>(secondBuffer.mBuffers[0].mData);
-    bool secondSilent = isAllSilence(secondData, FRAMES);
-    freeAudioBufferList(secondBuffer);
+    AudioBufferDescriptor secondBuffer = createAudioBuffer(FRAMES);
+    ASSERT_TRUE(strategy->render(secondBuffer));
+    bool secondSilent = isAllSilence(secondBuffer.buffer, FRAMES);
+    freeAudioBuffer(secondBuffer);
 
     EXPECT_FALSE(firstSilent) << "First render (before ReadAudioBuffer) should produce audio";
     EXPECT_FALSE(secondSilent)
@@ -338,11 +330,10 @@ TEST_F(StrategyPipelineTest, SyncPull_RenderOnDemand_RecoversAfterReadAudioBuffe
     engine.simulator.readAudioBuffer(drainBuffer.data(), FRAMES, &drained);
 
     // Immediate render
-    AudioBufferList starvedBuffer = createAudioBufferList(FRAMES);
-    ASSERT_TRUE(strategy->render(&starvedBuffer, FRAMES));
-    float* starvedData = static_cast<float*>(starvedBuffer.mBuffers[0].mData);
-    bool starvedSilent = isAllSilence(starvedData, FRAMES);
-    freeAudioBufferList(starvedBuffer);
+    AudioBufferDescriptor starvedBuffer = createAudioBuffer(FRAMES);
+    ASSERT_TRUE(strategy->render(starvedBuffer));
+    bool starvedSilent = isAllSilence(starvedBuffer.buffer, FRAMES);
+    freeAudioBuffer(starvedBuffer);
 
     EXPECT_FALSE(starvedSilent)
         << "Render after ReadAudioBuffer drain produced silence. "
@@ -389,16 +380,15 @@ TEST_F(StrategyPipelineTest, ThreadedPipeline_FullChain_WithInjectedAudio) {
         strategy->AddFrames(generatedAudio.data(), FRAMES_PER_CYCLE);
 
         // Step 4: Render
-        AudioBufferList audioBuffer = createAudioBufferList(FRAMES_PER_CYCLE);
-        bool renderResult = strategy->render(&audioBuffer, FRAMES_PER_CYCLE);
+        AudioBufferDescriptor audioBuffer = createAudioBuffer(FRAMES_PER_CYCLE);
+        bool renderResult = strategy->render(audioBuffer);
         ASSERT_TRUE(renderResult) << "render failed on iteration " << (i + 1);
 
-        float* outputData = static_cast<float*>(audioBuffer.mBuffers[0].mData);
-        if (isAllSilence(outputData, FRAMES_PER_CYCLE)) {
+        if (isAllSilence(audioBuffer.buffer, FRAMES_PER_CYCLE)) {
             silentRenders++;
         }
 
-        freeAudioBufferList(audioBuffer);
+        freeAudioBuffer(audioBuffer);
     }
 
     EXPECT_EQ(silentRenders, 0)
@@ -441,8 +431,8 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_UpdatesTotalFramesRendered)
     const int FRAMES = 64;
 
     // Act: Render
-    AudioBufferList audioBuffer = createAudioBufferList(FRAMES);
-    ASSERT_TRUE(strategy->render(&audioBuffer, FRAMES));
+    AudioBufferDescriptor audioBuffer = createAudioBuffer(FRAMES);
+    ASSERT_TRUE(strategy->render(audioBuffer));
 
     // Assert: Diagnostics snapshot should reflect frames rendered
     auto snap = strategy->diagnostics().getSnapshot();
@@ -450,7 +440,7 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_UpdatesTotalFramesRendered)
         << "After render(), diagnostics.totalFramesRendered should be > 0. "
         << "Got 0 -- SyncPullStrategy does not propagate frame counts to Diagnostics.";
 
-    freeAudioBufferList(audioBuffer);
+    freeAudioBuffer(audioBuffer);
 }
 
 TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_AccumulatesFramesAcrossMultipleCalls) {
@@ -469,9 +459,9 @@ TEST_F(StrategyPipelineTest, SyncPullStrategy_Render_AccumulatesFramesAcrossMult
     const int NUM_CALLS = 4;
 
     for (int i = 0; i < NUM_CALLS; ++i) {
-        AudioBufferList audioBuffer = createAudioBufferList(FRAMES_PER_CALL);
-        ASSERT_TRUE(strategy->render(&audioBuffer, FRAMES_PER_CALL));
-        freeAudioBufferList(audioBuffer);
+        AudioBufferDescriptor audioBuffer = createAudioBuffer(FRAMES_PER_CALL);
+        ASSERT_TRUE(strategy->render(audioBuffer));
+        freeAudioBuffer(audioBuffer);
     }
 
     // Assert: Total frames rendered should accumulate
