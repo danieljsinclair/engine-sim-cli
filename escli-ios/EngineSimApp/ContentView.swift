@@ -29,6 +29,7 @@ struct GaugeView: View {
 
 struct ContentView: View {
     @StateObject private var viewModel = EngineSimViewModel()
+    @State private var selectedPresetIndex: Int = 0
 
     var body: some View {
         NavigationView {
@@ -40,6 +41,15 @@ struct ContentView: View {
                         Text(viewModel.connectionStatus)
                             .foregroundColor(viewModel.isConnected ? .green : .red)
                     }
+                }
+
+                Section(header: Text("Engine")) {
+                    Picker("Select Engine", selection: $selectedPresetIndex) {
+                        ForEach(0..<viewModel.presetNames.count, id: \.self) { index in
+                            Text(viewModel.presetNames[index]).tag(index)
+                        }
+                    }
+                    .disabled(viewModel.isConnected)
                 }
 
                 Section(header: Text("Engine Telemetry")) {
@@ -110,6 +120,9 @@ struct ContentView: View {
                         if viewModel.isConnected {
                             viewModel.stop()
                         } else {
+                            if selectedPresetIndex < viewModel.presetIds.count {
+                                viewModel.loadPreset(viewModel.presetIds[selectedPresetIndex])
+                            }
                             viewModel.start()
                         }
                     }) {

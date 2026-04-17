@@ -5,7 +5,8 @@
  *
  * Usage from Swift:
  *   let wrapper = EngineSimWrapper()
- *   wrapper.startEngine()
+ *   wrapper.loadPreset("honda_trx520")
+ *   wrapper.startAudioThread()
  *   let rpm = wrapper.currentRPM
  */
 
@@ -19,11 +20,30 @@ NS_ASSUME_NONNULL_BEGIN
 /// Initialize the simulator with default configuration
 - (instancetype)init;
 
-/// Load an engine script (.mr file)
+/// Load an engine script (.mr file) - requires Piranha, not available on iOS
 /// @param scriptPath Absolute path to .mr file
 /// @param assetBasePath Base path for engine assets (WAV files)
 /// @return YES if loaded successfully
 - (BOOL)loadScript:(NSString *)scriptPath assetBase:(NSString *)assetBasePath;
+
+/// Load a hardcoded engine preset by ID (no file needed, works on iOS)
+/// Available IDs: "honda_trx520", "subaru_ej25", "gm_ls"
+/// @param presetId Preset identifier string
+/// @return YES if loaded successfully
+- (BOOL)loadPreset:(NSString *)presetId;
+
+/// Get the number of available engine presets
++ (NSInteger)presetCount;
+
+/// Get preset display name at index
+/// @param index Zero-based preset index
+/// @return Display name string
++ (NSString *)presetNameAtIndex:(NSInteger)index;
+
+/// Get preset ID at index
+/// @param index Zero-based preset index
+/// @return Preset ID string
++ (NSString *)presetIdAtIndex:(NSInteger)index;
 
 /// Start the audio processing thread
 - (BOOL)startAudioThread;

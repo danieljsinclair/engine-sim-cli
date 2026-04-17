@@ -139,4 +139,97 @@ Building an iOS application using the engine-sim-bridge library for real-time en
 
 ---
 
+---
+
+### 5. Build System and CMake Integration
+
+**Decision:** Implement iOS build infrastructure with CMake static library and Xcode project
+- **Rationale:** Two-stage build enables iOS static library generation while maintaining Xcode project for SwiftUI app development
+- **Status:** IMPLEMENTED (CMakeLists.txt, ios.toolchain.cmake, escli-ios/Makefile)
+- **Implementation Details:**
+  - **CMakeLists.txt**: iOS early-return to skip CLI targets, static library generation
+  - **ios.toolchain.cmake**: iOS cross-compilation toolchain for arm64/iPhoneOS and simulator
+  - **escli-ios/Makefile**: Two-click build system (ios-lib, ios, xcode targets)
+  - **Static Library**: CMake builds libengine-sim-bridge.a for iOS platform
+  - **Xcode Integration**: Xcode project links static library to iOS app
+  - **Build Status**: Zero errors, all 4 test suites pass (smoke, integration, unit, telemetry)
+
+**Build Infrastructure Components:**
+- **CMake Configuration**: iOS conditional compilation, TARGET_OS_IPHONE guards
+- **Toolchain**: Support for iPhoneOS (arm64) and iOS Simulator (x86_64/arm64)
+- **Makefile Targets**:
+  - `make ios-lib`: Build static library for iOS platform
+  - `make ios`: Build iOS SwiftUI app
+  - `make xcode`: Open Xcode project for development
+- **Two-Stage Build**: CMake → static library → Xcode → iOS app
+
+**Test Results:**
+- All 4 test suites pass (smoke, integration, unit, telemetry)
+- Zero build errors
+- iOS platform fully functional
+
+---
+
+### 6. Mock Input Provider for Testing
+
+**Decision:** Implement mock input provider for deterministic shutdown testing
+- **Rationale:** Enables production-like shutdown behavior without sleeps or CPU spinning
+- **Status:** IMPLEMENTED (test/mocks/MockInputProvider.h, test/mocks/MockSimulator.h)
+- **Implementation Details:**
+  - **MockInputProvider**: Test double for IInputProvider interface
+  - **Shutdown Signaling**: `shouldContinue=false` in EngineInput struct
+  - **MockSimulator Integration**: `signalShutdown()` method uses input provider
+  - **Clean Shutdown**: No sleeps or CPU spinning, immediate termination
+  - **Production-like Behavior**: Mimics real system shutdown mechanism
+
+**Testing Infrastructure:**
+- Deterministic input control for integration tests
+- Clean shutdown signaling without relying on `ISimulator::stop()` directly
+- Consistent with production simulation loop architecture
+
+---
+
+---
+
+**Current Status:**
+- ✅ All major components implemented and committed
+- ✅ iOS platform fully functional with engine simulation
+- ✅ Build system working (zero errors, all tests pass)
+- ✅ Production-ready static library for iOS
+- ✅ Complete SwiftUI app with all required controls
+
+**Implemented Components:**
+- **AudioBufferDescriptor** → Platform-agnostic audio buffer (Simple struct)
+- **AVAudioEngineHardwareProvider** → iOS adapter using AVAudioEngine+AVAudioSourceNode
+- **iOS SwiftUI App** → Complete MVVM app with throttle, ignition, starter controls
+- **Build System** → CMake static lib, Xcode integration, two-click build
+- **TDD Tests** → 15 GTest tests, all test suites pass
+- **Mock Input Provider** → Production-like shutdown mechanism
+
+**Build Results:**
+- Zero compilation errors
+- All 4 test suites pass (smoke, integration, unit, telemetry)
+- iOS platform fully functional
+- Static library production-ready for iOS
+
+**User Requirements Met:**
+- ✅ Single-view iOS app with engine simulation controls
+- ✅ Throttle slider (0-100%)
+- ✅ Ignition toggle
+- ✅ Starter motor button
+- ✅ Audio output through device speakers (AVAudioEngine)
+- ✅ Real-time RPM/load/exhaust display
+- ✅ Uses engine-sim-bridge library via ObjC++ wrapper
+
+**Technical Achievements:**
+- Platform-agnostic audio buffer design enables iOS/macOS cross-platform support
+- KISS principle applied (AVAudioEngine over RemoteIO)
+- MVVM pattern provides clean separation of concerns
+- TDD approach ensures quality with comprehensive test coverage
+- Build system enables two-click deployment for iOS development
+
+**Deferred Work:**
+- IAudioBuffer → IAudioRenderer rename (low priority, user requirement: selectable engines with real sounds)
+- Pre-compiled engine configs for iOS (no Piranha runtime needed)
+
 *This document will be updated as architectural decisions are made during iOS app development.*

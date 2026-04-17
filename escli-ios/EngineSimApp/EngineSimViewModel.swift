@@ -17,6 +17,11 @@ class EngineSimViewModel: ObservableObject {
     @Published var isConnected: Bool = false
     @Published var connectionStatus: String = "Disconnected"
 
+    /// List of available engine preset names for the picker UI
+    @Published var presetNames: [String] = []
+    /// List of available engine preset IDs (parallel to presetNames)
+    @Published var presetIds: [String] = []
+
     // MARK: - Private
 
     private var wrapper: EngineSimWrapper?
@@ -27,13 +32,43 @@ class EngineSimViewModel: ObservableObject {
 
     init() {
         wrapper = EngineSimWrapper()
+        loadPresetList()
     }
 
     deinit {
         stop()
     }
 
+    // MARK: - Preset List
+
+    private func loadPresetList() {
+        let count = EngineSimWrapper.presetCount()
+        var names: [String] = []
+        var ids: [String] = []
+        for i in 0..<count {
+            names.append(EngineSimWrapper.presetName(at: i))
+            ids.append(EngineSimWrapper.presetId(at: i))
+        }
+        presetNames = names
+        presetIds = ids
+    }
+
     // MARK: - Public API
+
+    /// Load a hardcoded engine preset by ID
+    func loadPreset(_ presetId: String) {
+        guard let wrapper = wrapper else {
+            connectionStatus = "Wrapper not initialized"
+            return
+        }
+
+        let success = wrapper.loadPreset(presetId)
+        if success {
+            connectionStatus = "Preset loaded: \(presetId)"
+        } else {
+            connectionStatus = "Failed to load preset: \(presetId)"
+        }
+    }
 
     func start() {
         guard let wrapper = wrapper else {
@@ -41,11 +76,9 @@ class EngineSimViewModel: ObservableObject {
             return
         }
 
-        // Use sine mode for demo (no script file needed)
-        // In production, loadScript would load a .mr file from the app bundle
         _ = wrapper.startAudioThread()
         isConnected = true
-        connectionStatus = "Running (Demo)"
+        connectionStatus = "Running"
 
         updateTimer = Timer.scheduledTimer(
             withTimeInterval: updateInterval,
