@@ -9,7 +9,7 @@
 #include "strategy/IAudioBuffer.h"
 #include "telemetry/ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
-#include "simulator/BridgeSimulator.h"
+#include "simulator/SimulatorFactory.h"
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "io/IPresentation.h"
@@ -73,7 +73,6 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.interactive = args.interactive;
     config.playAudio = args.playAudio;
     config.volume = args.silent ? 0.0f : 1.0f;
-    config.sineMode = args.sineMode;
     config.syncPull = args.syncPull;
     config.targetRPM = args.targetRPM;
     config.targetLoad = args.targetLoad;
@@ -83,7 +82,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     if (args.outputWav) config.outputWav = args.outputWav;
 
     // Color the simulator label for CLI output
-    std::string name = config.sineMode ? "[SINE]" : config.configPath;
+    std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
     config.simulatorLabel = ANSIColors::CYAN + name + ANSIColors::RESET;
 
     return config;
@@ -104,13 +103,15 @@ int main(int argc, char* argv[]) {
 
     CommandLineArgs args;
     if (parseArguments(argc, argv, args)) {
-        BridgeSimulator simulator;
         ShowConfigHeader(args, ISimulator::getVersion());
 
         // Create shared telemetry (simulator and strategies write, presentation reads)
         auto cliLogger = std::make_unique<ConsoleLogger>();
         auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
-        simulator.setTelemetryWriter(telemetry.get());
+
+        // Create simulator via factory
+        SimulatorType simType = args.sineMode ? SimulatorType::SineWave : SimulatorType::PistonEngine;
+        std::unique_ptr<ISimulator> simulator = SimulatorFactory::create(simType, cliLogger.get());
 
         // Create strategy via factory - pass telemetry so strategies push diagnostics
         SimulationConfig config = CreateSimulationConfig(args);
@@ -122,7 +123,7 @@ int main(int argc, char* argv[]) {
         // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)
         try
         {
-            result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+            result = runSimulation(config, *simulator, audioStrategy.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
         }
         catch (const std::exception& e) {
             std::cerr << "ERROR: " << e.what() << std::endl;

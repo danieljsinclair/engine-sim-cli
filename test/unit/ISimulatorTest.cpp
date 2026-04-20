@@ -12,10 +12,6 @@
 //   3. MockSimulator implements ISimulator for testing (no engine-sim dependency)
 //   4. IAudioBuffer methods take ISimulator* instead of EngineSimHandle/EngineSimAPI&
 //   5. SimulationLoop takes ISimulator* instead of EngineSimHandle + EngineSimAPI&
-//
-// RED PHASE: These tests will NOT compile because ISimulator.h,
-// BridgeSimulator.h, and MockSimulator.h do not exist yet.
-// The tech-architect creates them to make these GREEN.
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -24,12 +20,15 @@
 // These headers do not exist yet -- RED phase
 #include "simulator/ISimulator.h"
 #include "simulator/BridgeSimulator.h"
+#include "simulator/sine_wave_simulator.h"
 #include "MockSimulator.h"
 #include "strategy/IAudioBuffer.h"
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
+#include "common/ILogging.h"
+#include "telemetry/ITelemetryProvider.h"
 #include <thread>
 #include <chrono>
 
@@ -45,8 +44,15 @@ using namespace test::constants;
 
 class ISimulatorTest : public ::testing::Test {
 protected:
-    void SetUp() override {}
+    void SetUp() override {
+        logger_ = std::make_unique<ConsoleLogger>();
+        telemetry_ = std::make_unique<telemetry::InMemoryTelemetry>();
+    }
+
     void TearDown() override {}
+
+    std::unique_ptr<ConsoleLogger> logger_;
+    std::unique_ptr<telemetry::InMemoryTelemetry> telemetry_;
 };
 
 TEST_F(ISimulatorTest, MockSimulator_ImplementsISimulator) {
@@ -175,18 +181,6 @@ TEST_F(ISimulatorTest, MockSimulator_CreateAndDestroy_Lifecycle) {
     SUCCEED();
 }
 
-TEST_F(ISimulatorTest, MockSimulator_SetLogging_AcceptsLogger) {
-    // Arrange
-    auto sim = std::make_unique<MockSimulator>();
-    auto logger = std::make_unique<ConsoleLogger>();
-
-    // Act
-    bool result = sim->setLogging(logger.get());
-
-    // Assert
-    EXPECT_TRUE(result);
-}
-
 TEST_F(ISimulatorTest, MockSimulator_GetLastError_ReturnsEmptyWhenNoError) {
     // Arrange
     auto sim = std::make_unique<MockSimulator>();
@@ -210,14 +204,13 @@ TEST_F(ISimulatorTest, BridgeSimulator_ImplementsISimulator) {
     // Arrange: Create BridgeSimulator (wraps real EngineSim)
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;  // Sine mode for testing (no engine script needed)
 
     auto sim = std::make_unique<BridgeSimulator>();
 
-    // Act: Initialize
-    bool initResult = sim->create(config);
+    // Act: Initialize with logger and telemetry
+    bool initResult = sim->create(config, logger_.get(), telemetry_.get());
 
-    // Assert: Should succeed with sine mode
+    // Assert: Should succeed
     EXPECT_TRUE(initResult);
 
     // Assert: Can be used through ISimulator pointer
@@ -227,14 +220,13 @@ TEST_F(ISimulatorTest, BridgeSimulator_ImplementsISimulator) {
     sim->destroy();
 }
 
-TEST_F(ISimulatorTest, BridgeSimulator_SineMode_UpdatesSuccessfully) {
-    // Arrange: Create in sine mode
+TEST_F(ISimulatorTest, SineWaveSimulator_UpdatesSuccessfully) {
+    // Arrange: Create SineWaveSimulator for testing
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;
 
-    auto sim = std::make_unique<BridgeSimulator>();
-    ASSERT_TRUE(sim->create(config));
+    auto sim = std::make_unique<SineWaveSimulator>(logger_.get());
+    ASSERT_TRUE(sim->create(config, logger_.get(), telemetry_.get()));
     ASSERT_TRUE(sim->loadScript("", ""));  // Initialize synthesizer
 
     // Act: Update simulation (void return - no crash = success)
@@ -246,14 +238,13 @@ TEST_F(ISimulatorTest, BridgeSimulator_SineMode_UpdatesSuccessfully) {
     sim->destroy();
 }
 
-TEST_F(ISimulatorTest, BridgeSimulator_SineMode_ReadAudioBufferReturnsData) {
+TEST_F(ISimulatorTest, SineWaveSimulator_ReadAudioBufferReturnsData) {
     // Arrange
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;
 
-    auto sim = std::make_unique<BridgeSimulator>();
-    ASSERT_TRUE(sim->create(config));
+    auto sim = std::make_unique<SineWaveSimulator>(logger_.get());
+    ASSERT_TRUE(sim->create(config, logger_.get(), telemetry_.get()));
     ASSERT_TRUE(sim->loadScript("", ""));
     ASSERT_TRUE(sim->start());
 
@@ -276,14 +267,13 @@ TEST_F(ISimulatorTest, BridgeSimulator_SineMode_ReadAudioBufferReturnsData) {
     sim->destroy();
 }
 
-TEST_F(ISimulatorTest, BridgeSimulator_SineMode_RenderOnDemandReturnsData) {
+TEST_F(ISimulatorTest, SineWaveSimulator_RenderOnDemandReturnsData) {
     // Arrange
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;
 
-    auto sim = std::make_unique<BridgeSimulator>();
-    ASSERT_TRUE(sim->create(config));
+    auto sim = std::make_unique<SineWaveSimulator>(logger_.get());
+    ASSERT_TRUE(sim->create(config, logger_.get(), telemetry_.get()));
     ASSERT_TRUE(sim->loadScript("", ""));
 
     // Act: Render on demand (synchronous)
@@ -299,14 +289,13 @@ TEST_F(ISimulatorTest, BridgeSimulator_SineMode_RenderOnDemandReturnsData) {
     sim->destroy();
 }
 
-TEST_F(ISimulatorTest, BridgeSimulator_GetStats_ReturnsValidStats) {
+TEST_F(ISimulatorTest, SineWaveSimulator_GetStats_ReturnsValidStats) {
     // Arrange
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;
 
-    auto sim = std::make_unique<BridgeSimulator>();
-    ASSERT_TRUE(sim->create(config));
+    auto sim = std::make_unique<SineWaveSimulator>(logger_.get());
+    ASSERT_TRUE(sim->create(config, logger_.get(), telemetry_.get()));
     ASSERT_TRUE(sim->loadScript("", ""));
     sim->update(0.016667);
 
@@ -319,14 +308,13 @@ TEST_F(ISimulatorTest, BridgeSimulator_GetStats_ReturnsValidStats) {
     sim->destroy();
 }
 
-TEST_F(ISimulatorTest, BridgeSimulator_SetThrottle_Succeeds) {
+TEST_F(ISimulatorTest, SineWaveSimulator_SetThrottle_Succeeds) {
     // Arrange
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;
 
-    auto sim = std::make_unique<BridgeSimulator>();
-    ASSERT_TRUE(sim->create(config));
+    auto sim = std::make_unique<SineWaveSimulator>(logger_.get());
+    ASSERT_TRUE(sim->create(config, logger_.get(), telemetry_.get()));
     ASSERT_TRUE(sim->loadScript("", ""));
 
     // Act (void return - no crash = success)
@@ -583,16 +571,15 @@ TEST_F(ISimulatorTest, MockSimulator_NoEngineSimDependency) {
 // These wrap EngineSimCreate and EngineSimLoadScript.
 // ============================================================================
 
-TEST_F(ISimulatorTest, BridgeSimulator_CreateWithSineMode_Succeeds) {
+TEST_F(ISimulatorTest, BridgeSimulator_Create_Succeeds) {
     // Arrange
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;
 
     auto sim = std::make_unique<BridgeSimulator>();
 
     // Act
-    bool result = sim->create(config);
+    bool result = sim->create(config, logger_.get(), telemetry_.get());
 
     // Assert
     EXPECT_TRUE(result);
@@ -600,16 +587,15 @@ TEST_F(ISimulatorTest, BridgeSimulator_CreateWithSineMode_Succeeds) {
     sim->destroy();
 }
 
-TEST_F(ISimulatorTest, BridgeSimulator_CreateWithoutSineMode_NeedsScript) {
+TEST_F(ISimulatorTest, BridgeSimulator_CreateWithoutScript_NeedsScript) {
     // Arrange: Normal physics mode requires a script to be loaded
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 0;
 
     auto sim = std::make_unique<BridgeSimulator>();
 
     // Act: Create should succeed, but update/render will fail without script
-    bool createResult = sim->create(config);
+    bool createResult = sim->create(config, logger_.get(), telemetry_.get());
 
     // Assert: Create itself succeeds (just allocates)
     EXPECT_TRUE(createResult);
@@ -620,30 +606,15 @@ TEST_F(ISimulatorTest, BridgeSimulator_CreateWithoutSineMode_NeedsScript) {
     sim->destroy();
 }
 
-TEST_F(ISimulatorTest, BridgeSimulator_SetLogging_BeforeCreate_Succeeds) {
-    // Arrange
-    auto sim = std::make_unique<BridgeSimulator>();
-    auto logger = std::make_unique<ConsoleLogger>();
-
-    // Act: Set logging before create
-    bool result = sim->setLogging(logger.get());
-
-    // Assert
-    EXPECT_TRUE(result);
-
-    sim->destroy();
-}
-
-TEST_F(ISimulatorTest, BridgeSimulator_FullLifecycle_SineMode) {
-    // Arrange: Full lifecycle in sine mode
+TEST_F(ISimulatorTest, SineWaveSimulator_FullLifecycle) {
+    // Arrange: Full lifecycle
     EngineSimConfig config{};
     config.sampleRate = 48000;
-    config.sineMode = 1;
 
-    auto sim = std::make_unique<BridgeSimulator>();
+    auto sim = std::make_unique<SineWaveSimulator>(logger_.get());
 
     // Act: Full lifecycle
-    ASSERT_TRUE(sim->create(config));
+    ASSERT_TRUE(sim->create(config, logger_.get(), telemetry_.get()));
     ASSERT_TRUE(sim->loadScript("", ""));
     sim->update(0.016667);
     sim->setThrottle(0.5);

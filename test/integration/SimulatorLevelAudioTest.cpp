@@ -104,38 +104,38 @@ namespace {
     // Test helper for SineWaveSimulator integration
     class SineWaveTestHarness {
     public:
-        SineWaveTestHarness() : simulator_(nullptr), bridgeHandle_(nullptr) {}
+        SineWaveTestHarness() : simulator_(nullptr) {}
 
         ~SineWaveTestHarness() {
             cleanup();
         }
 
-        // Initialize with SineWaveSimulator
+        // Initialize with SineWaveSimulator using ISimulator lifecycle
         bool initialize(int sampleRate = 44100) {
-            // Create SineWaveSimulator directly (no bridge API needed)
+            // Create SineWaveSimulator (ISimulator)
             simulator_ = new SineWaveSimulator(nullptr);
             if (!simulator_) {
                 std::cerr << "Failed to create SineWaveSimulator\n";
                 return false;
             }
 
-            // Initialize simulator
-            Simulator::Parameters params;
-            params.systemType = Simulator::SystemType::NsvOptimized;
-            simulator_->initialize(params);
+            // Use ISimulator lifecycle: create() sets up engine + synthesizer
+            EngineSimConfig config{};
+            config.sampleRate = sampleRate;
+            config.simulationFrequency = 10000;
+            config.targetSynthesizerLatency = 0.05;
 
-            // Set simulation frequency
-            simulator_->setSimulationFrequency(10000);
-            simulator_->setTargetSynthesizerLatency(0.05);
+            if (!simulator_->create(config, nullptr, nullptr)) {
+                std::cerr << "Failed to create SineWaveSimulator\n";
+                return false;
+            }
+
+            if (!simulator_->loadScript("", "")) {
+                std::cerr << "Failed to loadScript SineWaveSimulator\n";
+                return false;
+            }
 
             sampleRate_ = sampleRate;
-
-            // NOTE: Do NOT start audio rendering thread for sync-pull tests
-            // We use on-demand rendering (renderAudioOnDemand()) directly
-            // Starting the background thread would create a race condition
-            // where both the thread and test code consume audio non-deterministically
-            // This caused SineWave_SyncPull_DeterministicRepeatability to fail
-
             return true;
         }
 
@@ -146,6 +146,17 @@ namespace {
             }
 
             std::vector<int16_t> audioOutput(framesToGenerate * STEREO_CHANNELS, 0);
+
+            // Warm up: let the synthesizer's leveler settle to eliminate initial DC transient
+            for (int warmup = 0; warmup < 10; ++warmup) {
+                simulator_->startFrame(1.0 / 60.0);
+                simulator_->simulateStep();
+                simulator_->endFrame();
+                simulator_->synthesizer().renderAudioOnDemand();
+                // Drain the output
+                int16_t discard[256];
+                simulator_->synthesizer().readAudioOutput(256, discard);
+            }
 
             // Approach: Use synthesizer directly for on-demand rendering
             // This bypasses the audio rendering thread and gives us direct access
@@ -189,17 +200,17 @@ namespace {
             return audioOutput;
         }
 
-        // Set throttle (affects RPM in SineEngine)
+        // Set throttle via ISimulator interface (calls setSpeedControl on SineEngine)
         void setThrottle(float throttle) {
-            if (simulator_ && simulator_->getEngine()) {
-                simulator_->getEngine()->setThrottle(throttle);
+            if (simulator_) {
+                simulator_->setThrottle(static_cast<double>(throttle));
             }
         }
 
-        // Get current RPM
+        // Get current RPM via ISimulator interface
         double getRPM() {
-            if (simulator_ && simulator_->getEngine()) {
-                return simulator_->getEngine()->getRpm();
+            if (simulator_) {
+                return simulator_->getStats().currentRPM;
             }
             return 0.0;
         }
@@ -216,10 +227,7 @@ namespace {
         Simulator* getSimulator() { return simulator_; }
 
     private:
-        // No need to load bridge API - SineWaveSimulator works standalone
-
-        Simulator* simulator_;
-        EngineSimHandle bridgeHandle_;
+        SineWaveSimulator* simulator_;
         int sampleRate_;
     };
 } // anonymous namespace

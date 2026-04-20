@@ -14,9 +14,12 @@
 #include "strategy/SyncPullStrategy.h"
 #include "simulator/ISimulator.h"
 #include "simulator/BridgeSimulator.h"
+#include "simulator/sine_wave_simulator.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
 #include "simulator/engine_sim_bridge.h"
+#include "common/ILogging.h"
+#include "telemetry/ITelemetryProvider.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -27,14 +30,17 @@ using namespace test::constants;
 
 // ============================================================================
 // Helper: Create a real engine in sine mode for integration-level tests
-// Uses BridgeSimulator (ISimulator) instead of raw EngineSimAPI
+// Uses SineWaveSimulator (ISimulator) instead of raw EngineSimAPI
 // ============================================================================
 
 struct SineSimulator {
-    BridgeSimulator simulator;
+    SineWaveSimulator simulator;
     bool valid = false;
 
-    SineSimulator() {
+    SineSimulator() : simulator(nullptr) {
+        logger_ = std::make_unique<ConsoleLogger>();
+        telemetry_ = std::make_unique<telemetry::InMemoryTelemetry>();
+
         EngineSimConfig config{};
         config.sampleRate = 48000;
         config.inputBufferSize = 1024;
@@ -42,9 +48,8 @@ struct SineSimulator {
         config.simulationFrequency = 10000;
         config.fluidSimulationSteps = 8;
         config.targetSynthesizerLatency = 0.05;
-        config.sineMode = 1;
 
-        if (!simulator.create(config)) return;
+        if (!simulator.create(config, logger_.get(), telemetry_.get())) return;
 
         if (!simulator.loadScript("", "")) return;
 
@@ -59,6 +64,10 @@ struct SineSimulator {
 
     SineSimulator(const SineSimulator&) = delete;
     SineSimulator& operator=(const SineSimulator&) = delete;
+
+private:
+    std::unique_ptr<ConsoleLogger> logger_;
+    std::unique_ptr<telemetry::InMemoryTelemetry> telemetry_;
 };
 
 // ============================================================================

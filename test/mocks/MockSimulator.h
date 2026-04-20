@@ -45,8 +45,10 @@ public:
     }
 
     // Lifecycle
-    bool create(const EngineSimConfig& config) override {
+    bool create(const EngineSimConfig& config, ILogging* logger, telemetry::ITelemetryWriter* telemetryWriter) override {
         config_ = config;
+        logger_ = logger;
+        telemetryWriter_ = telemetryWriter;
         created_ = true;
         return true;
     }
@@ -57,12 +59,9 @@ public:
         return true;
     }
 
-    bool setLogging(ILogging* logger) override {
-        logger_ = logger;
-        return true;
+    const char* getName() const override {
+        return "MockSimulator";
     }
-
-    void setTelemetryWriter(telemetry::ITelemetryWriter*) override {}
 
     void destroy() override {
         created_ = false;
@@ -132,6 +131,7 @@ private:
     std::string assetBasePath_;
     std::string lastError_;
     ILogging* logger_ = nullptr;
+    telemetry::ITelemetryWriter* telemetryWriter_ = nullptr;
     double throttle_ = 0.0;
     bool ignition_ = false;
     bool starterMotor_ = false;
