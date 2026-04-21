@@ -66,7 +66,7 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
 SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     SimulationConfig config;
 
-    config.configPath = args.engineConfig ? args.engineConfig : "";
+    config.configPath = args.engineConfig;
     config.assetBasePath = "";
 
     config.duration = args.duration;
@@ -79,7 +79,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.useDefaultEngine = args.useDefaultEngine;
     config.simulationFrequency = args.simulationFrequency;
     config.preFillMs = args.preFillMs;
-    if (args.outputWav) config.outputWav = args.outputWav;
+    if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;

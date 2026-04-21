@@ -7,6 +7,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Find required packages
 find_package(Threads REQUIRED)
+include(FetchContent)
+
+FetchContent_Declare(
+    cli11
+    GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+    GIT_TAG v2.5.0
+)
+FetchContent_MakeAvailable(cli11)
 
 # Add engine-sim-bridge submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
@@ -48,6 +56,7 @@ target_link_libraries(engine-sim-cli
     engine-sim-bridge
     ${AUDIO_LIBRARY}
     Threads::Threads
+    CLI11::CLI11
 )
 
 target_include_directories(engine-sim-cli

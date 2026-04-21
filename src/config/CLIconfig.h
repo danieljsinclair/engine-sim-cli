@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstddef>
+#include <string>
 #include "strategy/AudioLoopConfig.h"
 
 // ============================================================================
@@ -14,8 +15,8 @@
 // ============================================================================
 
 struct CommandLineArgs {
-    const char* engineConfig = nullptr;
-    const char* outputWav = nullptr;
+    std::string engineConfig;
+    std::string outputWav;
     double duration = 3.0;
     double targetRPM = 0.0;
     double targetLoad = -1.0;  // -1 means auto (RPM control)
