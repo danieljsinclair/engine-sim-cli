@@ -51,6 +51,18 @@
 			isa = PBXBuildFile;
 			fileRef = C2000033 /* libsimple-2d-constraint-solver.a */;
 		};
+			C1000035 /* IOSInputProvider.cpp in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C2000081 /* IOSInputProvider.cpp */;
+			};
+			C1000036 /* IOSPresentation.cpp in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C2000083 /* IOSPresentation.cpp */;
+			};
+			C1000037 /* IOSRunner.cpp in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C2000085 /* IOSRunner.cpp */;
+			};
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -158,6 +170,49 @@
 			path = "../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/simple-2d-constraint-solver/libsimple-2d-constraint-solver.a";
 			sourceTree = "<group>";
 		};
+		C2000033 /* libsimple-2d-constraint-solver.a */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = archive.ar;
+			name = libsimple-2d-constraint-solver.a;
+			path = "../build-\$(PLATFORM_NAME)/engine-sim/dependencies/submodules/simple-2d-constraint-solver/libsimple-2d-constraint-solver.a";
+			sourceTree = "<group>";
+		};
+		C2000081 /* IOSInputProvider.cpp */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = IOSInputProvider.cpp;
+			sourceTree = "<group>";
+		};
+		C2000083 /* IOSPresentation.cpp */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = IOSPresentation.cpp;
+			sourceTree = "<group>";
+		};
+		C2000085 /* IOSRunner.cpp */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = IOSRunner.cpp;
+			sourceTree = "<group>";
+		};
+		C2000082 /* IOSInputProvider.h */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = IOSInputProvider.h;
+			sourceTree = "<group>";
+		};
+		C2000084 /* IOSPresentation.h */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = IOSPresentation.h;
+			sourceTree = "<group>";
+		};
+		C2000086 /* IOSRunner.h */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = IOSRunner.h;
+			sourceTree = "<group>";
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -194,6 +249,12 @@
 				C2000003 /* EngineSimViewModel.swift */,
 				C2000004 /* EngineSimWrapper.h */,
 				C2000005 /* EngineSimWrapper.mm */,
+				C2000081 /* IOSInputProvider.cpp */,
+				C2000082 /* IOSInputProvider.h */,
+				C2000083 /* IOSPresentation.cpp */,
+				C2000084 /* IOSPresentation.h */,
+				C2000085 /* IOSRunner.cpp */,
+				C2000086 /* IOSRunner.h */,
 				C2000007 /* EngineSim-Bridging-Header.h */,
 				C2000010 /* Assets.xcassets */,
 				C2000006 /* Info.plist */,
@@ -269,6 +330,9 @@
 				C1000002 /* ContentView.swift in Sources */,
 				C1000003 /* EngineSimViewModel.swift in Sources */,
 				C1000005 /* EngineSimWrapper.mm in Sources */,
+				C1000035 /* IOSInputProvider.cpp in Sources */,
+				C1000036 /* IOSPresentation.cpp in Sources */,
+				C1000037 /* IOSRunner.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

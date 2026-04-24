@@ -84,14 +84,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
 
-    // Create ISimulatorConfig - single source of truth for audio/simulation constants
-    // Default ctor fills from EngineSimDefaults, then apply CLI overrides
-    auto* engineConfig = new ISimulatorConfig();
-    engineConfig->simulationFrequency = (args.simulationFrequency > 0) ? args.simulationFrequency : engineConfig->simulationFrequency;
-    engineConfig->targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : engineConfig->targetSynthesizerLatency;
-
-    // Store the engine config in SimulationConfig (owned pointer)
-    config.engineConfig = engineConfig;
+    // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
+    config.engineConfig.simulationFrequency = (args.simulationFrequency > 0) ? args.simulationFrequency : config.engineConfig.simulationFrequency;
+    config.engineConfig.targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : config.engineConfig.targetSynthesizerLatency;
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
@@ -128,7 +123,7 @@ int main(int argc, char* argv[]) {
         std::string assetBasePath = "";
 
         std::unique_ptr<ISimulator> simulator = SimulatorFactory::create(
-            type, scriptPath, assetBasePath, *config.engineConfig,
+            type, scriptPath, assetBasePath, config.engineConfig,
             cliLogger.get(), telemetry.get());
 
         // Create strategy via factory - pass telemetry so strategies push diagnostics

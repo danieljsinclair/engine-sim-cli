@@ -1,107 +1,163 @@
+// EngineSimWrapper.mm - Wafer-thin Objective-C++ bridge for iOS
+// Delegates to C++ IOSRunner - no shadow state, no simulator logic
+
 #import "EngineSimWrapper.h"
-#include "simulator/SimulatorFactory.h"
-#include "simulator/ISimulator.h"
-#include "simulator/EngineSimTypes.h"
-#include <memory>
+
+// C++ bridge headers
+#include "IOSRunner.h"
+#include "telemetry/ITelemetryProvider.h"
 
 @implementation EngineSimWrapper {
-    std::unique_ptr<ISimulator> _simulator;
-    EngineSimStats _lastStats;
-    BOOL _running;
+    IOSRunner* _runner;  // Owned by this wrapper, deleted in stop/dealloc
 }
 
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _running = NO;
-        memset(&_lastStats, 0, sizeof(_lastStats));
+        _runner = new IOSRunner();
     }
     return self;
 }
 
-- (BOOL)loadScript:(NSString *)scriptPath assetBase:(NSString *)assetBasePath {
-    @try {
-        // Use default config from EngineSimDefaults
-        ISimulatorConfig config;
-
-        std::string scriptPathStr([scriptPath UTF8String]);
-        std::string assetBasePathStr([assetBasePath UTF8String] ?: "");
-
-        _simulator = SimulatorFactory::create(
-            SimulatorType::PistonEngine,
-            scriptPathStr,
-            assetBasePathStr,
-            config,
-            nullptr,
-            nullptr
-        );
-        return _simulator != nullptr;
-    } @catch (...) {
-        _simulator.reset();
+- (BOOL)start {
+    if (!_runner) {
         return NO;
+    }
+    return _runner->start();
+}
+
+- (void)stop {
+    if (_runner) {
+        _runner->stop();
     }
 }
 
-- (BOOL)startAudioThread {
-    if (!_simulator) return NO;
-    if (_simulator->start()) {
-        _running = YES;
-        return YES;
+- (void)dealloc {
+    if (_runner) {
+        delete _runner;
+        _runner = nullptr;
+    }
+}
+
+// ============================================================================
+// Controls - forward to C++ IOSRunner
+// ============================================================================
+
+- (void)setThrottle:(double)position {
+    if (_runner) {
+        _runner->setThrottle(position);
+    }
+}
+
+- (void)setIgnition:(BOOL)enabled {
+    if (_runner) {
+        _runner->setIgnition(enabled);
+    }
+}
+
+- (void)setStarter:(BOOL)enabled {
+    if (_runner) {
+        _runner->setStarterMotor(enabled);
+    }
+}
+
+// ============================================================================
+// Telemetry - read from C++ ITelemetryReader
+// ============================================================================
+
+- (double)currentRPM {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto state = telemetry->getEngineState();
+            return state.currentRPM;
+        }
+    }
+    return 0.0;
+}
+
+- (double)currentLoad {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto state = telemetry->getEngineState();
+            return state.currentLoad;
+        }
+    }
+    return 0.0;
+}
+
+- (double)exhaustFlow {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto state = telemetry->getEngineState();
+            return state.exhaustFlow;
+        }
+    }
+    return 0.0;
+}
+
+- (double)manifoldPressure {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto state = telemetry->getEngineState();
+            return state.manifoldPressure;
+        }
+    }
+    return 0.0;
+}
+
+- (double)throttlePosition {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto inputs = telemetry->getVehicleInputs();
+            return inputs.throttlePosition;
+        }
+    }
+    return 0.0;
+}
+
+- (BOOL)ignitionEnabled {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto inputs = telemetry->getVehicleInputs();
+            return inputs.ignitionOn;
+        }
     }
     return NO;
 }
 
-- (void)stop {
-    if (_simulator) {
-        if (_running) {
-            _simulator->stop();
+- (BOOL)starterMotorEnabled {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto inputs = telemetry->getVehicleInputs();
+            return inputs.starterMotorEngaged;
         }
-        _simulator->destroy();
-        _simulator.reset();
     }
-    _running = NO;
+    return NO;
 }
 
-- (void)update:(double)deltaTime {
-    if (!_simulator) return;
-    _simulator->update(deltaTime);
-    _lastStats = _simulator->getStats();
-}
-
-- (void)setThrottle:(double)position {
-    if (_simulator) _simulator->setThrottle(position);
-}
-
-- (void)setIgnition:(BOOL)enabled {
-    if (_simulator) _simulator->setIgnition(enabled);
-}
-
-- (void)setStarter:(BOOL)enabled {
-    if (_simulator) _simulator->setStarterMotor(enabled);
-}
-
-- (double)currentRPM {
-    return _lastStats.currentRPM;
-}
-
-- (double)currentLoad {
-    return _lastStats.currentLoad;
-}
-
-- (double)exhaustFlow {
-    return _lastStats.exhaustFlow;
-}
-
-- (double)manifoldPressure {
-    return _lastStats.manifoldPressure;
+- (int)underrunCount {
+    if (_runner) {
+        auto telemetry = _runner->getTelemetryReader();
+        if (telemetry) {
+            auto diag = telemetry->getAudioDiagnostics();
+            return diag.underrunCount;
+        }
+    }
+    return 0;
 }
 
 - (BOOL)isRunning {
-    return _running && _simulator != nullptr;
-}
-
-- (void)dealloc {
-    [self stop];
+    if (_runner) {
+        return _runner->isRunning();
+    }
+    return NO;
 }
 
 @end

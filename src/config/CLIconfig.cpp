@@ -162,11 +162,9 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     if (config.volume == 0.0f) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
     }
-    if (config.engineConfig) {
-        std::cout << "  Sim Freq: \x1b[32m" << config.engineConfig->simulationFrequency << " Hz\x1b[0m\n";
-        if (config.engineConfig->targetSynthesizerLatency > 0.0) {
-            std::cout << "  Synth Latency: \x1b[32m" << config.engineConfig->targetSynthesizerLatency << "s\x1b[0m\n";
-        }
+    std::cout << "  Sim Freq: \x1b[32m" << config.engineConfig.simulationFrequency << " Hz\x1b[0m\n";
+    if (config.engineConfig.targetSynthesizerLatency > 0.0) {
+        std::cout << "  Synth Latency: \x1b[32m" << config.engineConfig.targetSynthesizerLatency << "s\x1b[0m\n";
     }
     std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
     std::cout << "\n";
