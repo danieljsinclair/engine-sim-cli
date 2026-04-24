@@ -18,9 +18,18 @@ class EngineSimViewModel: ObservableObject {
 
     // MARK: - Published Properties (control state from C++ telemetry)
 
-    @Published var throttlePosition: Double = 0.0
-    @Published var ignitionEnabled: Bool = false
-    @Published var starterEnabled: Bool = false
+    @Published var throttlePosition: Double = 0.0 {
+        didSet {
+            // Forward UI changes immediately to C++ (avoid telemetry round-trip lag)
+            wrapper?.setThrottle(throttlePosition)
+        }
+    }
+    @Published var ignitionEnabled: Bool = false {
+        didSet { wrapper?.setIgnition(ignitionEnabled) }
+    }
+    @Published var starterEnabled: Bool = false {
+        didSet { wrapper?.setStarter(starterEnabled) }
+    }
 
     @Published var isConnected: Bool = false
     @Published var connectionStatus: String = "Disconnected"
@@ -117,14 +126,15 @@ class EngineSimViewModel: ObservableObject {
         self.manifoldPressure = wrapper.manifoldPressure
         self.underrunCount = Int(wrapper.underrunCount)
 
-        // Sync control state from C++ (single source of truth)
-        syncState()
+        // Controls are write-only from UI → C++; do NOT sync back from telemetry
+        // (avoids feedback loops and unnecessary property writes)
     }
 
     private func syncState() {
         guard let wrapper = wrapper else { return }
 
-        // Read control state from C++ telemetry (not from local storage)
+        // Only sync initial state from C++ on start/stop — controls are write-only during runtime
+        // This is safe: wrapper state represents the last user input that was stored
         self.throttlePosition = wrapper.throttlePosition
         self.ignitionEnabled = wrapper.ignitionEnabled
         self.starterEnabled = wrapper.starterMotorEnabled

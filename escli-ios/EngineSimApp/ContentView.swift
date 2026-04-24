@@ -43,36 +43,42 @@ struct ContentView: View {
                 }
 
                 Section(header: Text("Engine Telemetry")) {
-                    GaugeView(
-                        title: "RPM",
-                        value: String(format: "%.0f", viewModel.rpm),
-                        unit: "rpm",
-                        color: .blue
-                    )
-                    GaugeView(
-                        title: "Throttle",
-                        value: String(format: "%.0f%%", viewModel.throttlePosition * 100),
-                        unit: "",
-                        color: .green
-                    )
-                    GaugeView(
-                        title: "Load",
-                        value: String(format: "%.1f%%", viewModel.load * 100),
-                        unit: "",
-                        color: .orange
-                    )
-                    GaugeView(
-                        title: "Exhaust Flow",
-                        value: String(format: "%.2f", viewModel.exhaustFlow),
-                        unit: "m\u{00B3}/s",
-                        color: .red
-                    )
-                    GaugeView(
-                        title: "Manifold Pressure",
-                        value: String(format: "%.0f", viewModel.manifoldPressure),
-                        unit: "Pa",
-                        color: .purple
-                    )
+                    // Adaptive grid — gauges take natural width, wrap to next line
+                    LazyVGrid(columns: [
+                        GridItem(.adaptive(minimum: 160), spacing: 12),
+                        GridItem(.adaptive(minimum: 160), spacing: 12)
+                    ], spacing: 12) {
+                        GaugeView(
+                            title: "RPM",
+                            value: String(format: "%.0f", viewModel.rpm),
+                            unit: "rpm",
+                            color: .blue
+                        )
+                        GaugeView(
+                            title: "Throttle",
+                            value: String(format: "%.0f%%", viewModel.throttlePosition * 100),
+                            unit: "",
+                            color: .green
+                        )
+                        GaugeView(
+                            title: "Load",
+                            value: String(format: "%.1f%%", viewModel.load * 100),
+                            unit: "",
+                            color: .orange
+                        )
+                        GaugeView(
+                            title: "Exhaust",
+                            value: String(format: "%.2f", viewModel.exhaustFlow),
+                            unit: "m³/s",
+                            color: .red
+                        )
+                        GaugeView(
+                            title: "Pressure",
+                            value: String(format: "%.0f", viewModel.manifoldPressure),
+                            unit: "Pa",
+                            color: .purple
+                        )
+                    }
                 }
 
                 Section(header: Text("Throttle Control")) {
