@@ -45,13 +45,11 @@ clean: remove-orphans
 		$(MAKE) -C $(BUILD_DIR)/engine-sim-bridge clean 2>/dev/null || true; \
 	fi
 	@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
-	@$(MAKE) -C escli-ios clean 2>/dev/null || true
 
 # Full clean - removes everything including build directories (superset of clean)
 scrub: clean
 	@echo "Scrubbing all build artifacts..."
 	@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
-	@$(MAKE) -C escli-ios scrub 2>/dev/null || true
 	@rm -rf $(BUILD_DIR)
 	@$(MAKE) remove-orphans
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
@@ -77,11 +75,7 @@ test: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests
 	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee test.log
 
-ios:
-	@cd escli-ios && $(MAKE) all
-
-xcode:
-	@cd escli-ios && $(MAKE) xcode
+# iOS-specific targets removed — iOS app is now a separate repository (engine-sim-app)
 	
 run: all
 	./build/engine-sim-cli --interactive --play --script es/ferrari_f136.mr
