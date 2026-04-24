@@ -7,8 +7,6 @@
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
-#include <cmath>
-#include <iomanip>
 
 // ============================================================================
 // Global State (required for signal handling)
@@ -41,7 +39,7 @@ void printUsage(const char* progName) {
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
-    std::cout << "  --pre-fill-ms <ms>  Pre-fill buffer ms for sync-pull mode (default: 50)\n\n";
+    std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
@@ -77,7 +75,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--rpm", args.targetRPM, "Target RPM to maintain (default: auto)") ->check(CLI::Range(0.0, 20000.0));
     app.add_option("--load", loadArg, "FIXED throttle load percentage (ignored in interactive mode)") ->check(CLI::Range(0.0, 100.0));
     app.add_option("--output", args.outputWav, "Output WAV file path");
-    app.add_option("--duration", args.duration, "Duration in seconds (default: 3.0, ignored in interactive)") ->default_val(3.0);
+    app.add_option("--duration", args.duration, "Duration in seconds (default: 3.0, ignored in interactive)");
     app.add_option("--sim-freq", args.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
     app.add_option("--synth-latency", args.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
     app.add_option("--pre-fill-ms", args.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
@@ -170,6 +168,6 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
             std::cout << "  Synth Latency: \x1b[32m" << config.engineConfig->targetSynthesizerLatency << "s\x1b[0m\n";
         }
     }
-    std::cout << "  Pre-fill Ms: " << config.preFillMs << "\n";
+    std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
     std::cout << "\n";
 }

@@ -1,6 +1,7 @@
 #import "EngineSimWrapper.h"
 #include "simulator/SimulatorFactory.h"
 #include "simulator/ISimulator.h"
+#include "simulator/EngineSimTypes.h"
 #include <memory>
 
 @implementation EngineSimWrapper {
@@ -20,12 +21,20 @@
 
 - (BOOL)loadScript:(NSString *)scriptPath assetBase:(NSString *)assetBasePath {
     @try {
-        SimulatorFactoryConfig config;
-        config.type = SimulatorType::PistonEngine;
-        config.scriptPath = std::string([scriptPath UTF8String]);
-        config.assetBasePath = std::string([assetBasePath UTF8String] ?: "");
+        // Use default config from EngineSimDefaults
+        ISimulatorConfig config;
 
-        _simulator = SimulatorFactory::create(config, nullptr, nullptr);
+        std::string scriptPathStr([scriptPath UTF8String]);
+        std::string assetBasePathStr([assetBasePath UTF8String] ?: "");
+
+        _simulator = SimulatorFactory::create(
+            SimulatorType::PistonEngine,
+            scriptPathStr,
+            assetBasePathStr,
+            config,
+            nullptr,
+            nullptr
+        );
         return _simulator != nullptr;
     } @catch (...) {
         _simulator.reset();

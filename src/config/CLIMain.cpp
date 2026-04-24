@@ -71,7 +71,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.configPath = args.engineConfig;
     config.assetBasePath = "";
 
-    // Resolve CLI args (0-sentinel pattern: use SimulationConfig default if arg is 0)
+    // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
     config.interactive = args.interactive != config.interactive ? args.interactive : config.interactive;
     config.playAudio = args.playAudio != config.playAudio ? args.playAudio : config.playAudio;
     config.duration = args.duration > 0.0 ? args.duration : config.duration;
@@ -80,8 +80,8 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.targetRPM = args.targetRPM != config.targetRPM ? args.targetRPM : config.targetRPM;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
     config.useDefaultEngine = args.useDefaultEngine != config.useDefaultEngine ? args.useDefaultEngine : config.useDefaultEngine;
-
     config.preFillMs = (args.preFillMs > 0) ? args.preFillMs : config.preFillMs;
+
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
 
     // Create ISimulatorConfig - single source of truth for audio/simulation constants

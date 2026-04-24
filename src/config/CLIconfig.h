@@ -5,8 +5,6 @@
 #define CLI_CONFIG_H
 
 #include <atomic>
-#include <cstdint>
-#include <cstddef>
 #include <string>
 #include "simulator/EngineSimTypes.h"
 
@@ -32,7 +30,7 @@ struct CommandLineArgs {
     float crankingVolume = 0.0f; // 0-sentinel, resolved by bridge/SimulationConfig
     int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
     double synthLatency = 0.0;   // Synth latency seconds — 0 means use EngineSimDefaults
-    int preFillMs = 0;           // Pre-fill buffer duration — 0 means use bridge default
+    int preFillMs = 0;           // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
 };
 
 // ============================================================================

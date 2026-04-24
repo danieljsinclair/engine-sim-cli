@@ -39,6 +39,18 @@
 			isa = PBXBuildFile;
 			fileRef = C2000030 /* libenginesim.a */;
 		};
+		C1000031 /* libengine-sim.a in Frameworks */ = {
+			isa = PBXBuildFile;
+			fileRef = C2000031 /* libengine-sim.a */;
+		};
+		C1000032 /* libcsv-io.a in Frameworks */ = {
+			isa = PBXBuildFile;
+			fileRef = C2000032 /* libcsv-io.a */;
+		};
+		C1000033 /* libsimple-2d-constraint-solver.a in Frameworks */ = {
+			isa = PBXBuildFile;
+			fileRef = C2000033 /* libsimple-2d-constraint-solver.a */;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -122,7 +134,28 @@
 			isa = PBXFileReference;
 			lastKnownFileType = archive.ar;
 			name = libenginesim.a;
-			path = "../build-iphoneos/libenginesim.a";
+			path = "../build-$(PLATFORM_NAME)/libenginesim.a";
+			sourceTree = "<group>";
+		};
+		C2000031 /* libengine-sim.a */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = archive.ar;
+			name = libengine-sim.a;
+			path = "../build-$(PLATFORM_NAME)/engine-sim/libengine-sim.a";
+			sourceTree = "<group>";
+		};
+		C2000032 /* libcsv-io.a */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = archive.ar;
+			name = libcsv-io.a;
+			path = "../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/csv-io/libcsv-io.a";
+			sourceTree = "<group>";
+		};
+		C2000033 /* libsimple-2d-constraint-solver.a */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = archive.ar;
+			name = libsimple-2d-constraint-solver.a;
+			path = "../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/simple-2d-constraint-solver/libsimple-2d-constraint-solver.a";
 			sourceTree = "<group>";
 		};
 /* End PBXFileReference section */
@@ -132,6 +165,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1000033 /* libsimple-2d-constraint-solver.a in Frameworks */,
+				C1000032 /* libcsv-io.a in Frameworks */,
+				C1000031 /* libengine-sim.a in Frameworks */,
 				C1000030 /* libenginesim.a in Frameworks */,
 				C1000020 /* AudioToolbox.framework in Frameworks */,
 				C1000021 /* CoreAudio.framework in Frameworks */,
@@ -305,6 +341,9 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/csv-io",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/simple-2d-constraint-solver",
 				);
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -386,6 +425,9 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/csv-io",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/simple-2d-constraint-solver",
 				);
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -428,6 +470,9 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/csv-io",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/simple-2d-constraint-solver",
 				);
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -460,6 +505,9 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/csv-io",
+					"$(PROJECT_DIR)/../build-$(PLATFORM_NAME)/engine-sim/dependencies/submodules/simple-2d-constraint-solver",
 				);
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

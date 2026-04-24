@@ -3,13 +3,17 @@ import Combine
 
 /// Observable view model for SwiftUI engine telemetry display.
 /// Maps directly from C++ EngineSimStats via EngineSimWrapper.
+/// Control state is queried from C++ layer to ensure synchronization.
 class EngineSimViewModel: ObservableObject {
-    // MARK: - Published Properties (match EngineSimStats exactly)
+    // MARK: - Published Properties (telemetry)
 
     @Published var rpm: Double = 0.0
     @Published var load: Double = 0.0
     @Published var exhaustFlow: Double = 0.0
     @Published var manifoldPressure: Double = 0.0
+
+    // MARK: - Published Properties (control state - synced from C++)
+
     @Published var throttlePosition: Double = 0.0
     @Published var ignitionEnabled: Bool = false
     @Published var starterEnabled: Bool = false
