@@ -1,11 +1,12 @@
 /**
  * @brief Objective-C++ thin bridge between C++ engine-sim-bridge and Swift UI.
  *
- * Zero simulation logic -- delegates entirely to C++ via the C API in engine_sim_bridge.h.
+ * Zero simulation logic -- delegates entirely to C++ via ISimulator interface.
  *
  * Usage from Swift:
  *   let wrapper = EngineSimWrapper()
- *   wrapper.startEngine()
+ *   wrapper.loadScript(...)
+ *   wrapper.startAudioThread()
  *   let rpm = wrapper.currentRPM
  */
 
@@ -13,7 +14,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Objective-C++ wrapper for engine-sim-bridge C API
+/// Objective-C++ wrapper for ISimulator interface
 @interface EngineSimWrapper : NSObject
 
 /// Initialize the simulator with default configuration

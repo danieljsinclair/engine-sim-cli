@@ -1,9 +1,10 @@
 #import "EngineSimWrapper.h"
-#include "simulator/engine_sim_bridge.h"
+#include "simulator/SimulatorFactory.h"
+#include "simulator/ISimulator.h"
 #include <memory>
 
 @implementation EngineSimWrapper {
-    EngineSimHandle _handle;
+    std::unique_ptr<ISimulator> _simulator;
     EngineSimStats _lastStats;
     BOOL _running;
 }
@@ -11,7 +12,6 @@
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _handle = nullptr;
         _running = NO;
         memset(&_lastStats, 0, sizeof(_lastStats));
     }
@@ -19,38 +19,23 @@
 }
 
 - (BOOL)loadScript:(NSString *)scriptPath assetBase:(NSString *)assetBasePath {
-    // Create simulator if not already created
-    if (!_handle) {
-        EngineSimConfig config;
-        config.sampleRate = 48000;
-        config.inputBufferSize = 1024;
-        config.audioBufferSize = 96000;
-        config.simulationFrequency = 10000;
-        config.fluidSimulationSteps = 8;
-        config.targetSynthesizerLatency = 0.05;
-        config.volume = 1.0f;
-        config.convolutionLevel = 0.5f;
-        config.airNoise = 1.0f;
-        config.sineMode = 0;
+    @try {
+        SimulatorFactoryConfig config;
+        config.type = SimulatorType::PistonEngine;
+        config.scriptPath = std::string([scriptPath UTF8String]);
+        config.assetBasePath = std::string([assetBasePath UTF8String] ?: "");
 
-        EngineSimResult result = EngineSimCreate(&config, &_handle);
-        if (result != ESIM_SUCCESS) {
-            return NO;
-        }
+        _simulator = SimulatorFactory::create(config, nullptr, nullptr);
+        return _simulator != nullptr;
+    } @catch (...) {
+        _simulator.reset();
+        return NO;
     }
-
-    EngineSimResult result = EngineSimLoadScript(
-        _handle,
-        [scriptPath UTF8String],
-        [assetBasePath UTF8String]
-    );
-    return result == ESIM_SUCCESS;
 }
 
 - (BOOL)startAudioThread {
-    if (!_handle) return NO;
-    EngineSimResult result = EngineSimStartAudioThread(_handle);
-    if (result == ESIM_SUCCESS) {
+    if (!_simulator) return NO;
+    if (_simulator->start()) {
         _running = YES;
         return YES;
     }
@@ -58,29 +43,32 @@
 }
 
 - (void)stop {
-    if (_handle) {
-        EngineSimDestroy(_handle);
-        _handle = nullptr;
+    if (_simulator) {
+        if (_running) {
+            _simulator->stop();
+        }
+        _simulator->destroy();
+        _simulator.reset();
     }
     _running = NO;
 }
 
 - (void)update:(double)deltaTime {
-    if (!_handle) return;
-    EngineSimUpdate(_handle, deltaTime);
-    EngineSimGetStats(_handle, &_lastStats);
+    if (!_simulator) return;
+    _simulator->update(deltaTime);
+    _lastStats = _simulator->getStats();
 }
 
 - (void)setThrottle:(double)position {
-    if (_handle) EngineSimSetThrottle(_handle, position);
+    if (_simulator) _simulator->setThrottle(position);
 }
 
 - (void)setIgnition:(BOOL)enabled {
-    if (_handle) EngineSimSetIgnition(_handle, enabled ? 1 : 0);
+    if (_simulator) _simulator->setIgnition(enabled);
 }
 
 - (void)setStarter:(BOOL)enabled {
-    if (_handle) EngineSimSetStarterMotor(_handle, enabled ? 1 : 0);
+    if (_simulator) _simulator->setStarterMotor(enabled);
 }
 
 - (double)currentRPM {
@@ -100,7 +88,7 @@
 }
 
 - (BOOL)isRunning {
-    return _running && _handle != nullptr;
+    return _running && _simulator != nullptr;
 }
 
 - (void)dealloc {

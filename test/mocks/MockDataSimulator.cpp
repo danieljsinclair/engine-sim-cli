@@ -18,7 +18,7 @@ MockDataSimulatorContext::MockDataSimulatorContext() {
     m_conversionBuffer.resize(4096 * 2, 0); // Max frames * 2 channels
 }
 
-void MockDataSimulatorContext::initialize(const EngineSimConfig* config) {
+void MockDataSimulatorContext::initialize(const ISimulatorConfig* config) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (config) {
@@ -26,7 +26,6 @@ void MockDataSimulatorContext::initialize(const EngineSimConfig* config) {
     } else {
         // Use defaults
         m_config.sampleRate = SAMPLE_RATE;
-        m_config.audioBufferSize = static_cast<int32_t>(AUDIO_BUFFER_SIZE);
     }
 
     // Reset state
@@ -35,10 +34,10 @@ void MockDataSimulatorContext::initialize(const EngineSimConfig* config) {
     m_lastError.clear();
 }
 
-EngineSimResult MockDataSimulatorContext::renderAudio(float* buffer, int32_t frames, int32_t* outSamplesWritten) {
+bool MockDataSimulatorContext::renderAudio(float* buffer, int32_t frames, int32_t* outSamplesWritten) {
     if (!buffer || frames <= 0) {
         m_lastError = "Invalid parameters to renderAudio";
-        return ESIM_ERROR_INVALID_PARAMETER;
+        return false;
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -52,7 +51,7 @@ EngineSimResult MockDataSimulatorContext::renderAudio(float* buffer, int32_t fra
         if (outSamplesWritten) {
             *outSamplesWritten = 0;
         }
-        return ESIM_SUCCESS;
+        return true;
     }
 
     // Convert samples from int16 to float [-1.0, 1.0]
@@ -76,10 +75,10 @@ EngineSimResult MockDataSimulatorContext::renderAudio(float* buffer, int32_t fra
         *outSamplesWritten = samplesWritten / 2; // Frames, not samples
     }
 
-    return ESIM_SUCCESS;
+    return true;
 }
 
-EngineSimResult MockDataSimulatorContext::renderOnDemand(float* buffer, int32_t frames, int32_t* outSamplesWritten) {
+bool MockDataSimulatorContext::renderOnDemand(float* buffer, int32_t frames, int32_t* outSamplesWritten) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Generate audio on-demand (for sync-pull mode)
@@ -103,13 +102,13 @@ EngineSimResult MockDataSimulatorContext::renderOnDemand(float* buffer, int32_t 
         *outSamplesWritten = samplesGenerated / 2; // Convert samples to frames
     }
 
-    return ESIM_SUCCESS;
+    return true;
 }
 
-EngineSimResult MockDataSimulatorContext::setThrottle(double position) {
+bool MockDataSimulatorContext::setThrottle(double position) {
     if (position < 0.0 || position > 1.0) {
         m_lastError = "Throttle position out of range";
-        return ESIM_ERROR_INVALID_PARAMETER;
+        return false;
     }
 
     m_throttle.store(position, std::memory_order_relaxed);
@@ -120,10 +119,10 @@ EngineSimResult MockDataSimulatorContext::setThrottle(double position) {
     m_stats.currentRPM = newRPM;
     m_stats.currentLoad = position;
 
-    return ESIM_SUCCESS;
+    return true;
 }
 
-EngineSimResult MockDataSimulatorContext::setSpeedControl(double position) {
+bool MockDataSimulatorContext::setSpeedControl(double position) {
     return setThrottle(position); // Delegates to throttle
 }
 
@@ -173,36 +172,35 @@ float MockDataSimulatorContext::int16ToFloat(int16_t sample) const {
 MockDataSimulator::MockDataSimulator() {
     m_context = std::make_unique<MockDataSimulatorContext>();
 
-    // Initialize with default config
-    EngineSimConfig defaultConfig;
-    defaultConfig.sampleRate = 48000;  // MockDataSimulatorContext::SAMPLE_RATE
-    defaultConfig.audioBufferSize = 96000;  // MockDataSimulatorContext::AUDIO_BUFFER_SIZE
+    // Initialize with default config — single source of truth via EngineSimDefaults
+    ISimulatorConfig defaultConfig;
+    defaultConfig.sampleRate = MockDataSimulatorContext::SAMPLE_RATE;
     m_context->initialize(&defaultConfig);
 }
 
 MockDataSimulator::~MockDataSimulator() = default;
 
-void MockDataSimulator::initialize(const EngineSimConfig* config) {
+void MockDataSimulator::initialize(const ISimulatorConfig* config) {
     m_context->initialize(config);
 }
 
-EngineSimResult MockDataSimulatorContext::update(double deltaTime) {
+bool MockDataSimulatorContext::update(double deltaTime) {
     (void)deltaTime; // Not needed for mock
-    return ESIM_SUCCESS;
+    return true;
 }
 
-EngineSimResult MockDataSimulatorContext::start() {
+bool MockDataSimulatorContext::start() {
     m_audioThreadRunning.store(true, std::memory_order_release);
-    return ESIM_SUCCESS;
+    return true;
 }
 
-EngineSimResult MockDataSimulatorContext::getStats(EngineSimStats* outStats) {
+bool MockDataSimulatorContext::getStats(EngineSimStats* outStats) {
     if (!outStats) {
-        return ESIM_ERROR_INVALID_PARAMETER;
+        return false;
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
     *outStats = m_stats;
 
-    return ESIM_SUCCESS;
+    return true;
 }

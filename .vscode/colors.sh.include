@@ -1,0 +1,146 @@
+#!/bin/bash
+
+#############################################################################
+# Color definitions for all scripts
+# Source this file to get consistent color variables across the project
+# Full list at https://gist.github.com/kylieCat/86744517063e8ec2daf8c69363720ecd
+#############################################################################
+
+# Special
+export          NC='\033[0m' # No Color
+
+# Basic colors
+export         RED='\033[0;31m'
+export       GREEN='\033[0;32m'
+export        BLUE='\033[0;34m'
+export      PURPLE='\033[0;35m'
+export        CYAN='\033[0;36m'
+export      YELLOW='\033[1;33m'
+export       WHITE='\033[1;37m'
+
+export  DARK_GREEN='\033[0;38;5;22m'
+export   LIGHTBLUE='\033[0;38;5;81m'
+export    SKYBLUE1='\033[0;38;5;117m'
+export  LIGHTGREEN='\033[0;38;5;118m'
+export LIGHTYELLOW='\033[0;38;5;119m'
+export  LIME_GREEN='\033[0;38;5;120m'
+export       BROWN='\033[0;38;5;130m'
+export    LIGHTRED='\033[0;38;5;167m'
+export        PINK='\033[0;38;5;213m'
+export      ORANGE='\033[0;38;5;214m'
+
+export        GREY='\033[0;90m'
+export        GRAY="$GREY"
+
+# Aliases for common usage patterns
+export       ERROR="${RED}"
+export     WARNING="${YELLOW}"
+export     SUCCESS="${GREEN}"
+export        INFO="${CYAN}"
+#export       DEBUG="\033[0;35m" # BUG: remove this as a workaround a Sonar bug where it interprets a reference to PURPLE as a js regex and hangs the scanner on end
+export       RESET="${NC}"
+
+# Additional colors specific to run-lib
+export       BLACK='\033[0;30m'
+
+#############################################################################
+# Color conversion functions
+#############################################################################
+
+
+# Helper: Parse hex to r/g/b integer
+hex_to_rgb_int() {
+  local hex=${1#"#"}
+  local r g b
+  r=$(printf "%d" "0x${hex:0:2}")
+  g=$(printf "%d" "0x${hex:2:2}")
+  b=$(printf "%d" "0x${hex:4:2}")
+  echo "$r $g $b"
+}
+
+format_float() {
+  local precision="${2:-3}"
+  awk "BEGIN {result = sprintf(\"%.$precision""f\", $1)
+  print (result ~ /^0\\.0+$/) ? \"0\" : result}"
+}
+
+# Scale a hex component by 11/16 for inactive foreground calculation
+scale_component() {
+  printf "%02x" $(( (16#$1 * 11 + 8) / 16 ))
+}
+
+
+# Helper: Convert hex to normalized RGB floats (returns r g b)
+hex_to_rgb_float() {
+  local hex="$1"
+  local precision="${2:-3}"
+  read -r r g b < <(hex_to_rgb_int "$hex")
+  local rf gf bf
+  rf=$(format_float "$(echo "$r/255" | bc -l)" "$precision")
+  gf=$(format_float "$(echo "$g/255" | bc -l)" "$precision")
+  bf=$(format_float "$(echo "$b/255" | bc -l)" "$precision")
+  echo "$rf $gf $bf"
+}
+
+# Convert hex color to RGBA (0-1 float format: "r, g, b, a")
+hex_to_rgba() {
+  local hex="$1"
+  local precision="${2:-3}"
+  read -r rf gf bf < <(hex_to_rgb_float "$hex" "$precision")
+  echo "$rf, $gf, $bf, 1"
+}
+
+# Convert hex color to Unity RGBA format and calculate inactive foreground
+hex_to_rgba_with_highlight() {
+  local hex_bg="$1"
+  local hex_fg="$2"
+  local fg_hex=${hex_fg#"#"}
+  local r g b
+  read -r r g b < <(hex_to_rgb_int "$fg_hex" 3)
+  local inactive_fg
+  inactive_fg="#$(scale_component "$(printf "%02x" "$r")")$(scale_component "$(printf "%02x" "$g")")$(scale_component "$(printf "%02x" "$b")")"
+  echo "bg_rgba=$(hex_to_rgba "$hex_bg") fg=$hex_fg inactive_fg=$inactive_fg"
+}
+
+
+# Convert hex to Unity RGBA format (Unity uses {r: x, g: y, b: z, a: w})
+hex_to_unity_rgba() {
+  local hex="$1"
+  local precision="${2:-3}"
+  read -r rf gf bf < <(hex_to_rgb_float "$hex" "$precision")
+  echo "{r: $rf, g: $gf, b: $bf, a: 1}"
+}
+
+
+# Convert hex to iOS launch screen ABGR integer format (Unity uses ABGR byte order)
+hex_to_ios_rgba() {
+  local hex="$1"
+  read -r r g b < <(hex_to_rgb_int "$hex" 3)
+  local a=255  # Full alpha
+  local abgr_int=$(( (a << 24) | (b << 16) | (g << 8) | r ))
+  echo "$abgr_int"
+}
+
+# Check if rgba color values match with specified precision
+# Usage: color_values_match_precision {target_hex} {current_rgba_string} (precision_digits)
+rgba_values_match_with_precision() {
+  local target_hex="$1"
+  local current_rgba="$2"
+  local precision="${3:-6}"  # Default to 6 decimal places
+
+  # Extract current values (format: {r: 0.333333, g: 0.133333, b: 0.000000, a: 1})
+  local current_r current_g current_b
+  current_r=$(echo "$current_rgba" | sed -n 's/.*r: \([0-9.]*\).*/\1/p')
+  current_g=$(echo "$current_rgba" | sed -n 's/.*g: \([0-9.]*\).*/\1/p')
+  current_b=$(echo "$current_rgba" | sed -n 's/.*b: \([0-9.]*\).*/\1/p')
+
+  # Get target values formatted to specified precision
+  read -r target_rf target_gf target_bf < <(hex_to_rgb_float "$target_hex" "$precision")
+  local target_r target_g target_b
+  target_r=$(printf "%.${precision}f" "$target_rf")
+  target_g=$(printf "%.${precision}f" "$target_gf")
+  target_b=$(printf "%.${precision}f" "$target_bf")
+
+  # Check if current values start with our target values at the specified precision
+  [[ "$current_r" == "$target_r"* && "$current_g" == "$target_g"* && "$current_b" == "$target_b"* ]]
+}

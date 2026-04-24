@@ -6,6 +6,7 @@
 
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
+CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
 # Default to parallel build using available CPU cores
@@ -74,7 +75,7 @@ $(BUILD_DIR)/Makefile: submodules
 
 test: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests
-	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure" 2>&1 | tee $(BUILD_DIR)/test.log
+	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee test.log
 
 ios:
 	@cd escli-ios && $(MAKE) all

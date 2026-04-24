@@ -7,7 +7,7 @@
 #define MOCK_SIMULATOR_H
 
 #include "simulator/ISimulator.h"
-#include "simulator/engine_sim_bridge.h"
+#include "simulator/EngineSimTypes.h"
 #include "MockInputProvider.h"
 #include <cstring>
 #include <vector>
@@ -45,17 +45,11 @@ public:
     }
 
     // Lifecycle
-    bool create(const EngineSimConfig& config, ILogging* logger, telemetry::ITelemetryWriter* telemetryWriter) override {
+    bool create(const ISimulatorConfig& config, ILogging* logger, telemetry::ITelemetryWriter* telemetryWriter) override {
         config_ = config;
         logger_ = logger;
         telemetryWriter_ = telemetryWriter;
         created_ = true;
-        return true;
-    }
-
-    bool loadScript(const std::string& path, const std::string& assetBase) override {
-        scriptPath_ = path;
-        assetBasePath_ = assetBase;
         return true;
     }
 
@@ -125,10 +119,8 @@ public:
     }
 
 private:
-    EngineSimConfig config_{};
+    ISimulatorConfig config_{};
     EngineSimStats stats_{};
-    std::string scriptPath_;
-    std::string assetBasePath_;
     std::string lastError_;
     ILogging* logger_ = nullptr;
     telemetry::ITelemetryWriter* telemetryWriter_ = nullptr;

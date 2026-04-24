@@ -122,7 +122,7 @@
 			isa = PBXFileReference;
 			lastKnownFileType = archive.ar;
 			name = libenginesim.a;
-			path = "../build-ios-device/libenginesim.a";
+			path = "../build-iphoneos/libenginesim.a";
 			sourceTree = "<group>";
 		};
 /* End PBXFileReference section */

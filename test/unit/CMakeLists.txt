@@ -51,4 +51,5 @@ add_test(NAME unit_tests
 set_tests_properties(unit_tests PROPERTIES
     TIMEOUT 30
     LABELS "unit"
+    RESOURCE_LOCK "audio_device"
 )

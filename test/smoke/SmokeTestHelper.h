@@ -55,7 +55,7 @@ public:
     static int runCLI(const std::string& args) {
         std::string projectRoot = getProjectRoot();
         std::string cliPath = getCLIPath();
-        std::string logFile = projectRoot + "/build/cli_test.log";
+        std::string logFile = projectRoot + "/build/cli_test_" + std::to_string(getpid()) + ".log";
         std::string command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + args + " >> " + logFile + " 2>&1";
         return system(command.c_str());
     }

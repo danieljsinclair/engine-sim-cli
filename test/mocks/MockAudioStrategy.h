@@ -28,7 +28,7 @@ public:
     void reset() override {}
     std::string getModeString() const override { return "Mock mode"; }
 
-    bool initialize(const AudioStrategyConfig& config) override { return true; }
+    bool initialize(const AudioBufferConfig& config) override { return true; }
     void prepareBuffer() override {}
     bool startPlayback(ISimulator* simulator) override {
         playing_.store(true);

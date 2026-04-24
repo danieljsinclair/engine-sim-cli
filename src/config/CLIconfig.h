@@ -8,7 +8,10 @@
 #include <cstdint>
 #include <cstddef>
 #include <string>
-#include "strategy/AudioLoopConfig.h"
+#include "simulator/EngineSimTypes.h"
+
+// Forward declarations
+class SimulationConfig;
 
 // ============================================================================
 // Command Line Arguments
@@ -17,18 +20,19 @@
 struct CommandLineArgs {
     std::string engineConfig;
     std::string outputWav;
-    double duration = 3.0;
+    double duration = 0.0;        // 0-sentinel, resolved by bridge/SimulationConfig
     double targetRPM = 0.0;
-    double targetLoad = -1.0;  // -1 means auto (RPM control)
+    double targetLoad = -1.0;     // -1 means auto (RPM control)
     bool interactive = false;
     bool playAudio = false;
     bool useDefaultEngine = false;
-    bool sineMode = false;  // Generate sine wave test tone instead of engine audio
-    bool syncPull = true;  // Use sync pull model by default
-    bool silent = false;   // Run full audio pipeline but with zero volume
-    float crankingVolume = 1.0f;  // Cranking volume boost (applied when ignition ON, RPM < threshold, no exhaust flow)
-    int simulationFrequency = EngineConstants::DEFAULT_SIMULATION_FREQUENCY;  // Physics Hz - lower for faster sync-pull
-    int preFillMs = 50;  // Pre-fill buffer duration in ms for sync-pull mode
+    bool sineMode = false;       // Generate sine wave test tone instead of engine audio
+    bool syncPull = true;        // Use sync pull model by default
+    bool silent = false;         // Run full audio pipeline but with zero volume
+    float crankingVolume = 0.0f; // 0-sentinel, resolved by bridge/SimulationConfig
+    int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
+    double synthLatency = 0.0;   // Synth latency seconds — 0 means use EngineSimDefaults
+    int preFillMs = 0;           // Pre-fill buffer duration — 0 means use bridge default
 };
 
 // ============================================================================
@@ -44,6 +48,6 @@ extern std::atomic<bool> g_interactiveMode;
 
 void printUsage(const char* progName);
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
-void ShowConfigHeader(CommandLineArgs& config, const char* engineAPIVersion);
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion);
 
 #endif // CLI_CONFIG_H

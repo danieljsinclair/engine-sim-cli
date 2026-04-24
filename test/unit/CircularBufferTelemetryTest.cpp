@@ -32,10 +32,9 @@ protected:
         strategy_ = std::make_unique<ThreadedStrategy>(nullptr, telemetry_.get());
 
         // Initialize strategy
-        AudioStrategyConfig config;
-        config.sampleRate = DEFAULT_SAMPLE_RATE;
+        AudioBufferConfig config;
         config.channels = STEREO_CHANNELS;
-        ASSERT_TRUE(strategy_->initialize(config));
+        ASSERT_TRUE(strategy_->initialize(config, DEFAULT_SAMPLE_RATE));
     }
 
     void TearDown() override {
@@ -143,10 +142,9 @@ TEST_F(CircularBufferTelemetryTest, SyncPullStrategy_DoesNotPushAudioDiagnostics
     // Arrange: Create SyncPullStrategy
     auto syncStrategy = std::make_unique<SyncPullStrategy>(nullptr);
 
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    syncStrategy->initialize(config);
+    syncStrategy->initialize(config, DEFAULT_SAMPLE_RATE);
 
     // Act: SyncPullStrategy.render() will fail without engine API,
     //      but it should NOT push audio diagnostics to telemetry
