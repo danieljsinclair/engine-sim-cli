@@ -19,17 +19,6 @@ FetchContent_MakeAvailable(cli11)
 # Add engine-sim-bridge submodule
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 
-# -------------------------------------------------------------------
-# iOS builds: only build the bridge static library, skip CLI and tests
-# -------------------------------------------------------------------
-if(IOS)
-    return()
-endif()
-
-# -------------------------------------------------------------------
-# macOS CLI executable (not built for iOS)
-# -------------------------------------------------------------------
-
 # Platform-specific audio libraries
 if(APPLE)
     set(AUDIO_LIBRARY "-framework AudioToolbox -framework CoreAudio -framework CoreFoundation")
@@ -96,6 +85,7 @@ add_dependencies(engine-sim-cli engine-sim-bridge)
 # Installation
 install(TARGETS engine-sim-cli
     RUNTIME DESTINATION bin
+    BUNDLE DESTINATION bin
 )
 
 # -----------------------------------------------------------------------------

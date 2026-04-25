@@ -75,7 +75,5 @@ test: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests
 	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee test.log
 
-# iOS-specific targets removed — iOS app is now a separate repository (engine-sim-app)
-	
 run: all
 	./build/engine-sim-cli --interactive --play --script es/ferrari_f136.mr
