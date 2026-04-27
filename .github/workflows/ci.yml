@@ -23,68 +23,49 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
+        fetch-depth: 1
         submodules: recursive
 
-    # Cache Homebrew bottle downloads AND installed Cellar dirs, keyed on this file.
-    # On a cache hit: the Cellar dirs are already present, so `brew install` is a no-op
-    # (each formula checks if it's already linked before doing any work).
-    # On a cache miss: brew downloads and installs normally, then the cache is saved.
-    # This typically cuts the "Install dependencies" step from ~29s to ~3s on warm runs.
+    # Cache only Homebrew download artifacts, not installed Cellar/opt state.
+    # This avoids brittle restore failures while still reusing downloaded bottles
+    # for faster dependency installs.
     - name: Cache Homebrew packages
       id: brew-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
-          ~/Library/Caches/Homebrew/downloads
-          /opt/homebrew/Cellar/bison
-          /opt/homebrew/Cellar/flex
-          /opt/homebrew/Cellar/boost
-          /opt/homebrew/Cellar/ccache
-          /opt/homebrew/opt/bison
-          /opt/homebrew/opt/flex
-          /opt/homebrew/opt/boost
-          /opt/homebrew/opt/ccache
-        key: brew-macos-${{ hashFiles('.github/workflows/ci.yml') }}
+          ~/Library/Caches/Homebrew
+        key: brew-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Brewfile') }}
+        restore-keys: |
+          brew-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Install dependencies
       env:
         HOMEBREW_NO_AUTO_UPDATE: "1"
         HOMEBREW_NO_INSTALL_CLEANUP: "1"
       run: |
-        # If the Cellar cache was restored, re-link the formulae (restoring /opt/homebrew/bin
-        # symlinks that are not cached). brew link is a no-op if already linked.
-        if [ "${{ steps.brew-cache.outputs.cache-hit }}" = "true" ]; then
-          brew link bison flex boost ccache 2>/dev/null || true
-        else
-          brew install bison flex boost ccache
-        fi
+        brew bundle --file Brewfile
         # bison is keg-only (macOS ships 2.3, Piranha needs 3.2+).
         echo "/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
         echo "/usr/local/opt/bison/bin"    >> $GITHUB_PATH
 
-    # ccache caches compiled objects by content hash — correct regardless of mtime.
-    # Key on sha so the full cache is saved per commit; restore-keys fall back to any
-    # prior commit's cache, giving a warm start while still rebuilding changed files.
     - name: Restore ccache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ env.CCACHE_DIR }}
         key: ccache-macos-${{ github.sha }}
         restore-keys: |
           ccache-macos-
 
-    # FetchContent downloads (CLI11, googletest) are expensive and rarely change.
-    # Keyed on all CMakeLists.txt files that declare FetchContent_Declare so any
-    # new dependency or version bump triggers a fresh download.
     - name: Restore FetchContent dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: build/_deps
-        key: fetchcontent-macos-${{ hashFiles('CMakeLists.txt', 'engine-sim-bridge/CMakeLists.txt', 'test/CMakeLists.txt') }}
+        key: fetchcontent-cli-macos-${{ hashFiles('CMakeLists.txt', 'engine-sim-bridge/CMakeLists.txt', 'test/CMakeLists.txt') }}
         restore-keys: |
-          fetchcontent-macos-
+          fetchcontent-cli-macos-
 
     - name: Configure
       run: |
@@ -97,4 +78,9 @@ jobs:
       run: cmake --build build -- -j$(sysctl -n hw.logicalcpu)
 
     - name: Run tests
-      run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu)
+      run: ctest --test-dir build --output-on-failure -V -j$(sysctl -n hw.logicalcpu)
+
+    - name: Smoke test binary
+      run: |
+        ./build/engine-sim-cli --sine --duration 1 --silent
+        echo "Smoke test passed"
