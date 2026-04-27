@@ -122,23 +122,29 @@ int main(int argc, char* argv[]) {
         std::string scriptPath = args.useDefaultEngine ? "engine-sim-bridge/engine-sim/assets/main.mr" : std::string(args.engineConfig);
         std::string assetBasePath = "";
 
-        std::unique_ptr<ISimulator> simulator = SimulatorFactory::create(
-            type, scriptPath, assetBasePath, config.engineConfig,
-            cliLogger.get(), telemetry.get());
+        std::unique_ptr<ISimulator> simulator;
+        std::unique_ptr<IAudioBuffer> audioBuffer;
+        input::IInputProvider* inputProvider = nullptr;
+        presentation::IPresentation* presentation = nullptr;
 
-        // Create strategy via factory - pass telemetry so strategies push diagnostics
-        AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-        std::unique_ptr<IAudioBuffer> audioBuffer = IAudioBufferFactory::createBuffer(mode, cliLogger.get(), telemetry.get());
-        input::IInputProvider* inputProvider = createInputProvider(config, cliLogger.get());
-        presentation::IPresentation* presentation = createPresentation(config);
-
-        // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)
         try
         {
+            simulator = SimulatorFactory::create(
+                type, scriptPath, assetBasePath, config.engineConfig,
+                cliLogger.get(), telemetry.get());
+
+            // Create strategy via factory - pass telemetry so strategies push diagnostics
+            AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+            audioBuffer = IAudioBufferFactory::createBuffer(mode, cliLogger.get(), telemetry.get());
+            inputProvider = createInputProvider(config, cliLogger.get());
+            presentation = createPresentation(config);
+
+            // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)
             result = runSimulation(config, *simulator, audioBuffer.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
         }
         catch (const std::exception& e) {
             std::cerr << "ERROR: " << e.what() << std::endl;
+            result = 1;
         }
 
         delete inputProvider;
