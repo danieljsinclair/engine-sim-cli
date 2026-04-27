@@ -29,7 +29,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        brew install bison flex boost ccache
+        HOMEBREW_NO_AUTO_UPDATE=1 brew install bison flex boost ccache
         # bison is keg-only (macOS ships 2.3, Piranha needs 3.2+).
         # Add it to PATH so cmake and child processes find it without custom detection.
         echo "/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
@@ -68,4 +68,4 @@ jobs:
       run: cmake --build build -- -j$(sysctl -n hw.logicalcpu)
 
     - name: Run tests
-      run: ctest --test-dir build --output-on-failure
+      run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu)
