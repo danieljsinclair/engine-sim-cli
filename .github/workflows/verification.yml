@@ -1,4 +1,4 @@
-name: Engine-Sim-CLI Verification
+name: Verification
 
 on:
   push:
@@ -6,12 +6,17 @@ on:
   pull_request:
     branches: [ master, main ]
   schedule:
-    # Run verification daily at 2 AM UTC
+    # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
 
 jobs:
-  verification:
+  verify:
+    name: Build and verify (macOS)
     runs-on: macos-latest
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
 
     steps:
     - name: Checkout code
@@ -19,121 +24,53 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Set up Xcode
-      uses: maxim-lobanov/setup-xcode@v1
+    - name: Install dependencies
+      run: |
+        brew install bison flex boost ccache
+        echo "/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
+        echo "/usr/local/opt/bison/bin"    >> $GITHUB_PATH
+
+    - name: Restore ccache
+      uses: actions/cache@v4
       with:
-        xcode-version: latest-stable
+        path: ${{ env.CCACHE_DIR }}
+        key: ccache-verify-macos-${{ github.sha }}
+        restore-keys: |
+          ccache-verify-macos-
 
-    - name: Build engine-sim-cli
-      run: |
-        mkdir -p build
-        cd build
-        cmake ..
-        make -j$(sysctl -n hw.ncpu)
-        cd ..
-
-    - name: Check prerequisites
-      run: |
-        ./verification_tools/check-prerequisites
-
-    - name: Run quick verification
-      run: |
-        make -C verification_tools test-quick
-
-    - name: Run full verification
-      run: |
-        make -C verification_tools test
-
-    - name: Run CI verification
-      run: |
-        ./ci_verification.sh --quick --verbose
-
-    - name: Run CI verification with parallel tests
-      run: |
-        ./ci_verification.sh --parallel --engine-sim-cli ./build/engine-sim-cli --verbose
-
-    - name: Generate test report
-      if: always()
-      run: |
-        echo "## Verification Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Full Report" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
-        cat verification_output/verification_report.json 2>/dev/null || echo "No report generated" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-    - name: Upload verification artifacts
-      if: always()
-      uses: actions/upload-artifact@v3
+    - name: Restore FetchContent dependencies
+      uses: actions/cache@v4
       with:
-        name: verification-results
+        path: build/_deps
+        key: fetchcontent-verify-macos-${{ hashFiles('CMakeLists.txt', 'engine-sim-bridge/CMakeLists.txt', 'test/CMakeLists.txt') }}
+        restore-keys: |
+          fetchcontent-verify-macos-
+
+    - name: Configure
+      run: |
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+    - name: Build
+      run: cmake --build build -- -j$(sysctl -n hw.logicalcpu)
+
+    - name: Run tests
+      run: ctest --test-dir build --output-on-failure
+
+    - name: Smoke test binary
+      run: |
+        ./build/engine-sim-cli --sine --duration 1 --silent
+        echo "Smoke test passed"
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-sim-cli-macos
         path: |
-          verification_output/
-          ci_reports/
-        retention-days: 30
-
-  audio-focused:
-    runs-on: macos-latest
-    needs: verification
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Set up Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: latest-stable
-
-    - name: Build engine-sim-cli
-      run: |
-        mkdir -p build
-        cd build
-        cmake ..
-        make -j$(sysctl -n hw.ncpu)
-        cd ..
-
-    - name: Build verification tools
-      run: |
-        make -C verification_tools all
-
-    - name: Test audio output
-      run: |
-        make -C verification_tools test-audio
-
-    - name: Audio analysis
-      run: |
-        ./verify_audio --input verification_output/audio_test.wav --expected-rpm 2000 --detailed --output-report verification_output/audio_analysis.json
-
-  interactive-focused:
-    runs-on: macos-latest
-    needs: verification
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Set up Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: latest-stable
-
-    - name: Build engine-sim-cli
-      run: |
-        mkdir -p build
-        cd build
-        cmake ..
-        make -j$(sysctl -n hw.ncpu)
-        cd ..
-
-    - name: Build verification tools
-      run: |
-        make -C verification_tools all
-
-    - name: Test input response
-      run: |
+          build/engine-sim-cli
+          build/libenginesim.dylib
+          build/libenginesim.1.dylib
+        retention-days: 7
         make -C verification_tools test-input

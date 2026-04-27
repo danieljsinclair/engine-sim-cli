@@ -4,6 +4,19 @@ Command-line interface for [engine-sim](https://github.com/danieljsinclair/engin
 
 This tool allows you to generate high-quality engine audio from command line with real-time playback, WAV export, and professional-grade audio quality.
 
+## Platform Support
+
+| Platform | Status | Audio Backend |
+|----------|--------|---------------|
+| **macOS** | ✅ Production | CoreAudio / AudioUnit |
+| **iOS** | ✅ Done | AVAudioEngine (see `escli-ios/`) |
+| **ESP32** | 🔧 Planned | `IAudioHardwareProvider` stub ready |
+| **Android** | 🔧 Planned | `IAudioHardwareProvider` stub ready |
+| Linux | ❌ Not supported | No audio provider; build blocked |
+| Windows | ❌ Not supported | No audio provider; build blocked |
+
+WAV export works on all platforms regardless of audio hardware support.
+
 ## Features
 
 - ✅ **Real-time Audio Playback** - Hear engine sounds as they're generated (macOS)
@@ -38,20 +51,16 @@ make
 
 ### Prerequisites
 
+- **macOS only** — Linux and Windows builds are currently blocked (no audio hardware provider)
 - **CMake** 3.20 or higher
-- **C++17** compatible compiler
-- **macOS:** AudioUnit framework (built-in)
-- **Linux:** OpenAL (libopenal-dev)
-- **Threads:** pthreads (usually included with compiler)
+- **C++17** compatible compiler (Clang/AppleClang)
+- **macOS:** AudioUnit framework (built-in, no extra install needed)
 
 ### macOS Installation
 
 ```bash
 # Install build tools
-brew install cmake
-
-# Install audio libraries (for Linux)
-sudo apt-get install libopenal-dev cmake build-essential
+brew install cmake bison flex boost
 ```
 
 ## Usage
@@ -149,8 +158,10 @@ See [V8_ENGINE_GUIDE.md](V8_ENGINE_GUIDE.md) for detailed instructions on runnin
 The CLI tool depends on the [engine-sim-bridge](https://github.com/danieljsinclair/engine-sim-bridge) submodule which wraps the core engine-sim library:
 
 - **engine-sim** - Core engine simulation library
-- **macOS:** AudioUnit framework (built-in)
-- **Linux:** OpenAL (libopenal-dev)
+- **macOS:** CoreAudio / AudioUnit framework (built-in)
+- **iOS:** AVAudioEngine (see `escli-ios/`)
+
+The bridge provides a platform-agnostic `IAudioHardwareProvider` interface. New hardware targets (ESP32, Android) need only implement this interface — the factory and build system stubs are already in place.
 
 The bridge submodule handles all audio rendering and engine simulation logic. The CLI simply provides configuration, presentation, and user interaction layers.
 
@@ -164,8 +175,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Technical Notes
 
-- Audio on macOS uses AudioUnit for real-time playback
-- Linux uses OpenAL for audio output
-- WAV export works on all platforms
-- The audio system has been thoroughly tested and optimized
+- Audio on macOS uses CoreAudio/AudioUnit for real-time playback
+- iOS uses AVAudioEngine (see `escli-ios/`)
+- Linux and Windows are not currently supported — the CMake build will error with a clear message
+- WAV export works on any platform that can compile the project
+- Adding a new hardware target requires implementing `IAudioHardwareProvider` in `engine-sim-bridge` and registering it in `AudioHardwareProviderFactory`
 - See [V8_ENGINE_GUIDE.md](V8_ENGINE_GUIDE.md) for V8 engine configuration details
