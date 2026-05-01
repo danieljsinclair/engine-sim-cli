@@ -9,11 +9,13 @@ add_executable(unit_tests
     IAudioBufferTest.cpp
     IntegrationAudioPlayerTest.cpp
     ThreadedStrategyIntegrationTest.cpp
+    CommandLineParserTest.cpp
     AudioTestConstants.cpp
     StrategyPipelineTest.cpp
     BufferContextEradicationTest.cpp
     ISimulatorTest.cpp
     # Required support code
+    ../../src/config/CLIconfig.cpp
     ../../src/config/ANSIColors.cpp # Required for display
     ../../test/mocks/MockDataSimulator.cpp
     ../../test/mocks/MockAudioUnit.cpp
@@ -25,6 +27,7 @@ target_link_libraries(unit_tests
         gtest_main
         engine-sim-bridge
         ${AUDIO_LIBRARY}
+        CLI11::CLI11
 )
 
 # SimulationLoop and EngineConfig are now in engine-sim-bridge library
@@ -48,4 +51,5 @@ add_test(NAME unit_tests
 set_tests_properties(unit_tests PROPERTIES
     TIMEOUT 30
     LABELS "unit"
+    RESOURCE_LOCK "audio_device"
 )

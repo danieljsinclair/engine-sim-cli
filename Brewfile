@@ -1,0 +1,10 @@
+tap "homebrew/core"
+
+brew "bison"
+brew "flex"
+brew "boost"
+brew "ccache"
+brew "xxhash"
+brew "hiredis"
+brew "fmt"
+brew "blake3"

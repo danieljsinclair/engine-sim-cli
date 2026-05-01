@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include "simulator/EngineSimTypes.h"
 
 double estimateFrequency(const std::vector<int16_t>& samples, int sampleRate) {
     // Convert to mono
@@ -38,16 +39,17 @@ int main() {
     // For 4410 frames at 44100 Hz, we should see ~13.4 cycles
     // Expected zero crossings = 13.4 * 2 = ~27 crossings
 
+    const int sr = EngineSimDefaults::SAMPLE_RATE;
     std::vector<int16_t> testSignal;
     double expectedFrequency = 800.0 / 6.0;  // 133.33 Hz
     int frames = 4410;
 
     std::cout << "Expected frequency: " << expectedFrequency << " Hz" << std::endl;
-    std::cout << "Expected zero crossings: " << (int)(expectedFrequency * frames / 44100.0 * 2.0) << std::endl;
+    std::cout << "Expected zero crossings: " << (int)(expectedFrequency * frames / static_cast<double>(sr) * 2.0) << std::endl;
 
     // Generate a simple sine wave
     for (int i = 0; i < frames; ++i) {
-        double t = static_cast<double>(i) / 44100.0;
+        double t = static_cast<double>(i) / sr;
         double value = std::sin(2.0 * M_PI * expectedFrequency * t);
         int16_t sample = static_cast<int16_t>(value * 16000.0);
 
@@ -55,7 +57,7 @@ int main() {
         testSignal.push_back(sample);
     }
 
-    double estimated = estimateFrequency(testSignal, 44100);
+    double estimated = estimateFrequency(testSignal, sr);
     std::cout << "Estimated frequency: " << estimated << " Hz" << std::endl;
 
     double difference = std::abs(estimated - expectedFrequency);

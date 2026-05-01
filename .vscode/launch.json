@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug engine-sim-cli",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/engine-sim-cli",
+      "args": ["--interactive", "--play", "--script", "es/ferrari_f136.mr"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "lldb",
+      "preLaunchTask": "build",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for lldb",
+          "text": "settings set target.max-children-count 256",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Debug engine-sim-cli sine mode",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/engine-sim-cli",
+      "args": ["--interactive", "--play", "--sine"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "lldb",
+      "preLaunchTask": "build",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for lldb",
+          "text": "settings set target.max-children-count 256",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

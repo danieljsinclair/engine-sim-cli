@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+
+# engine-sim-cli and engine-sim-bridge both require macOS (AudioQueue / CoreAudio).
+# Linux/Windows builds are not supported — the audio layer has no implementation for those platforms.
+jobs:
+  build-and-test:
+    name: Build and Test (macOS)
+    runs-on: macos-latest
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+        submodules: recursive
+
+    # Cache only Homebrew download artifacts, not installed Cellar/opt state.
+    # This avoids brittle restore failures while still reusing downloaded bottles
+    # for faster dependency installs.
+    - name: Cache Homebrew packages
+      id: brew-cache
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/Library/Caches/Homebrew
+        key: brew-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Brewfile') }}
+        restore-keys: |
+          brew-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Install dependencies
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+        HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      run: |
+        brew bundle --file Brewfile
+        # bison is keg-only (macOS ships 2.3, Piranha needs 3.2+).
+        echo "/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
+        echo "/usr/local/opt/bison/bin"    >> $GITHUB_PATH
+
+    - name: Restore ccache
+      uses: actions/cache@v5
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ccache-macos-${{ github.sha }}
+        restore-keys: |
+          ccache-macos-
+
+    - name: Restore FetchContent dependencies
+      uses: actions/cache@v5
+      with:
+        path: build/_deps
+        key: fetchcontent-cli-macos-${{ hashFiles('CMakeLists.txt', 'engine-sim-bridge/CMakeLists.txt', 'test/CMakeLists.txt') }}
+        restore-keys: |
+          fetchcontent-cli-macos-
+
+    - name: Configure
+      run: |
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+    - name: Build
+      run: cmake --build build -- -j$(sysctl -n hw.logicalcpu)
+
+    - name: Run tests
+      run: ctest --test-dir build --output-on-failure -V -j$(sysctl -n hw.logicalcpu)
+
+    - name: Smoke test binary
+      run: |
+        ./build/engine-sim-cli --sine --duration 1 --silent
+        echo "Smoke test passed"

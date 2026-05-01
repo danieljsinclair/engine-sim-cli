@@ -10,9 +10,8 @@
 #include <thread>
 
 // Bridge includes
-#include "simulator/engine_sim_bridge.h"
-#include "simulator/sine_wave_simulator.h"
-#include "simulator/engine_sim_loader.h"
+#include "simulator/EngineSimTypes.h"
+#include "simulator/SineSimulator.h"
 #include "common/ILogging.h"
 
 // Audio includes
@@ -101,41 +100,33 @@ namespace {
         static constexpr double AMPLITUDE = 28000.0;
     };
 
-    // Test helper for SineWaveSimulator integration
+    // Test helper for SineSimulator integration (Simulator-level access)
     class SineWaveTestHarness {
     public:
-        SineWaveTestHarness() : simulator_(nullptr), bridgeHandle_(nullptr) {}
+        SineWaveTestHarness() : simulator_(nullptr) {}
 
         ~SineWaveTestHarness() {
             cleanup();
         }
 
-        // Initialize with SineWaveSimulator
-        bool initialize(int sampleRate = 44100) {
-            // Create SineWaveSimulator directly (no bridge API needed)
-            simulator_ = new SineWaveSimulator(nullptr);
+        // Initialize with SineSimulator (self-contained Simulator)
+        bool initialize(int sampleRate = EngineSimDefaults::SAMPLE_RATE) {
+            simulator_ = new SineSimulator();
             if (!simulator_) {
-                std::cerr << "Failed to create SineWaveSimulator\n";
+                std::cerr << "Failed to create SineSimulator\n";
                 return false;
             }
 
-            // Initialize simulator
-            Simulator::Parameters params;
-            params.systemType = Simulator::SystemType::NsvOptimized;
-            simulator_->initialize(params);
-
-            // Set simulation frequency
-            simulator_->setSimulationFrequency(10000);
-            simulator_->setTargetSynthesizerLatency(0.05);
+            // Simulate what SimulatorFactory does
+            Simulator::Parameters simParams;
+            simParams.systemType = Simulator::SystemType::NsvOptimized;
+            simulator_->initialize(simParams);
+            simulator_->setSimulationFrequency(EngineSimDefaults::SIMULATION_FREQUENCY);
+            simulator_->setFluidSimulationSteps(EngineSimDefaults::FLUID_SIMULATION_STEPS);
+            simulator_->setTargetSynthesizerLatency(EngineSimDefaults::TARGET_SYNTH_LATENCY);
+            simulator_->loadSimulation(nullptr, nullptr, nullptr);
 
             sampleRate_ = sampleRate;
-
-            // NOTE: Do NOT start audio rendering thread for sync-pull tests
-            // We use on-demand rendering (renderAudioOnDemand()) directly
-            // Starting the background thread would create a race condition
-            // where both the thread and test code consume audio non-deterministically
-            // This caused SineWave_SyncPull_DeterministicRepeatability to fail
-
             return true;
         }
 
@@ -146,6 +137,17 @@ namespace {
             }
 
             std::vector<int16_t> audioOutput(framesToGenerate * STEREO_CHANNELS, 0);
+
+            // Warm up: let the synthesizer's leveler settle to eliminate initial DC transient
+            for (int warmup = 0; warmup < 10; ++warmup) {
+                simulator_->startFrame(1.0 / 60.0);
+                simulator_->simulateStep();
+                simulator_->endFrame();
+                simulator_->synthesizer().renderAudioOnDemand();
+                // Drain the output
+                int16_t discard[256];
+                simulator_->synthesizer().readAudioOutput(256, discard);
+            }
 
             // Approach: Use synthesizer directly for on-demand rendering
             // This bypasses the audio rendering thread and gives us direct access
@@ -189,17 +191,17 @@ namespace {
             return audioOutput;
         }
 
-        // Set throttle (affects RPM in SineEngine)
+        // Set throttle directly on the engine (Simulator-level access)
         void setThrottle(float throttle) {
             if (simulator_ && simulator_->getEngine()) {
-                simulator_->getEngine()->setThrottle(throttle);
+                simulator_->getEngine()->setSpeedControl(static_cast<double>(throttle));
             }
         }
 
-        // Get current RPM
+        // Get current RPM directly from the engine
         double getRPM() {
             if (simulator_ && simulator_->getEngine()) {
-                return simulator_->getEngine()->getRpm();
+                return simulator_->getEngine()->getSpeed() * 60.0 / (2.0 * M_PI);
             }
             return 0.0;
         }
@@ -216,10 +218,7 @@ namespace {
         Simulator* getSimulator() { return simulator_; }
 
     private:
-        // No need to load bridge API - SineWaveSimulator works standalone
-
-        Simulator* simulator_;
-        EngineSimHandle bridgeHandle_;
+        SineSimulator* simulator_;
         int sampleRate_;
     };
 } // anonymous namespace
@@ -251,7 +250,7 @@ TEST_F(SimulatorLevelAudioTest, SineWave_SyncPull_BasicOutput) {
     // Test: SineWaveSimulator generates deterministic audio output
     // Purpose: Verify on-demand rendering pipeline works correctly
 
-    ASSERT_TRUE(harness->initialize(44100)) << "Failed to initialize SineWaveTestHarness";
+    ASSERT_TRUE(harness->initialize()) << "Failed to initialize SineWaveTestHarness";
 
     // Set throttle to 0 for deterministic RPM (800 RPM)
     harness->setThrottle(0.0f);
@@ -260,7 +259,7 @@ TEST_F(SimulatorLevelAudioTest, SineWave_SyncPull_BasicOutput) {
     EXPECT_NEAR(harness->getRPM(), 800.0, 1.0) << "RPM should be ~800 at throttle 0";
 
     // Generate audio (100ms worth)
-    constexpr int framesToGenerate = 4410;  // 100ms @ 44.1kHz
+    constexpr int framesToGenerate = EngineSimDefaults::SAMPLE_RATE / 10;  // 100ms
     std::vector<int16_t> audioOutput = harness->runAndCapture(framesToGenerate);
 
     // Verify we got the expected amount of audio
@@ -283,17 +282,17 @@ TEST_F(SimulatorLevelAudioTest, SineWave_SyncPull_DeterministicRepeatability) {
     // Purpose: Verify no hidden state or timing dependencies
     // Note: Bit-exact may vary due to floating point precision, but should be close
 
-    ASSERT_TRUE(harness->initialize(44100));
+    ASSERT_TRUE(harness->initialize());
 
     // Set fixed throttle for deterministic output
     harness->setThrottle(0.1f);  // Should give RPM = 800 + 0.1*5200 = 1320
 
     // Generate audio twice with same parameters
-    constexpr int framesToGenerate = 4410;
+    constexpr int framesToGenerate = EngineSimDefaults::SAMPLE_RATE / 10;  // 100ms
     std::vector<int16_t> firstRun = harness->runAndCapture(framesToGenerate);
     harness->cleanup();
 
-    ASSERT_TRUE(harness->initialize(44100));
+    ASSERT_TRUE(harness->initialize());
     harness->setThrottle(0.1f);
     std::vector<int16_t> secondRun = harness->runAndCapture(framesToGenerate);
 
@@ -331,15 +330,15 @@ TEST_F(SimulatorLevelAudioTest, SineWave_SyncPull_BufferWrapAround) {
     // Buffer wrap calculation:
     // - SineWaveSimulator internal buffer: varies, but will wrap
     // - Synthesizer internal buffer: will wrap
-    // - 5 seconds @ 44.1kHz = 220,500 frames (should cause multiple wraps)
+    // - 5 seconds should cause multiple wraps
 
-    ASSERT_TRUE(harness->initialize(44100));
+    ASSERT_TRUE(harness->initialize());
 
     // Set fixed throttle
     harness->setThrottle(0.0f);
 
     // Generate audio for 5 seconds (enough to cause buffer wrap)
-    constexpr int framesToGenerate = 220500;  // 5 seconds @ 44.1kHz
+    constexpr int framesToGenerate = EngineSimDefaults::SAMPLE_RATE * 5;  // 5 seconds
     std::cout << "[SYNC-PULL] Generating " << framesToGenerate
               << " frames (5 seconds) for buffer wrap test...\n";
 
@@ -372,7 +371,7 @@ TEST_F(SimulatorLevelAudioTest, SineWave_SyncPull_RPMChange) {
     // Purpose: Verify parameter update handling
     // Note: SineEngine RPM is computed from getSpeedControl() in getRpm()
 
-    ASSERT_TRUE(harness->initialize(44100));
+    ASSERT_TRUE(harness->initialize());
 
     // Start at throttle 0 (800 RPM)
     harness->setThrottle(0.0f);
@@ -405,13 +404,13 @@ TEST_F(SimulatorLevelAudioTest, SineWave_SyncPull_LongDurationStability) {
     // Test: Long-duration stability (10 seconds)
     // Purpose: Verify no degradation or state accumulation over time
 
-    ASSERT_TRUE(harness->initialize(44100));
+    ASSERT_TRUE(harness->initialize());
 
     // Set fixed throttle
     harness->setThrottle(0.2f);  // RPM = 800 + 0.2*5200 = 1840
 
     // Generate audio for 10 seconds
-    constexpr int framesToGenerate = 441000;  // 10 seconds @ 44.1kHz
+    constexpr int framesToGenerate = EngineSimDefaults::SAMPLE_RATE * 10;  // 10 seconds
     std::cout << "[SYNC-PULL] Generating " << framesToGenerate
               << " frames (10 seconds) for stability test...\n";
 
@@ -438,11 +437,11 @@ TEST_F(SimulatorLevelAudioTest, SineWave_SyncPull_AmplitudeRange) {
     // Test: Verify sine wave amplitude is within expected range
     // Purpose: Catch signal level issues
 
-    ASSERT_TRUE(harness->initialize(44100));
+    ASSERT_TRUE(harness->initialize());
     harness->setThrottle(0.0f);
 
     // Generate audio
-    constexpr int framesToGenerate = 4410;
+    constexpr int framesToGenerate = EngineSimDefaults::SAMPLE_RATE / 10;  // 100ms
     std::vector<int16_t> audioOutput = harness->runAndCapture(framesToGenerate);
 
     // Find min/max values

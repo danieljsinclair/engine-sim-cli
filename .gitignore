@@ -42,3 +42,10 @@ verification_output/
 
 .cache/
 results.xml
+
+# Preset compiler temporary wrapper script (regenerated each run)
+_escli_preset_wrapper.mr
+escli-ios/EngineSimApp/EngineSimApp.xcodeproj/project.xcworkspace/xcuserdata/danielsinclair.xcuserdatad/UserInterfaceState.xcuserstate
+escli-ios/EngineSimApp/EngineSimApp.xcodeproj/project.xcworkspace/xcuserdata/
+escli-ios/EngineSimApp/EngineSimApp.xcodeproj/xcuserdata/
+.claude/scheduled_tasks.lock

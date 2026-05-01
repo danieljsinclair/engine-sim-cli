@@ -1,13 +1,11 @@
 // ThreadedStrategyIntegrationTest.cpp - Integration tests for ThreadedStrategy
 // TDD: Tests verify ThreadedStrategy behavior end-to-end with deterministic simulation
-// Uses MockDataSimulator for predictable audio generation
 // Captures baseline output for regression verification
 // Strategies own their own state -- no BufferContext needed
 // Phase G: Uses AudioBufferView instead of CoreAudio AudioBufferList
 
 #include "strategy/ThreadedStrategy.h"
 #include "strategy/SyncPullStrategy.h"
-#include "../mocks/MockDataSimulator.h"
 #include "../mocks/MockAudioUnit.h"
 #include "AudioTestHelpers.h"
 #include "AudioTestConstants.h"
@@ -32,10 +30,9 @@ protected:
         strategy_ = std::make_unique<ThreadedStrategy>(logger_.get(), telemetry_.get());
 
         // Initialize strategy
-        AudioStrategyConfig config;
-        config.sampleRate = DEFAULT_SAMPLE_RATE;
+        AudioBufferConfig config;
         config.channels = STEREO_CHANNELS;
-        ASSERT_TRUE(strategy_->initialize(config))
+        ASSERT_TRUE(strategy_->initialize(config, DEFAULT_SAMPLE_RATE))
             << "Failed to initialize ThreadedStrategy";
     }
 
@@ -369,11 +366,10 @@ TEST_F(ThreadedStrategyIntegrationTest, ThreadedStrategy_ProducesBufferedAudio_S
     // Arrange: Create SyncPullStrategy
     auto syncPullStrategy = std::make_unique<SyncPullStrategy>(logger_.get());
 
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy_->initialize(config));
-    ASSERT_TRUE(syncPullStrategy->initialize(config));
+    ASSERT_TRUE(strategy_->initialize(config, DEFAULT_SAMPLE_RATE));
+    ASSERT_TRUE(syncPullStrategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     // Fill ThreadedStrategy's buffer with known non-silent data
     std::vector<float> testData(DEFAULT_FRAME_COUNT * STEREO_CHANNELS);

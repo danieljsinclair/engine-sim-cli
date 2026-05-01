@@ -2,11 +2,11 @@
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
 
 #include "CLIconfig.h"
+#include "simulation/SimulationLoop.h"
 
+#include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
-#include <cmath>
-#include <iomanip>
 
 // ============================================================================
 // Global State (required for signal handling)
@@ -36,9 +36,10 @@ void printUsage(const char* progName) {
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
-    std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineConstants::DEFAULT_SIMULATION_FREQUENCY 
-              << ", range: " << EngineConstants::MIN_SIMULATION_FREQUENCY << "-" << EngineConstants::MAX_SIMULATION_FREQUENCY << ")\n";
-    std::cout << "  --pre-fill-ms <ms>  Pre-fill buffer ms for sync-pull mode (default: 50)\n\n";
+    std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
+              << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
+    std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
+    std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
     std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
@@ -63,147 +64,70 @@ void printUsage(const char* progName) {
 }
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
+    CLI::App app{"Engine Simulator CLI v2.0"};
+    app.set_help_flag("-h,--help", "Show help information");
+    app.allow_extras(false);
 
-        if (arg == "--help" || arg == "-h") {
-            printUsage(argv[0]);
-            return false;
-        }
-        else if (arg == "--rpm") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --rpm requires a value\n";
-                return false;
-            }
-            args.targetRPM = std::atof(argv[i]);
-        }
-        else if (arg == "--load") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --load requires a value\n";
-                return false;
-            }
-            args.targetLoad = std::atof(argv[i]) / 100.0;
-        }
-        else if (arg == "--interactive") {
-            args.interactive = true;
-            g_interactiveMode.store(true);
-        }
-        else if (arg == "--play" || arg == "--play-audio") {
-            args.playAudio = true;
-        }
-        else if (arg == "--script") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --script requires a path\n";
-                return false;
-            }
-            args.engineConfig = argv[i];
-        }
-        else if (arg == "--duration") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --duration requires a value\n";
-                return false;
-            }
-            args.duration = std::atof(argv[i]);
-        }
-        else if (arg == "--default-engine") {
-            args.useDefaultEngine = true;
-        }
-        else if (arg == "--output") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --output requires a path\n";
-                return false;
-            }
-            args.outputWav = argv[i];
-        }
-        else if (arg == "--sine") {
-            args.sineMode = true;
-        }
-        else if (arg == "--threaded") {
-            args.syncPull = false;
-        }
-        else if (arg == "--silent") {
-            args.silent = true;
-            args.playAudio = true;  // --silent implies --play (full audio pipeline)
-        }
-        else if (arg == "--cranking-volume") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --cranking-volume requires a value\n";
-                return false;
-            }
-            args.crankingVolume = std::atof(argv[i]);
-        }
-        else if (arg == "--sim-freq") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --sim-freq requires a value (" << EngineConstants::MIN_SIMULATION_FREQUENCY << "-" << EngineConstants::MAX_SIMULATION_FREQUENCY << " Hz)\n";
-                return false;
-            }
-            args.simulationFrequency = std::atoi(argv[i]);
-            if (args.simulationFrequency < EngineConstants::MIN_SIMULATION_FREQUENCY || args.simulationFrequency > EngineConstants::MAX_SIMULATION_FREQUENCY) {
-                std::cerr << "ERROR: --sim-freq must be between " << EngineConstants::MIN_SIMULATION_FREQUENCY << " and " << EngineConstants::MAX_SIMULATION_FREQUENCY << "\n";
-                return false;
-            }
-        }
-        else if (arg == "--pre-fill-ms") {
-            if (++i >= argc) {
-                std::cerr << "ERROR: --pre-fill-ms requires a value (10-500 ms)\n";
-                return false;
-            }
-            args.preFillMs = std::atoi(argv[i]);
-            if (args.preFillMs < 10 || args.preFillMs > 500) {
-                std::cerr << "ERROR: --pre-fill-ms must be between 10 and 500\n";
-                return false;
-            }
-        }
-        else if (arg.rfind("--", 0) == 0) {
-            std::cerr << "ERROR: Unknown option: " << arg << "\n";
-            printUsage(argv[0]);
-            return false;
-        }
-        else if (args.useDefaultEngine && args.outputWav == nullptr) {
-            // When using default engine, first positional arg is output file
-            args.outputWav = argv[i];
-        }
-        else if (!args.useDefaultEngine && args.engineConfig == nullptr) {
-            args.engineConfig = argv[i];
-        }
-        else if (args.outputWav == nullptr) {
-            args.outputWav = argv[i];
-        }
-        else {
-            std::cerr << "ERROR: Unexpected argument: " << arg << "\n";
-            return false;
-        }
+    double loadArg = -1.0;
+    std::string scriptPath;
+    std::string positionalEngineConfig;
+
+    app.add_option("--rpm", args.targetRPM, "Target RPM to maintain (default: auto)") ->check(CLI::Range(0.0, 20000.0));
+    app.add_option("--load", loadArg, "FIXED throttle load percentage (ignored in interactive mode)") ->check(CLI::Range(0.0, 100.0));
+    app.add_option("--output", args.outputWav, "Output WAV file path");
+    app.add_option("--duration", args.duration, "Duration in seconds (default: 3.0, ignored in interactive)");
+    app.add_option("--sim-freq", args.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
+    app.add_option("--synth-latency", args.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
+    app.add_option("--pre-fill-ms", args.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
+    app.add_option("--cranking-volume", args.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
+    app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
+
+    auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine .mr configuration file");
+    auto defaultEngineOpt = app.add_flag("--default-engine", args.useDefaultEngine, "Use default engine from main repo (ignores config file)");
+    auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
+
+    // Mutual exclusions
+    defaultEngineOpt->excludes(scriptOpt);
+    defaultEngineOpt->excludes(engineConfigOpt);
+    scriptOpt->excludes(engineConfigOpt);
+
+    bool threadedFlag = false;
+    bool silentFlag = false;
+    app.add_flag("--play,--play-audio", args.playAudio, "Play audio to speakers in real-time");
+    app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control (overrides --load)");
+    app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
+    app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
+    app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
+
+    try {
+        app.parse(argc, argv);
+    }
+    catch (const CLI::ParseError& e) {
+        app.exit(e);
+        return false;
     }
 
-    // Use default engine if requested
-    if (args.useDefaultEngine) {
-        // Will use main.mr from main repo
-        args.engineConfig = "(default engine)";
-    }
+    args.syncPull = !threadedFlag;
+    if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
+    if (silentFlag) args.silent = args.playAudio = true;
+    if (args.interactive) g_interactiveMode.store(true);
 
-    // Engine config is required unless in sine mode
-    if (args.engineConfig == nullptr && !args.sineMode) {
-        std::cerr << "ERROR: Engine configuration file is required\n";
-        std::cerr << "       Use --script <path>, --sine, or provide positional argument\n\n";
+    args.engineConfig = args.useDefaultEngine ? "(default engine)" : (scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath));
+
+    auto fail = [&](const char* message) {
+        std::cerr << message;
+        return false;
+    };
+
+    if (args.engineConfig.empty() && !args.sineMode) {
+        std::cerr << "ERROR: Engine configuration file is required\n       Use --script <path>, --sine, or provide positional argument\n\n";
         printUsage(argv[0]);
         return false;
     }
 
-    // Validate arguments
-    if (args.targetRPM < 0 || args.targetRPM > 20000) {
-        std::cerr << "ERROR: RPM must be between 0 and 20000\n";
-        return false;
-    }
-
-    if (args.targetLoad < -1.0 || args.targetLoad > 1.0) {
-        std::cerr << "ERROR: Load must be between 0 and 100\n";
-        return false;
-    }
-
-    // Auto-enable RPM mode if target RPM is specified and load is not
-    if (args.targetRPM > 0 && args.targetLoad < 0) {
-        args.targetLoad = -1.0;  // Auto mode
-    }
+    if (args.targetRPM < 0 || args.targetRPM > 20000)    return fail("ERROR: RPM must be between 0 and 20000\n");
+    if (args.targetLoad < -1.0 || args.targetLoad > 1.0) return fail("ERROR: Load must be between 0 and 100\n");
+    if (args.targetRPM > 0 && args.targetLoad < 0)       args.targetLoad = -1.0;  // Auto mode
 
     return true;
 }
@@ -211,41 +135,37 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 // ============================================================================
 // Shows the configuration on startup in a banner format
 // ============================================================================
-void ShowConfigHeader(CommandLineArgs& args, const char* engineAPIVersion = "unknown") {
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion = "unknown") {
     // Verify build ID
     if (engineAPIVersion != nullptr) {
         std::cout << "[Bridge: " << engineAPIVersion << "]\n";
     }
 
     std::cout << "Configuration:\n";
-    if (args.sineMode) {
-        std::cout << "  Mode: RPM-Linked Sine Wave Test\n";
-        std::cout << "  Mapping: 600 RPM = 100 Hz, 6000 RPM = 1000 Hz\n";
-        std::cout << "  Engine: Default (Subaru EJ25)\n";
-    } else {
-        std::cout << "  Engine: " << (args.engineConfig ? args.engineConfig : "(none)") << "\n";
-    }
-    std::cout << "  Output: " << (args.outputWav ? args.outputWav : "(none - audio not saved)") << "\n";
-    if (args.interactive) {
+    std::cout << "  Engine: " << (config.configPath.empty() ? "(default)" : config.configPath) << "\n";
+    std::cout << "  Output: " << (config.outputWav == nullptr ? "(none - audio not saved)" : config.outputWav) << "\n";
+    if (config.interactive) {
         std::cout << "  Duration: (interactive - runs until quit)\n";
     } else {
-        std::cout << "  Duration: " << args.duration << " seconds\n";
+        std::cout << "  Duration: " << config.duration << " seconds\n";
     }
-    if (args.targetRPM > 0) {
-        std::cout << "  Target RPM: " << args.targetRPM << "\n";
+    if (config.targetRPM > 0) {
+        std::cout << "  Target RPM: " << config.targetRPM << "\n";
     }
-    if (args.targetLoad >= 0) {
-        std::cout << "  Target Load: " << static_cast<int>(args.targetLoad * 100) << "%\n";
+    if (config.targetLoad >= 0) {
+        std::cout << "  Target Load: " << static_cast<int>(config.targetLoad * 100) << "%\n";
     }
-    std::cout << "  Interactive: " << (args.interactive ? "Yes" : "No") << "\n";
-    std::cout << "  Audio Playback: " << (args.playAudio ? "Yes" : "No") << "\n";
-    std::cout << "  Audio Mode: " << (args.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)") << "\n";
-    if (args.crankingVolume != 1.0f) {
-        std::cout << "  Cranking Volume: " << args.crankingVolume << "x\n";
-    }
-    if (args.silent) {
+    std::cout << "  Interactive: " << (config.interactive ? "Yes" : "No") << "\n";
+    std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";
+    std::cout << "  Audio Mode: " << (config.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)") << "\n";
+    std::cout << "  Volume: " << config.volume << "\n";
+    if (config.volume == 0.0f) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
     }
-    std::cout << "  Sim Freq: \x1b[32m" << args.simulationFrequency << " Hz\x1b[0m\n";
+    std::cout << "  Sim Freq: \x1b[32m" << config.engineConfig.simulationFrequency << " Hz\x1b[0m\n";
+    if (config.engineConfig.targetSynthesizerLatency > 0.0) {
+        std::cout << "  Synth Latency: \x1b[32m" << config.engineConfig.targetSynthesizerLatency << "s\x1b[0m\n";
+    }
+    std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
     std::cout << "\n";
 }

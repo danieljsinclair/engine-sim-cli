@@ -51,7 +51,7 @@ TEST_F(AudioStrategyIntegrationTest, HardwareProvider_InitAndCallback) {
     EXPECT_TRUE(hardwareProvider_->registerAudioCallback(mockCallback));
 
     AudioStreamFormat format;
-    format.sampleRate = 44100;
+    format.sampleRate = DEFAULT_SAMPLE_RATE;
     format.channels = 2;
     format.bitsPerSample = 32;
     format.isFloat = true;
@@ -64,10 +64,10 @@ TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_RendersWithInitializedBuff
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
     // Initialize strategy -- creates internal circular buffer
-    AudioStrategyConfig config;
-    config.sampleRate = 44100;
+    AudioBufferConfig config;
+// Removed sampleRate - now passed as separate parameter
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     AudioBufferView audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
     bool result = strategy->render(audioBuffer);
@@ -79,10 +79,10 @@ TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_RendersWithInitializedBuff
 TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_WrapsAroundCorrectly) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
-    AudioStrategyConfig config;
-    config.sampleRate = 44100;
+    AudioBufferConfig config;
+// Removed sampleRate - now passed as separate parameter
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     int wrapFrames = 20;
     std::vector<float> wrapSignal(wrapFrames * STEREO_CHANNELS, TEST_SIGNAL_VALUE_3);
@@ -101,29 +101,29 @@ TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_WrapsAroundCorrectly) {
 }
 
 TEST_F(AudioStrategyIntegrationTest, Factory_CreatesThreadedStrategy) {
-    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::Threaded, logger_.get());
+    auto strategy = IAudioBufferFactory::createBuffer(AudioMode::Threaded, logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "Threaded");
 }
 
 TEST_F(AudioStrategyIntegrationTest, Factory_CreatesSyncPullStrategy) {
-    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::SyncPull, logger_.get());
+    auto strategy = IAudioBufferFactory::createBuffer(AudioMode::SyncPull, logger_.get());
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "SyncPull");
 }
 
 TEST_F(AudioStrategyIntegrationTest, Factory_ReturnsNullForUnknownMode) {
-    auto strategy = IAudioBufferFactory::createStrategy(static_cast<AudioMode>(999), logger_.get());
+    auto strategy = IAudioBufferFactory::createBuffer(static_cast<AudioMode>(999), logger_.get());
     EXPECT_EQ(strategy, nullptr);
 }
 
 TEST_F(AudioStrategyIntegrationTest, ThreadedStrategy_AddFrames) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
-    AudioStrategyConfig config;
-    config.sampleRate = 44100;
+    AudioBufferConfig config;
+// Removed sampleRate - now passed as separate parameter
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
     bool result = strategy->AddFrames(buffer.data(), TEST_FRAME_COUNT);

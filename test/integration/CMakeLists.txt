@@ -3,6 +3,8 @@
 # TDD: Tests real audio bugs at the right abstraction level
 # Phase F: Strategy/buffer/hardware sources now come from engine-sim-bridge library
 
+include(GoogleTest)
+
 # Mock objects for DI injection
 set(MOCK_SOURCES
     ../mocks/MockDataSimulator.cpp
@@ -35,14 +37,14 @@ target_include_directories(integration_tests
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include
 )
 
-# Register integration tests
-add_test(NAME integration_tests
-    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/integration_tests
+# Register integration tests per test case so CTest can parallelize safely.
+# Avoid fixed gtest JSON output here to prevent artifact collisions between
+# concurrently running test cases.
+gtest_discover_tests(integration_tests
+    DISCOVERY_TIMEOUT 30
+    EXTRA_ARGS
         --gtest_color=yes
-        --gtest_output=json:${CMAKE_CURRENT_BINARY_DIR}/integration_tests.json
-)
-
-set_tests_properties(integration_tests PROPERTIES
-    TIMEOUT 60
-    LABELS "integration"
+    PROPERTIES
+        TIMEOUT 60
+        LABELS "integration"
 )

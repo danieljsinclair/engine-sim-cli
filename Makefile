@@ -6,14 +6,26 @@
 
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
+CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
 # Default to parallel build using available CPU cores
 MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all clean scrub test submodules check-cmake remove-orphans force-rebuild
+.PHONY: all clean scrub test submodules check-cmake check-platform remove-orphans force-rebuild
 
-all: check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
+all: check-platform check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
+
+check-platform:
+	@if [ "$$(uname)" != "Darwin" ]; then \
+		echo ""; \
+		echo "ERROR: engine-sim-cli only supports macOS (CoreAudio/AudioUnit)."; \
+		echo "       Linux and Windows are not supported — no audio hardware provider exists."; \
+		echo "       Planned next platforms: ESP32, Android."; \
+		echo "       See README.md for the platform support roadmap."; \
+		echo ""; \
+		exit 1; \
+	fi
 	@cd $(BUILD_DIR) && $(MAKE)
 
 # Check if submodule changed - if so, force rebuild
@@ -72,7 +84,7 @@ $(BUILD_DIR)/Makefile: submodules
 
 test: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests
-	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure" 2>&1 | tee $(BUILD_DIR)/test.log
+	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee test.log
 
 run: all
 	./build/engine-sim-cli --interactive --play --script es/ferrari_f136.mr

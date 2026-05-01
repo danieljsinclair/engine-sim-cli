@@ -1,6 +1,8 @@
 # Test CMakeLists.txt for engine-sim-cli
 # CLI smoke tests + unit tests + integration tests (bridge tests managed by bridge CMakeLists)
 
+include(GoogleTest)
+
 # -----------------------------------------------------------------------------
 # Integration tests (Simulator-level audio tests)
 # -----------------------------------------------------------------------------
@@ -41,14 +43,12 @@ target_include_directories(smoke_tests
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/include
 )
 
-# Register CLI smoke tests - pipe CLI output to log file
-add_test(NAME smoke_tests
-    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/smoke_tests
+# Register each smoke test case individually so CTest can parallelize them.
+gtest_discover_tests(smoke_tests
+    DISCOVERY_TIMEOUT 30
+    EXTRA_ARGS
         --gtest_color=yes
-        --gtest_output=json:${CMAKE_CURRENT_BINARY_DIR}/smoke_tests.json
-)
-
-set_tests_properties(smoke_tests PROPERTIES
-    TIMEOUT 60
-    LABELS "cli"
+    PROPERTIES
+        TIMEOUT 60
+        LABELS "cli"
 )

@@ -4,7 +4,7 @@
 #ifndef MOCK_DATA_SIMULATOR_H
 #define MOCK_DATA_SIMULATOR_H
 
-#include "simulator/engine_sim_bridge.h"
+#include "simulator/EngineSimTypes.h"
 #include <cstring>
 #include <vector>
 #include <atomic>
@@ -32,21 +32,21 @@ public:
     static constexpr double FIXED_LOAD_AT_IDLE = 0.0;
     static constexpr double MAX_RPM = 6000.0;
 
-    // Audio buffer configuration
-    static constexpr size_t AUDIO_BUFFER_SIZE = 96000;  // 2 seconds @ 48kHz (stereo samples)
-    static constexpr int SAMPLE_RATE = 48000;
+    // Audio buffer configuration — single source of truth via EngineSimDefaults
+    static constexpr size_t AUDIO_BUFFER_SIZE = EngineSimDefaults::AUDIO_BUFFER_SIZE;
+    static constexpr int SAMPLE_RATE = EngineSimDefaults::SAMPLE_RATE;
 
     // Initialize with fixed known values
-    void initialize(const EngineSimConfig* config);
+    void initialize(const ISimulatorConfig* config);
 
     // Render audio - generates fixed known values
-    EngineSimResult renderAudio(float* buffer, int32_t frames, int32_t* outSamplesWritten);
+    bool renderAudio(float* buffer, int32_t frames, int32_t* outSamplesWritten);
 
     // Read audio buffer - for sync-pull mode
-    EngineSimResult readAudioBuffer(float* buffer, int32_t frames, int32_t* outSamplesRead);
+    bool readAudioBuffer(float* buffer, int32_t frames, int32_t* outSamplesRead);
 
     // Render on-demand - for sync-pull callbacks
-    EngineSimResult renderOnDemand(float* buffer, int32_t frames, int32_t* outSamplesWritten);
+    bool renderOnDemand(float* buffer, int32_t frames, int32_t* outSamplesWritten);
 
     // Reset state for test isolation
     void reset();
@@ -57,8 +57,8 @@ public:
     size_t getBufferSize() const { return m_audioBuffer.size(); }
 
     // Control functions
-    EngineSimResult setThrottle(double position);
-    EngineSimResult setSpeedControl(double position);
+    bool setThrottle(double position);
+    bool setSpeedControl(double position);
     const char* getLastError();
 
 private:
@@ -72,17 +72,17 @@ private:
     int getCurrentFrame() const { return m_currentFrame; }
 
     // Update simulation state
-    EngineSimResult update(double deltaTime);
+    bool update(double deltaTime);
 
     // Start audio thread (mock)
-    EngineSimResult start();
+    bool start();
 
     // Get simulation statistics
-    EngineSimResult getStats(EngineSimStats* outStats);
+    bool getStats(EngineSimStats* outStats);
 
     // Member variables
     EngineSimStats m_stats;
-    EngineSimConfig m_config;
+    ISimulatorConfig m_config;
     std::vector<int16_t> m_audioBuffer;
     std::vector<float> m_conversionBuffer;
     std::atomic<std::size_t> m_readPosition{0};
@@ -113,7 +113,7 @@ public:
     ~MockDataSimulator();
 
     // Initialize the simulator
-    void initialize(const EngineSimConfig* config = nullptr);
+    void initialize(const ISimulatorConfig* config = nullptr);
 
     // Get context handle (for StrategyContext)
     MockDataSimulatorHandle getContext() const { return m_context.get(); }

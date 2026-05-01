@@ -70,10 +70,9 @@ TEST_F(IAudioBufferTest, SyncPullStrategy_Render_WithoutEngineAPI_FillsSilence) 
 
 TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsAvailableFrames) {
     // Arrange: Initialize strategy so it creates its internal circular buffer
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(threadedStrategy->initialize(config));
+    ASSERT_TRUE(threadedStrategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     // Fill strategy's internal buffer with test data via AddFrames
     std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
@@ -97,10 +96,9 @@ TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsAvailableFrames) {
 
 TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough) {
     // Arrange: Initialize strategy
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(threadedStrategy->initialize(config));
+    ASSERT_TRUE(threadedStrategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     // Fill buffer only halfway
     std::vector<float> input((TEST_FRAME_COUNT / 2) * STEREO_CHANNELS, TEST_SIGNAL_VALUE_2);
@@ -129,10 +127,9 @@ TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_ReadsLessWhenNotEnough) 
 
 TEST_F(IAudioBufferTest, ThreadedStrategy_CursorChasing_WrapAroundRead) {
     // Arrange: Initialize strategy with a small sample rate for manageable buffer
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(threadedStrategy->initialize(config));
+    ASSERT_TRUE(threadedStrategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     // Write data to fill most of the buffer
     int halfFrames = TEST_FRAME_COUNT / 2;
@@ -180,19 +177,19 @@ TEST_F(IAudioBufferTest, SyncPullStrategy_AlwaysReturnsTrueOnAddFrames) {
 // ============================================================================
 
 TEST_F(IAudioBufferTest, Factory_CreateThreadedStrategy) {
-    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::Threaded, nullptr);
+    auto strategy = IAudioBufferFactory::createBuffer(AudioMode::Threaded, nullptr);
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "Threaded");
 }
 
 TEST_F(IAudioBufferTest, Factory_CreateSyncPullStrategy) {
-    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::SyncPull, nullptr);
+    auto strategy = IAudioBufferFactory::createBuffer(AudioMode::SyncPull, nullptr);
     ASSERT_NE(strategy, nullptr);
     EXPECT_STREQ(strategy->getName(), "SyncPull");
 }
 
 TEST_F(IAudioBufferTest, Factory_CreateUnknownMode_ReturnsNull) {
-    auto strategy = IAudioBufferFactory::createStrategy(static_cast<AudioMode>(999), nullptr);
+    auto strategy = IAudioBufferFactory::createBuffer(static_cast<AudioMode>(999), nullptr);
     EXPECT_EQ(strategy, nullptr);
 }
 
@@ -202,10 +199,9 @@ TEST_F(IAudioBufferTest, Factory_CreateUnknownMode_ReturnsNull) {
 
 TEST_F(IAudioBufferTest, ThreadedStrategy_AddFrames_WithNullBuffer_ReturnsFalse) {
     // Arrange: Initialize strategy first
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(threadedStrategy->initialize(config));
+    ASSERT_TRUE(threadedStrategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     // Act: Add null buffer
     bool result = threadedStrategy->AddFrames(nullptr, TEST_FRAME_COUNT);

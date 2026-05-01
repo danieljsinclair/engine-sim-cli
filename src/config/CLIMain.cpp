@@ -9,7 +9,8 @@
 #include "strategy/IAudioBuffer.h"
 #include "telemetry/ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
-#include "simulator/BridgeSimulator.h"
+#include "simulator/SimulatorFactory.h"
+#include "simulator/EngineSimTypes.h"
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "io/IPresentation.h"
@@ -37,8 +38,8 @@ void signalHandler(int signal) {
 
 namespace {
 
-input::IInputProvider* createInputProvider(bool interactive, ILogging* logger) {
-    if (interactive) {
+input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger) {
+    if (config.interactive) {
         auto provider = std::make_unique<input::KeyboardInputProvider>(logger);
         if (provider->Initialize()) {
             return provider.release();
@@ -48,14 +49,15 @@ input::IInputProvider* createInputProvider(bool interactive, ILogging* logger) {
     return nullptr;
 }
 
-presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
-    presentation::PresentationConfig config;
-    config.interactive = args.interactive;
-    config.duration = args.duration;
-    config.showDiagnostics = true;
+presentation::IPresentation* createPresentation(const SimulationConfig& config) {
+    presentation::PresentationConfig presConfig;
+    // SimulationConfig is the source of truth; PresentationConfig receives copies for display purposes only
+    // Note: interactive conceptually belongs to IInputProvider but is surfaced here for presentation
+    presConfig.interactive = config.interactive;
+    presConfig.duration = config.duration;
 
     auto pres = std::make_unique<presentation::ConsolePresentation>();
-    if (pres->Initialize(config)) {
+    if (pres->Initialize(presConfig)) {
         return pres.release();
     }
     throw std::runtime_error("Failed to initialize presentation");
@@ -66,24 +68,28 @@ presentation::IPresentation* createPresentation(const CommandLineArgs& args) {
 SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     SimulationConfig config;
 
-    config.configPath = args.engineConfig ? args.engineConfig : "";
+    config.configPath = args.engineConfig;
     config.assetBasePath = "";
 
-    config.duration = args.duration;
-    config.interactive = args.interactive;
-    config.playAudio = args.playAudio;
-    config.volume = args.silent ? 0.0f : 1.0f;
-    config.sineMode = args.sineMode;
-    config.syncPull = args.syncPull;
-    config.targetRPM = args.targetRPM;
-    config.targetLoad = args.targetLoad;
-    config.useDefaultEngine = args.useDefaultEngine;
-    config.simulationFrequency = args.simulationFrequency;
-    config.preFillMs = args.preFillMs;
-    if (args.outputWav) config.outputWav = args.outputWav;
+    // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
+    config.interactive = args.interactive != config.interactive ? args.interactive : config.interactive;
+    config.playAudio = args.playAudio != config.playAudio ? args.playAudio : config.playAudio;
+    config.duration = args.duration > 0.0 ? args.duration : config.duration;
+    config.volume = args.silent ? 0.0f : config.volume;
+    config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
+    config.targetRPM = args.targetRPM != config.targetRPM ? args.targetRPM : config.targetRPM;
+    config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
+    config.useDefaultEngine = args.useDefaultEngine != config.useDefaultEngine ? args.useDefaultEngine : config.useDefaultEngine;
+    config.preFillMs = (args.preFillMs > 0) ? args.preFillMs : config.preFillMs;
+
+    if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
+
+    // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
+    config.engineConfig.simulationFrequency = (args.simulationFrequency > 0) ? args.simulationFrequency : config.engineConfig.simulationFrequency;
+    config.engineConfig.targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : config.engineConfig.targetSynthesizerLatency;
 
     // Color the simulator label for CLI output
-    std::string name = config.sineMode ? "[SINE]" : config.configPath;
+    std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
     config.simulatorLabel = ANSIColors::CYAN + name + ANSIColors::RESET;
 
     return config;
@@ -104,28 +110,41 @@ int main(int argc, char* argv[]) {
 
     CommandLineArgs args;
     if (parseArguments(argc, argv, args)) {
-        BridgeSimulator simulator;
-        ShowConfigHeader(args, ISimulator::getVersion());
+        SimulationConfig config = CreateSimulationConfig(args);
+        ShowConfigHeader(config, ISimulator::getVersion());
 
         // Create shared telemetry (simulator and strategies write, presentation reads)
         auto cliLogger = std::make_unique<ConsoleLogger>();
         auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
-        simulator.setTelemetryWriter(telemetry.get());
 
-        // Create strategy via factory - pass telemetry so strategies push diagnostics
-        SimulationConfig config = CreateSimulationConfig(args);
-        AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-        std::unique_ptr<IAudioBuffer> audioStrategy = IAudioBufferFactory::createStrategy(mode, cliLogger.get(), telemetry.get());
-        input::IInputProvider* inputProvider = createInputProvider(args.interactive, cliLogger.get());
-        presentation::IPresentation* presentation = createPresentation(args);
+        // Create simulator via factory (composition root — wires mode-specific details)
+        SimulatorType type = args.sineMode ? SimulatorType::SineWave : SimulatorType::PistonEngine;
+        std::string scriptPath = args.useDefaultEngine ? "engine-sim-bridge/engine-sim/assets/main.mr" : std::string(args.engineConfig);
+        std::string assetBasePath = "";
 
-        // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)
+        std::unique_ptr<ISimulator> simulator;
+        std::unique_ptr<IAudioBuffer> audioBuffer;
+        input::IInputProvider* inputProvider = nullptr;
+        presentation::IPresentation* presentation = nullptr;
+
         try
         {
-            result = runSimulation(config, simulator, audioStrategy.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+            simulator = SimulatorFactory::create(
+                type, scriptPath, assetBasePath, config.engineConfig,
+                cliLogger.get(), telemetry.get());
+
+            // Create strategy via factory - pass telemetry so strategies push diagnostics
+            AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+            audioBuffer = IAudioBufferFactory::createBuffer(mode, cliLogger.get(), telemetry.get());
+            inputProvider = createInputProvider(config, cliLogger.get());
+            presentation = createPresentation(config);
+
+            // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)
+            result = runSimulation(config, *simulator, audioBuffer.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
         }
         catch (const std::exception& e) {
             std::cerr << "ERROR: " << e.what() << std::endl;
+            result = 1;
         }
 
         delete inputProvider;

@@ -39,30 +39,27 @@ protected:
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_InitializesWithoutBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
 
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    bool result = strategy->initialize(config);
+    bool result = strategy->initialize(config, DEFAULT_SAMPLE_RATE);
 
     EXPECT_TRUE(result);
 }
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_ReportsNotPlayingAfterInit) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     EXPECT_FALSE(strategy->isPlaying());
 }
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_RenderWithoutBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     AudioBufferView audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
@@ -75,10 +72,9 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_RenderWithoutBufferContext
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_AddFramesWithoutBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
 
@@ -89,10 +85,9 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_AddFramesWithoutBufferCont
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_PrepareBufferWithoutBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     strategy->prepareBuffer();
 
@@ -101,10 +96,9 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_PrepareBufferWithoutBuffer
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_ResetBufferAfterWarmupWithoutBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     strategy->resetBufferAfterWarmup();
 
@@ -118,30 +112,27 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_ResetBufferAfterWarmupWith
 TEST_F(BufferContextEradicationTest, SyncPullStrategy_InitializesWithoutBufferContext) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
 
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    bool result = strategy->initialize(config);
+    bool result = strategy->initialize(config, DEFAULT_SAMPLE_RATE);
 
     EXPECT_TRUE(result);
 }
 
 TEST_F(BufferContextEradicationTest, SyncPullStrategy_ReportsNotPlayingAfterInit) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     EXPECT_FALSE(strategy->isPlaying());
 }
 
 TEST_F(BufferContextEradicationTest, SyncPullStrategy_RenderWithoutSimulator) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     AudioBufferView audioBuffer = createAudioBuffer(TEST_FRAME_COUNT);
 
@@ -158,10 +149,9 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_RenderWithoutSimulator) {
 
 TEST_F(BufferContextEradicationTest, SyncPullStrategy_AddFramesWithoutBufferContext) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     std::vector<float> buffer(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_2);
 
@@ -176,10 +166,9 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_AddFramesWithoutBufferCont
 
 TEST_F(BufferContextEradicationTest, SyncPullStrategy_IsPlayingChangesOnStartStop) {
     auto strategy = std::make_unique<SyncPullStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     EXPECT_FALSE(strategy->isPlaying());
 
@@ -196,10 +185,9 @@ TEST_F(BufferContextEradicationTest, SyncPullStrategy_IsPlayingChangesOnStartSto
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_StartPlaybackRequiresSimulator) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     EXPECT_FALSE(strategy->isPlaying());
 
@@ -220,10 +208,9 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_StartPlaybackRequiresSimul
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_FullPipeline_NoBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     std::vector<float> input(TEST_FRAME_COUNT * STEREO_CHANNELS, TEST_SIGNAL_VALUE_1);
     ASSERT_TRUE(strategy->AddFrames(input.data(), TEST_FRAME_COUNT));
@@ -243,10 +230,9 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_FullPipeline_NoBufferConte
 
 TEST_F(BufferContextEradicationTest, ThreadedStrategy_MultipleRenderCycles_NoBufferContext) {
     auto strategy = std::make_unique<ThreadedStrategy>(logger_.get());
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    ASSERT_TRUE(strategy->initialize(config));
+    ASSERT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 
     const int NUM_CYCLES = 3;
 
@@ -273,21 +259,19 @@ TEST_F(BufferContextEradicationTest, ThreadedStrategy_MultipleRenderCycles_NoBuf
 // ============================================================================
 
 TEST_F(BufferContextEradicationTest, Factory_CreatesThreadedStrategy_InitWithoutBufferContext) {
-    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::Threaded, logger_.get());
+    auto strategy = IAudioBufferFactory::createBuffer(AudioMode::Threaded, logger_.get());
     ASSERT_NE(strategy, nullptr);
 
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    EXPECT_TRUE(strategy->initialize(config));
+    EXPECT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 }
 
 TEST_F(BufferContextEradicationTest, Factory_CreatesSyncPullStrategy_InitWithoutBufferContext) {
-    auto strategy = IAudioBufferFactory::createStrategy(AudioMode::SyncPull, logger_.get());
+    auto strategy = IAudioBufferFactory::createBuffer(AudioMode::SyncPull, logger_.get());
     ASSERT_NE(strategy, nullptr);
 
-    AudioStrategyConfig config;
-    config.sampleRate = DEFAULT_SAMPLE_RATE;
+    AudioBufferConfig config;
     config.channels = STEREO_CHANNELS;
-    EXPECT_TRUE(strategy->initialize(config));
+    EXPECT_TRUE(strategy->initialize(config, DEFAULT_SAMPLE_RATE));
 }

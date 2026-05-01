@@ -4,6 +4,8 @@
 #ifndef AUDIO_TEST_CONSTANTS_H
 #define AUDIO_TEST_CONSTANTS_H
 
+#include "simulator/EngineSimTypes.h"
+
 namespace test {
 namespace constants {
 
@@ -18,9 +20,9 @@ constexpr int STANDARD_FRAME_COUNT = 50;
 constexpr int LARGE_FRAME_COUNT = 90;
 constexpr int TEST_FRAME_COUNT = 30;
 
-// Audio parameters
+// Audio parameters — single source of truth via EngineSimDefaults
 constexpr int STEREO_CHANNELS = 2;
-constexpr int DEFAULT_SAMPLE_RATE = 48000;
+constexpr int DEFAULT_SAMPLE_RATE = EngineSimDefaults::SAMPLE_RATE;
 constexpr float FLOAT_TOLERANCE = 0.0001f;
 
 // Test signal values
