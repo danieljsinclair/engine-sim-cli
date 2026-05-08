@@ -489,12 +489,10 @@ private node C63_transmission {
         .add_gear(0.73);
 }
 
-public node main{
-    run(
-        engine: M156(),
-        transmission: C63_transmission(),
-        vehicle: C63_vehicle()
-    )
+public node main {
+    set_engine(M156())
+    set_vehicle(C63_vehicle())
+    set_transmission(C63_transmission())
 }
 
 main()

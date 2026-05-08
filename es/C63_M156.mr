@@ -454,3 +454,11 @@ public node M156 {
             limiter_duration: 0.05
         ))
 }
+
+public node main {
+    set_engine(M156())
+    set_vehicle(amg_vehicle())
+    set_transmission(amg_transmission())
+}
+
+main()
