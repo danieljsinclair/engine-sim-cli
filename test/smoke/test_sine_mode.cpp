@@ -34,11 +34,11 @@ TEST_F(SineModeSmokeTest, ProducesAudioOutput) {
     EXPECT_EQ(exitCode, 0) << "CLI failed with exit code " << exitCode;
 }
 
-TEST_F(SineModeSmokeTest, SineModeWithRPMFlag) {
-    // Test: Run with --sine --rpm 1000 --duration 0.1 --silent
+TEST_F(SineModeSmokeTest, SineModeWithLoadFlag) {
+    // Test: Run with --sine --load 50 --duration 0.1 --silent
     // Expect: Exit code 0, no crash
-    int result = runCLI("--sine --rpm 1000 --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--sine --load 50 --duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
-    EXPECT_EQ(exitCode, 0) << "CLI failed with RPM flag. Exit code: " << exitCode;
+    EXPECT_EQ(exitCode, 0) << "CLI failed with load flag. Exit code: " << exitCode;
 }

@@ -9,12 +9,14 @@ extern std::atomic<bool> g_running;
 
 namespace input {
 
-KeyboardInputProvider::KeyboardInputProvider(ILogging* logger)
+KeyboardInputProvider::KeyboardInputProvider(ILogging* logger, double initialDynoTorqueScale)
     : keyboardInput_(nullptr)
     , throttle_(0.1)
     , baselineThrottle_(0.1)
     , ignition_(true)
     , starterSwitch_(false)
+    , dynoTorqueScale_(initialDynoTorqueScale)
+    , gearDelta_(0)
     , lastKey_(-1)
     , defaultLogger_(logger ? nullptr : new ConsoleLogger())
     , logger_(logger ? logger : defaultLogger_.get())
@@ -63,6 +65,9 @@ EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     input.throttle = throttle_;
     input.ignition = ignition_;
     input.starterMotor = starterSwitch_;
+    input.dynoTorqueScale = dynoTorqueScale_;
+    input.gearDelta = gearDelta_;
+    gearDelta_ = 0;  // Reset after consuming
     input.shouldContinue = true;
     return input;
 }
@@ -81,10 +86,24 @@ void KeyboardInputProvider::processKeyPress(int key) {
         case 27: case 'q': case 'Q':
             g_running.store(false);
             break;
-        case 'w': case 'W':
-            throttle_ = std::min(1.0, throttle_ + 0.05);
-            baselineThrottle_ = throttle_;
+        
+        // ENGINE START
+        case 'i': case 'I': {
+            static bool ignitionState = true;
+            ignitionState = !ignitionState;
+            ignition_ = ignitionState;
+            logger_->info(LogMask::UI, "Ignition %s", ignitionState ? "enabled" : "disabled");
             break;
+        }
+        case 's': case 'S': {
+            static bool starterState = false;
+            starterState = !starterState;
+            starterSwitch_ = starterState;
+            logger_->info(LogMask::UI, "Starter motor %s", starterState ? "enabled" : "disabled");
+            break;
+        }
+        
+        // THROTTLE CONTROL
         case ' ':
             throttle_ = 0.0;
             baselineThrottle_ = 0.0;
@@ -93,35 +112,36 @@ void KeyboardInputProvider::processKeyPress(int key) {
             throttle_ = 0.2;
             baselineThrottle_ = throttle_;
             break;
-        case 'a': {
-            static bool ignitionState = true;
-            ignitionState = !ignitionState;
-            ignition_ = ignitionState;
-            logger_->info(LogMask::UI, "Ignition %s", ignitionState ? "enabled" : "disabled");
-            break;
-        }
-        case 's': {
-            static bool starterState = false;
-            starterState = !starterState;
-            starterSwitch_ = starterState;
-            logger_->info(LogMask::UI, "Starter motor %s", starterState ? "enabled" : "disabled");
-            break;
-        }
-        case 65:  // UP arrow (macOS)
+
+        case 'a': case 'w': case 'W': case 65:  // UP arrow (macOS)
             throttle_ = std::min(1.0, throttle_ + 0.05);
             baselineThrottle_ = throttle_;
             break;
-        case 66:  // DOWN arrow (macOS)
+        case 'z': case 'Z': case 66:  // DOWN arrow (macOS)
             throttle_ = std::max(0.0, throttle_ - 0.05);
             baselineThrottle_ = throttle_;
             break;
-        case 'k': case 'K':  // Alternative UP
-            throttle_ = std::min(1.0, throttle_ + 0.05);
-            baselineThrottle_ = throttle_;
+
+        // Dyno Torque Control
+        case 'e':  // Decrease dyno torque (release traction control)
+            dynoTorqueScale_ = std::max(0.0, dynoTorqueScale_ - 0.1);
+            logger_->info(LogMask::UI, "Dyno torque: %.0f%%", dynoTorqueScale_ * 100.0);
             break;
-        case 'j': case 'J':  // Alternative DOWN
-            throttle_ = std::max(0.0, throttle_ - 0.05);
-            baselineThrottle_ = throttle_;
+        case 'd':  // Increase dyno torque (apply traction control)
+            dynoTorqueScale_ = std::min(1.0, dynoTorqueScale_ + 0.1);
+            logger_->info(LogMask::UI, "Dyno torque: %.0f%%", dynoTorqueScale_ * 100.0);
+            break;
+        case 'c':  // Full release (free-revving)
+            dynoTorqueScale_ = 0.0;
+            logger_->info(LogMask::UI, "Dyno torque: RELEASED (0%%)");
+            break;
+
+        // GEAR CONTROL
+        case ']':  // Shift up
+            gearDelta_ = 1;
+            break;
+        case '[':  // Shift down
+            gearDelta_ = -1;
             break;
     }
     lastKey_ = key;

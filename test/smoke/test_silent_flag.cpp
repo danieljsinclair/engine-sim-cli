@@ -53,11 +53,11 @@ TEST_F(SilentFlagTest, SilentModeWithThreaded) {
     EXPECT_EQ(exitCode, 0) << "CLI failed with --silent --threaded. Exit code: " << exitCode;
 }
 
-TEST_F(SilentFlagTest, SilentModeWithRPM) {
-    // Test: Run with --silent --rpm to test silent mode with RPM control
+TEST_F(SilentFlagTest, SilentModeWithLoad) {
+    // Test: Run with --silent --load to test silent mode with dyno load
     // Expect: No crash
-    int result = runCLI("--sine --silent --rpm 1000 --duration 0.1 > /dev/null 2>&1");
+    int result = runCLI("--sine --silent --load 50 --duration 0.1 > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
-    EXPECT_EQ(exitCode, 0) << "CLI failed with --silent --rpm. Exit code: " << exitCode;
+    EXPECT_EQ(exitCode, 0) << "CLI failed with --silent --load. Exit code: " << exitCode;
 }

@@ -49,6 +49,19 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     // Throttle
     out << "[Throttle: " << std::setw(4) << static_cast<int>(state.throttle * 100) << "%] ";
 
+    // Gear
+    out << "[Gear: " << state.gear << "] ";
+
+    // Dyno load (shown when torque is being applied)
+    if (state.dynoTorque > 0) {
+        if (state.dynoTargetRPM > 0) {
+            out << "[Dyno: " << static_cast<int>(state.dynoTargetRPM) << " RPM "
+                << static_cast<int>(state.dynoTorque) << " ft*lbs] ";
+        } else {
+            out << "[Load: " << static_cast<int>(state.dynoTorque) << " ft*lbs] ";
+        }
+    }
+
     // Underruns
     out << "[Underruns: " << state.underrunCount << "] ";
 
@@ -63,11 +76,10 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         out << "[" << state.audioMode << "]"
             << " req=" << std::setw(3) << state.framesRequested
             << " got=" << std::setw(3) << state.framesRendered
-            << " rendered=" << std::setw(5) << std::fixed << std::setprecision(1) << state.renderMs << "ms"
-            << " headroom=" << std::setw(5) << std::showpos << std::setprecision(1) << state.headroomMs
+            << " took=" << std::setw(5) << std::fixed << std::setprecision(1) << state.renderMs << "ms"
+            << " room=" << std::setw(5) << std::showpos << std::setprecision(1) << state.headroomMs
             << std::noshowpos << "ms"
-            << " (" << budgetColor << std::setw(3) << std::setprecision(0)
-            << state.budgetPct << "% of budget" << ANSIColors::RESET << ") ";
+            << budgetColor << "budget: "  << std::setw(3) << std::setprecision(0) << state.budgetPct << "%" << ANSIColors::RESET << " ";
     }
 
     // Callback throughput metrics
@@ -83,9 +95,9 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         std::string trendColor = ANSIColors::getDispositionColour(
             state.trendPct >= 0.0, state.trendPct >= -1.0);
 
-        out << "[callbacks=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
-            << "needed=" << std::setw(5) << std::setprecision(1) << neededKfps << "kfps "
-            << "generating=" << genColor << std::setw(5) << generatingKfps << "kfps" << ANSIColors::RESET << " "
+        out << "[calls=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
+            << "need" << std::setw(5) << std::setprecision(1) << neededKfps << "kfps "
+            << "actual=" << genColor << std::setw(5) << generatingKfps << "kfps" << ANSIColors::RESET << " "
             << "trend=" << trendColor << std::setw(5) << std::showpos << std::setprecision(1) << state.trendPct
             << std::noshowpos << "%" << ANSIColors::RESET << "]";
     }

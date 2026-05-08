@@ -25,9 +25,8 @@ void printUsage(const char* progName) {
     std::cout << "   OR: " << progName << " --script <engine_config.mr> [options] [output.wav]\n\n";
     std::cout << "Options:\n";
     std::cout << "  --script <path>      Path to engine .mr configuration file\n";
-    std::cout << "  --rpm <value>        Target RPM to maintain (default: auto)\n";
-    std::cout << "  --load <0-100>       FIXED throttle load percentage (ignored in interactive mode)\n";
-    std::cout << "  --interactive        Enable interactive keyboard control (overrides --load)\n";
+    std::cout << "  --load <0-100>       Dyno load torque percentage (engine works against this)\n";
+    std::cout << "  --interactive        Enable interactive keyboard control\n";
     std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
@@ -41,9 +40,7 @@ void printUsage(const char* progName) {
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
     std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n\n";
     std::cout << "NOTES:\n";
-    std::cout << "  --load sets a FIXED throttle for non-interactive mode only\n";
-    std::cout << "  In interactive mode, use J/K or Up/Down arrows to control load\n";
-    std::cout << "  Use --rpm for RPM control mode (throttle auto-adjusts)\n";
+    std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
     std::cout << "  Default mode is sync-pull (synchronous render in audio callback)\n";
     std::cout << "  Use --threaded for cursor-chasing circular buffer mode\n";
     std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n\n";
@@ -54,12 +51,16 @@ void printUsage(const char* progName) {
     std::cout << "  W                      Increase throttle\n";
     std::cout << "  SPACE                  Apply brake\n";
     std::cout << "  R                      Reset to idle\n";
+    std::cout << "  C                      Increase dyno load torque\n";
+    std::cout << "  D                      Decrease dyno load torque\n";
+    std::cout << "  E                      Release dyno (free-revving)\n";
+    std::cout << "  ] / [                  Shift up / shift down\n";
     std::cout << "  Q/ESC                  Quit\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << progName << " --script v8_engine.mr --rpm 850 --duration 5 --output output.wav\n";
+    std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive --play\n";
     std::cout << "  " << progName << " --script v8_engine.mr --interactive --play\n";
-    std::cout << "  " << progName << " --script engine-sim-bridge/engine-sim/assets/main.mr --interactive --output recording.wav\n";
-    std::cout << "  " << progName << " --default-engine --rpm 2000 --play --output engine.wav\n";
+    std::cout << "  " << progName << " --script engine-sim-bridge/engine-sim/assets/main.mr --load 30 --duration 5 --output output.wav\n";
+    std::cout << "  " << progName << " --default-engine --load 75 --play\n";
     std::cout << "  " << progName << " --default-engine --cranking-volume 2.0 --play  # 2x volume during cranking\n";
 }
 
@@ -72,8 +73,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     std::string scriptPath;
     std::string positionalEngineConfig;
 
-    app.add_option("--rpm", args.targetRPM, "Target RPM to maintain (default: auto)") ->check(CLI::Range(0.0, 20000.0));
-    app.add_option("--load", loadArg, "FIXED throttle load percentage (ignored in interactive mode)") ->check(CLI::Range(0.0, 100.0));
+    app.add_option("--load", loadArg, "Dyno load torque percentage (engine works against this)") ->check(CLI::Range(0.0, 100.0));
     app.add_option("--output", args.outputWav, "Output WAV file path");
     app.add_option("--duration", args.duration, "Duration in seconds (default: 3.0, ignored in interactive)");
     app.add_option("--sim-freq", args.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
@@ -94,7 +94,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     bool threadedFlag = false;
     bool silentFlag = false;
     app.add_flag("--play,--play-audio", args.playAudio, "Play audio to speakers in real-time");
-    app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control (overrides --load)");
+    app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
     app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
@@ -125,9 +125,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         return false;
     }
 
-    if (args.targetRPM < 0 || args.targetRPM > 20000)    return fail("ERROR: RPM must be between 0 and 20000\n");
     if (args.targetLoad < -1.0 || args.targetLoad > 1.0) return fail("ERROR: Load must be between 0 and 100\n");
-    if (args.targetRPM > 0 && args.targetLoad < 0)       args.targetLoad = -1.0;  // Auto mode
 
     return true;
 }
@@ -149,11 +147,9 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     } else {
         std::cout << "  Duration: " << config.duration << " seconds\n";
     }
-    if (config.targetRPM > 0) {
-        std::cout << "  Target RPM: " << config.targetRPM << "\n";
-    }
     if (config.targetLoad >= 0) {
-        std::cout << "  Target Load: " << static_cast<int>(config.targetLoad * 100) << "%\n";
+        std::cout << "  Dyno Load: " << static_cast<int>(config.targetLoad * 100)
+                  << "% (" << static_cast<int>(config.targetLoad * EngineSimDefaults::DYNO_MAX_TORQUE_FT_LBS) << " ft*lbs)\n";
     }
     std::cout << "  Interactive: " << (config.interactive ? "Yes" : "No") << "\n";
     std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";

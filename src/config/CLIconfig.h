@@ -19,8 +19,7 @@ struct CommandLineArgs {
     std::string engineConfig;
     std::string outputWav;
     double duration = 0.0;        // 0-sentinel, resolved by bridge/SimulationConfig
-    double targetRPM = 0.0;
-    double targetLoad = -1.0;     // -1 means auto (RPM control)
+    double targetLoad = -1.0;     // -1 = no dyno, 0.0-1.0 = load torque fraction
     bool interactive = false;
     bool playAudio = false;
     bool useDefaultEngine = false;

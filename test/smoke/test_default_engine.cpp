@@ -34,13 +34,13 @@ TEST_F(DefaultEngineSmokeTest, ProducesAudioOutput) {
     EXPECT_EQ(exitCode, 0) << "CLI failed with exit code " << exitCode;
 }
 
-TEST_F(DefaultEngineSmokeTest, DefaultEngineWithRPMFlag) {
-    // Test: Run with --default-engine --rpm 2000 --duration 0.1 --silent
+TEST_F(DefaultEngineSmokeTest, DefaultEngineWithLoadFlagHigh) {
+    // Test: Run with --default-engine --load 75 --duration 0.1 --silent
     // Expect: Exit code 0, no crash
-    int result = runCLI("--default-engine --rpm 2000 --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--default-engine --load 75 --duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
-    EXPECT_EQ(exitCode, 0) << "CLI failed with RPM flag. Exit code: " << exitCode;
+    EXPECT_EQ(exitCode, 0) << "CLI failed with load flag. Exit code: " << exitCode;
 }
 
 TEST_F(DefaultEngineSmokeTest, DefaultEngineWithLoadFlag) {

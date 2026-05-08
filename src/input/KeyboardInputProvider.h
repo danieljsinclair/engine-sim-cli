@@ -12,7 +12,7 @@ namespace input {
 
 class KeyboardInputProvider : public IInputProvider {
 public:
-    explicit KeyboardInputProvider(ILogging* logger = nullptr);
+    explicit KeyboardInputProvider(ILogging* logger = nullptr, double initialDynoTorqueScale = -1.0);
     ~KeyboardInputProvider() override;
 
     bool Initialize() override;
@@ -33,6 +33,8 @@ private:
     double baselineThrottle_;
     bool ignition_;
     bool starterSwitch_;
+    double dynoTorqueScale_;
+    int gearDelta_;
     int lastKey_;
     std::string lastError_;
 
