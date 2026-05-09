@@ -1,9 +1,17 @@
+<!--
+  ARCHIVAL NOTICE (2026-04-30): This April 7 action plan described issues
+  now resolved. Audio output, mode selection, and hardware integration were
+  addressed via AudioPlayer removal (ee81a84) and bridge consolidation into
+  engine-sim-bridge. Current architecture: SimulationLoop → IAudioBuffer +
+  IAudioHardwareProvider. Remaining items: cross-platform providers (Linux/
+  Windows/ESP32). Action items from this document are OBSOLETE.
+-->
+
 # Architecture Action Plan
 
 **Document Version:** 1.0
 **Date:** 2026-04-07
-**Status:** READY FOR IMPLEMENTATION
-**Priority:** CRITICAL - Integration Issues Blocking Production
+**Status:** ARCHIVED - Superseded by subsequent architectural changes
 
 ---
 
