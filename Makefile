@@ -83,7 +83,7 @@ $(BUILD_DIR)/Makefile: submodules
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
 
 test: $(BUILD_DIR)/Makefile
-	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests
+	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests
 	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee test.log
 
 run: all
