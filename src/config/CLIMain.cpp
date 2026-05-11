@@ -14,10 +14,16 @@
 #include "simulator/EngineSimTypes.h"
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
+#include "input/KeyboardInput.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
+
+// Bridge headers for connect-demo mode
+#include "input/DemoInputProvider.h"
+#include "input/KeyboardDemoThrottleSource.h"
+#include "twin/IceVehicleProfile.h"
 
 #include "engine-sim/include/simulator.h"
 #include "engine-sim/include/units.h"
@@ -26,6 +32,18 @@
 #include <csignal>
 #include <memory>
 #include <stdexcept>
+
+// Adapter for real KeyboardInput to bridge's IKeyboardInput interface
+namespace {
+class RealKeyboardInputAdapter : public input::IKeyboardInput {
+public:
+    explicit RealKeyboardInputAdapter(::KeyboardInput& realKeyboard) : realKeyboard_(realKeyboard) {}
+    int getKey() override { return realKeyboard_.getKey(); }
+
+private:
+    ::KeyboardInput& realKeyboard_;
+};
+}
 
 // ============================================================================
 // Signal Handler
@@ -42,7 +60,23 @@ void signalHandler(int signal) {
 
 namespace {
 
-input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger) {
+input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger, const CommandLineArgs& args) {
+    // Connect-demo mode: VirtualICE twin with automatic gearbox
+    if (args.connectDemo) {
+        static ::KeyboardInput realKeyboard; // Static for termios persistence (global namespace)
+        static RealKeyboardInputAdapter adapter(realKeyboard); // Adapter to bridge's interface
+        auto throttle = std::make_unique<input::KeyboardDemoThrottleSource>(adapter);
+        auto provider = std::make_unique<input::DemoInputProvider>(
+            std::move(throttle),
+            twin::IceVehicleProfile::zf8hp45()
+        );
+        if (provider->Initialize()) {
+            return provider.release();
+        }
+        throw std::runtime_error("Failed to initialize demo input provider");
+    }
+
+    // Standard interactive mode
     if (config.interactive) {
         auto provider = std::make_unique<input::KeyboardInputProvider>(logger, config.targetLoad);
         if (provider->Initialize()) {
@@ -166,7 +200,7 @@ int main(int argc, char* argv[]) {
             // Create strategy via factory - pass telemetry so strategies push diagnostics
             AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
             audioBuffer = IAudioBufferFactory::createBuffer(mode, cliLogger.get(), telemetry.get());
-            inputProvider = createInputProvider(config, cliLogger.get());
+            inputProvider = createInputProvider(config, cliLogger.get(), args);
             presentation = createPresentation(config);
 
             // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)

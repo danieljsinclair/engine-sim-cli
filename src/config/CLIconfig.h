@@ -23,6 +23,7 @@ struct CommandLineArgs {
     bool interactive = false;
     bool playAudio = false;
     bool useDefaultEngine = false;
+    bool connectDemo = false;      // Run VirtualICE twin demo with automatic gearbox
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
     bool silent = false;         // Run full audio pipeline but with zero volume

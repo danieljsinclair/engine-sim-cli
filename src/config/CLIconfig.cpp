@@ -31,6 +31,7 @@ void printUsage(const char* progName) {
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
+    std::cout << "  --connect-demo       Run VirtualICE twin demo with automatic gearbox\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
@@ -84,11 +85,14 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine .mr configuration file");
     auto defaultEngineOpt = app.add_flag("--default-engine", args.useDefaultEngine, "Use default engine from main repo (ignores config file)");
+    auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
     // Mutual exclusions
     defaultEngineOpt->excludes(scriptOpt);
     defaultEngineOpt->excludes(engineConfigOpt);
+    connectDemoOpt->excludes(defaultEngineOpt);
+    connectDemoOpt->excludes(engineConfigOpt);
     scriptOpt->excludes(engineConfigOpt);
 
     bool threadedFlag = false;
@@ -111,6 +115,14 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) args.silent = args.playAudio = true;
     if (args.interactive) g_interactiveMode.store(true);
+
+    // Implicit settings when connectDemo is true
+    if (args.connectDemo) {
+        args.playAudio = true;
+        args.interactive = true;
+        if (scriptPath.empty()) args.useDefaultEngine = true;
+        g_interactiveMode.store(true);
+    }
 
     args.engineConfig = args.useDefaultEngine ? "(default engine)" : (scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath));
 
