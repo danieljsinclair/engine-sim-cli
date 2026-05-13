@@ -3,12 +3,36 @@
 // SRP: Single responsibility - formats and outputs EngineState to console
 
 #include "ConsolePresentation.h"
+#include "simulator/GearConventions.h"
 
+#include <cmath>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 
+#include "../engine-sim-bridge/include/simulator/EngineSimTypes.h"
+
 namespace presentation {
+
+namespace {
+// Gear selector character lookup table — index is GearSelector value + 2 (offset PARK=-2 to 0)
+char gearSelectorChar(int selector) {
+    using GS = bridge::GearSelector;
+    switch (static_cast<GS>(selector)) {
+        case GS::PARK:    return 'P';
+        case GS::REVERSE: return 'R';
+        case GS::NEUTRAL: return 'N';
+        case GS::DRIVE:   return 'D';
+        default:
+            // Values 1-8 = manual gear select
+            if (selector >= static_cast<int>(GS::NEUTRAL) + 1 &&
+                selector <= static_cast<int>(GS::NEUTRAL) + 8) {
+                return '0' + selector;
+            }
+            return '?';
+    }
+}
+}
 
 ConsolePresentation::ConsolePresentation()
     : initialized_(false)
@@ -43,14 +67,43 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
 
     // RPM
     int rpm = static_cast<int>(state.rpm);
-    if (rpm < 10 && state.rpm > 0) rpm = 0;
+    if (rpm < EngineSimDefaults::RPM_DISPLAY_FLOOR && state.rpm > 0) rpm = 0;
     out << "[" << std::setw(5) << rpm << " RPM] ";
 
     // Throttle
     out << "[Throttle: " << std::setw(4) << static_cast<int>(state.throttle * 100) << "%] ";
 
-    // Gear
-    out << "[Gear: " << state.gear << "] ";
+    // Gear: [Gear:XMG] format where X=selector, M/A=mode, G=gear number
+    {
+        char selectorChar = gearSelectorChar(state.gearSelector);
+        char modeChar = state.gearAutoMode ? 'A' : 'M';
+        int gearNum = state.gear; // BridgeGear: 0=neutral, 1-8=gears
+
+        out << "[Gear:" << selectorChar << modeChar << gearNum << "] ";
+    }
+
+    // Road speed — displayed as whole-number mph (right-aligned 3-char field)
+    {
+        int mph = static_cast<int>(std::round(state.vehicleSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
+        out << "[" << std::setw(3) << mph << " mph] ";
+    }
+
+    // Engine torque and drivetrain torque: green=positive (power), red=negative (braking)
+    {
+        int engTorque = static_cast<int>(state.engineTorqueNm);
+        int drvTorque = static_cast<int>(state.drivetrainTorqueNm);
+
+        const std::string& engColor = (engTorque >= 0) ? ANSIColors::GREEN : ANSIColors::RED;
+        const std::string& drvColor = (drvTorque >= 0) ? ANSIColors::GREEN : ANSIColors::RED;
+
+        out << engColor << "[Eng: "
+            << std::setw(3) << std::showpos << engTorque << "nm"
+            << " <--> "
+            << drvColor
+            << std::setw(3) << drvTorque << "nm"
+            << ": Drive]"
+            << std::noshowpos << ANSIColors::RESET << " ";
+    }
 
     // Dyno load (shown when torque is being applied)
     if (state.dynoTorque > 0) {
@@ -87,11 +140,9 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         double neededKfps = state.sampleRate / 1000.0;
         double generatingKfps = state.generatingRateFps / 1000.0;
 
-        // Colour coding: green if generating >= needed, yellow if >= 90%, red otherwise
         std::string genColor = ANSIColors::getDispositionColour(
             generatingKfps >= neededKfps, generatingKfps >= neededKfps * 0.9);
 
-        // Trend: green if >= 0, yellow if < 0, red if < -1.0
         std::string trendColor = ANSIColors::getDispositionColour(
             state.trendPct >= 0.0, state.trendPct >= -1.0);
 

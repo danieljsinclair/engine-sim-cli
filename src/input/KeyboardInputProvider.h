@@ -35,6 +35,7 @@ private:
     bool starterSwitch_;
     double dynoTorqueScale_;
     int gearDelta_;
+    int gearSelector_;
     int lastKey_;
     std::string lastError_;
 

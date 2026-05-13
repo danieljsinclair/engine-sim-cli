@@ -6,15 +6,16 @@
 
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
+BUILD_PHASE0_SPIKES ?= OFF
 CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
 # Default to parallel build using available CPU cores
 MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all clean scrub test submodules check-cmake check-platform remove-orphans force-rebuild
+.PHONY: all build clean scrub test submodules check-cmake check-platform remove-orphans force-rebuild
 
-all: check-platform check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
+all: check-platform check-cmake submodules check-submodule build
 
 check-platform:
 	@if [ "$$(uname)" != "Darwin" ]; then \
@@ -26,6 +27,8 @@ check-platform:
 		echo ""; \
 		exit 1; \
 	fi
+
+build: $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE)
 
 # Check if submodule changed - if so, force rebuild
@@ -80,9 +83,10 @@ submodules:
 
 $(BUILD_DIR)/Makefile: submodules
 	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
+	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) ..
 
 test: $(BUILD_DIR)/Makefile
+	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) ..
 	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests
 	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee test.log
 

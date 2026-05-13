@@ -3,6 +3,7 @@
 
 #include "CLIconfig.h"
 #include "simulation/SimulationLoop.h"
+#include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
 #include <iostream>
@@ -170,9 +171,9 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     if (config.volume == 0.0f) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
     }
-    std::cout << "  Sim Freq: \x1b[32m" << config.engineConfig.simulationFrequency << " Hz\x1b[0m\n";
+    std::cout << "  Sim Freq: " << ANSIColors::GREEN << config.engineConfig.simulationFrequency << " Hz" << ANSIColors::RESET << "\n";
     if (config.engineConfig.targetSynthesizerLatency > 0.0) {
-        std::cout << "  Synth Latency: \x1b[32m" << config.engineConfig.targetSynthesizerLatency << "s\x1b[0m\n";
+        std::cout << "  Synth Latency: " << ANSIColors::GREEN << config.engineConfig.targetSynthesizerLatency << "s" << ANSIColors::RESET << "\n";
     }
     std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
     std::cout << "\n";

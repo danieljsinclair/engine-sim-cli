@@ -17,6 +17,7 @@ KeyboardInputProvider::KeyboardInputProvider(ILogging* logger, double initialDyn
     , starterSwitch_(false)
     , dynoTorqueScale_(initialDynoTorqueScale)
     , gearDelta_(0)
+    , gearSelector_(0)
     , lastKey_(-1)
     , defaultLogger_(logger ? nullptr : new ConsoleLogger())
     , logger_(logger ? logger : defaultLogger_.get())
@@ -67,6 +68,8 @@ EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     input.starterMotor = starterSwitch_;
     input.dynoTorqueScale = dynoTorqueScale_;
     input.gearDelta = gearDelta_;
+    input.gearSelector = gearSelector_;
+    input.gearAutoMode = false;
     gearDelta_ = 0;  // Reset after consuming
     input.shouldContinue = true;
     return input;
@@ -139,9 +142,11 @@ void KeyboardInputProvider::processKeyPress(int key) {
         // GEAR CONTROL
         case ']':  // Shift up
             gearDelta_ = 1;
+            if (gearSelector_ < 8) gearSelector_++;
             break;
         case '[':  // Shift down
             gearDelta_ = -1;
+            if (gearSelector_ > 0) gearSelector_--;
             break;
     }
     lastKey_ = key;

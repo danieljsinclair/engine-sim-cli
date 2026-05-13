@@ -17,5 +17,5 @@ function not_shell_code() {
     fg=#ABCDEF
 
     # master/main branch overrides
-    bg.escli-preset-engine-configs=#124F56
+     bg.virtual-ice-twin=#114455
 }
