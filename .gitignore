@@ -19,11 +19,6 @@ engine-sim-cli
 .DS_Store
 Thumbs.db
 
-# Temporary files
-*.bak
-*.new
-*~
-
 # Root-level library files (belong in build/)
 *.dylib
 *.a
@@ -32,20 +27,24 @@ Thumbs.db
 *.log
 logs/*
 
-# Test outputs (but keep sound library wav files)
-*.wav
-!es/sound-library/**/*.wav
-test_*.mr
+# Test outputs
 Testing/
 verification_output/
 *.dat
 
+# Temporary files
+*.bak
+*.new
+*~
 .cache/
 results.xml
 
 # Preset compiler temporary wrapper script (regenerated each run)
-_escli_preset_wrapper.mr
-escli-ios/EngineSimApp/EngineSimApp.xcodeproj/project.xcworkspace/xcuserdata/danielsinclair.xcuserdatad/UserInterfaceState.xcuserstate
 escli-ios/EngineSimApp/EngineSimApp.xcodeproj/project.xcworkspace/xcuserdata/
 escli-ios/EngineSimApp/EngineSimApp.xcodeproj/xcuserdata/
 .claude/scheduled_tasks.lock
+
+# es/ is a transient copy — rebuilt by 'make sync-es'
+# Canonical source: engine-sim-bridge/es/
+es/
+_escli_preset_wrapper.mr

@@ -18,4 +18,16 @@ function not_shell_code() {
 
     # master/main branch overrides
     bg.escli-preset-engine-configs=#124F56
+    bg!engine-sim-cli.claude=#46a866
+    fg!engine-sim-cli.claude=#000000
+
+    # master/main branch overrides
+    bg!engine-sim-cli.preset=#558844
+    bg#preset-engine-config=#668866
+    fg!engine-sim-cli.preset=#dddddd
+    
+    # master/main branch overrides
+    bg!engine-sim-bridge=#222231
+    fg!engine-sim-bridge=#000000
+
 }

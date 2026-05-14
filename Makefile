@@ -12,9 +12,37 @@ SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 # Default to parallel build using available CPU cores
 MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all clean scrub test submodules check-cmake check-platform remove-orphans force-rebuild
+.PHONY: all clean scrub test submodules check-cmake check-platform remove-orphans force-rebuild \
+        sync-es copy-es-mr copy-es-json presets
 
-all: check-platform check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
+all: check-platform check-cmake submodules check-submodule $(BUILD_DIR)/Makefile bridge-presets sync-es
+
+bridge-presets:
+	@$(MAKE) -C engine-sim-bridge presets 2>/dev/null || echo "Note: presets not built (bridge not compiled yet or no compiler)"
+
+# ---------------------------------------------------------------------------
+# es/ convenience copy — rebuilt from bridge canonical source
+# ---------------------------------------------------------------------------
+BRIDGE_ES := engine-sim-bridge/es
+BRIDGE_PRESET := engine-sim-bridge/preset
+CLI_ES := es
+
+copy-es-mr:
+	@echo "Syncing es/ .mr files from bridge..."
+	@rsync -a --delete --exclude='.git' $(BRIDGE_ES)/ $(CLI_ES)/
+
+copy-es-json: copy-es-mr
+	@if [ -d $(BRIDGE_PRESET) ]; then \
+		echo "Syncing JSON presets..."; \
+		cp $(BRIDGE_PRESET)/*.json $(CLI_ES)/; \
+	else \
+		echo "No presets built yet — run 'make -C engine-sim-bridge presets' first."; \
+	fi
+
+sync-es: copy-es-mr copy-es-json
+
+presets:
+	@$(MAKE) -C engine-sim-bridge presets
 
 check-platform:
 	@if [ "$$(uname)" != "Darwin" ]; then \
@@ -40,12 +68,18 @@ check-submodule:
 		echo "$$CURRENT_SUBMODULE" > $(SUBMODULE_STAMP); \
 	fi
 
-# Remove orphaned binaries and symlinks from root and other unexpected locations
+# Remove orphaned binaries, symlinks, and stray cmake junk from source dirs
 remove-orphans:
 	@rm -f *.dylib libenginesim*.dylib
 	@find . -name "*.dylib*" -type l -delete 2>/dev/null || true
-	@find . -name "CMakeCache.txt" -not -path "./$(BUILD_DIR)/*" -delete 2>/dev/null || true
 	@rm -f $(SUBMODULE_STAMP)
+	@find . -path ./$(BUILD_DIR) -prune -o -name "CMakeCache.txt" -type f -print -delete 2>/dev/null || true
+	@find . -path ./$(BUILD_DIR) -prune -o -name "CMakeFiles" -type d -print -exec rm -rf {} + 2>/dev/null || true
+	@find . -path ./$(BUILD_DIR) -prune -o -name "cmake_install.cmake" -type f -print -delete 2>/dev/null || true
+	@find . -path ./$(BUILD_DIR) -prune -o -name "CTestTestfile.cmake" -type f -print -delete 2>/dev/null || true
+	@find . -path ./$(BUILD_DIR) -prune -o -name "*_include.cmake" -type f -print -delete 2>/dev/null || true
+	@find . -path ./$(BUILD_DIR) -prune -o -name "*.a" -type f -print -delete 2>/dev/null || true
+	@find . -path ./$(BUILD_DIR) -prune -o -name "_deps" -type d -print -exec rm -rf {} + 2>/dev/null || true
 
 # Clean build artifacts (keeps CMakeCache.txt for fast rebuild)
 clean: remove-orphans
@@ -56,12 +90,13 @@ clean: remove-orphans
 		$(MAKE) -C $(BUILD_DIR)/engine-sim-bridge clean 2>/dev/null || true; \
 	fi
 	@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
+	@rm -rf $(CLI_ES)
 
 # Full clean - removes everything including build directories (superset of clean)
 scrub: clean
 	@echo "Scrubbing all build artifacts..."
 	@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
-	@rm -rf $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR) $(CLI_ES)
 	@$(MAKE) remove-orphans
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
 
@@ -88,3 +123,6 @@ test: $(BUILD_DIR)/Makefile
 
 run: all
 	./build/engine-sim-cli --interactive --play --script es/ferrari_f136.mr
+
+run-json: all
+	./build/engine-sim-cli --interactive --play --script es/v8_gm_ls.json

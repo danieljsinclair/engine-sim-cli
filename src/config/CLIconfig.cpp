@@ -22,9 +22,9 @@ std::atomic<bool> g_interactiveMode(false);
 void printUsage(const char* progName) {
     std::cout << "Engine Simulator CLI v2.0\n";
     std::cout << "Usage: " << progName << " [options] <engine_config.mr> <output.wav>\n";
-    std::cout << "   OR: " << progName << " --script <engine_config.mr> [options] [output.wav]\n\n";
+    std::cout << "   OR: " << progName << " --script <engine_config.mr|.json> [options] [output.wav]\n\n";
     std::cout << "Options:\n";
-    std::cout << "  --script <path>      Path to engine .mr configuration file\n";
+    std::cout << "  --script <path>      Path to engine config (.mr script or .json preset)\n";
     std::cout << "  --load <0-100>       Dyno load torque percentage (engine works against this)\n";
     std::cout << "  --interactive        Enable interactive keyboard control\n";
     std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
@@ -82,7 +82,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--cranking-volume", args.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
-    auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine .mr configuration file");
+    auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
     auto defaultEngineOpt = app.add_flag("--default-engine", args.useDefaultEngine, "Use default engine from main repo (ignores config file)");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
