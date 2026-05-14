@@ -12,9 +12,10 @@ SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 # Default to parallel build using available CPU cores
 MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all clean scrub test submodules check-cmake check-platform remove-orphans force-rebuild
+.PHONY: all clean scrub test submodules check-cmake check-platform check-submodule remove-orphans force-rebuild
 
-all: check-platform check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
+all: check-platform check-cmake $(BUILD_DIR)/Makefile
+	@cd $(BUILD_DIR) && $(MAKE)
 
 check-platform:
 	@if [ "$$(uname)" != "Darwin" ]; then \
@@ -26,10 +27,9 @@ check-platform:
 		echo ""; \
 		exit 1; \
 	fi
-	@cd $(BUILD_DIR) && $(MAKE)
 
 # Check if submodule changed - if so, force rebuild
-check-submodule:
+check-submodule: submodules
 	@CURRENT_SUBMODULE=$$(git submodule status engine-sim-bridge | awk '{print $$1}'); \
 	STAMPED_SUBMODULE=$$(cat $(SUBMODULE_STAMP) 2>/dev/null); \
 	if [ "$$CURRENT_SUBMODULE" != "$$STAMPED_SUBMODULE" ]; then \
@@ -78,7 +78,7 @@ submodules:
 		git submodule update --init --recursive; \
 	fi
 
-$(BUILD_DIR)/Makefile: submodules
+$(BUILD_DIR)/Makefile: check-submodule
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
 
