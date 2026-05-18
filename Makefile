@@ -49,7 +49,7 @@ copy-es-mr:
 	@echo "Syncing es/ .mr files from bridge..."
 	@rsync -a --delete --exclude='.git' $(BRIDGE_ES)/ $(CLI_ES)/
 
-copy-es-json: copy-es-mr
+copy-es-json: bridge-presets
 	@if [ -d $(BRIDGE_PRESET) ] && ls $(BRIDGE_PRESET)/*.json >/dev/null 2>&1; then \
 		echo "Syncing JSON presets..."; \
 		cp $(BRIDGE_PRESET)/*.json $(CLI_ES)/; \
