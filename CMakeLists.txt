@@ -17,6 +17,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(cli11)
 
 # Add engine-sim-bridge submodule
+set(BUILD_PRESET_ENGINE_TESTS ON CACHE BOOL "Enable preset engine tests in CLI build" FORCE)
 add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
 
 # Platform-specific audio libraries
@@ -106,6 +107,16 @@ if(BUILD_TESTS)
     enable_testing()
 
     add_subdirectory(test)
+
+    # Register bridge tests with CTest when building as a superproject.
+    # The bridge skips add_test() when CMAKE_SOURCE_DIR != CMAKE_CURRENT_SOURCE_DIR,
+    # so we register them here instead.
+    if(TARGET bridge_unit_tests)
+        add_test(NAME bridge_unit_tests COMMAND bridge_unit_tests --gtest_color=yes)
+    endif()
+    if(TARGET preset_engine_tests)
+        add_test(NAME preset_engine_tests COMMAND preset_engine_tests --gtest_color=yes)
+    endif()
 
     add_custom_target(run_tests
         DEPENDS engine-sim-cli smoke_tests bridge_unit_tests
