@@ -17,7 +17,7 @@ MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 .PHONY: all clean scrub test submodules check-cmake check-platform remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets \
-        run run-json help
+        run run-json help build-cross clean-cross
 
 # ============================================================================
 # all: Full build cascade — configure, compile, build presets, sync es/
@@ -149,3 +149,33 @@ help:
 	@echo "  make run      - Build and run CLI with .mr script"
 	@echo "  make run-json - Build and run CLI with JSON preset"
 	@echo "  make help     - Show this help"
+
+# ---------------------------------------------------------------------------
+# Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
+# Not iOS-aware — just accepts a platform variable for the CMake toolchain.
+# ---------------------------------------------------------------------------
+ifdef PLATFORM
+CROSS_BUILD_DIR := build-$(PLATFORM)
+CROSS_TOOLCHAIN := ios.toolchain.cmake
+endif
+
+build-cross: submodules
+ifndef PLATFORM
+	$(error PLATFORM is required. Usage: make build-cross PLATFORM=OS64)
+endif
+	@mkdir -p $(CROSS_BUILD_DIR)
+	@cd $(CROSS_BUILD_DIR) && cmake \
+		-DCMAKE_TOOLCHAIN_FILE=$(CROSS_TOOLCHAIN) \
+		-DPLATFORM=$(PLATFORM) \
+		-DDEPLOYMENT_TARGET=16.0 \
+		-DBUILD_TESTS=OFF \
+		-DBUILD_BRIDGE_TESTS=OFF \
+		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
+	@$(MAKE) -C $(CROSS_BUILD_DIR) engine-sim-bridge -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+clean-cross:
+ifdef PLATFORM
+	@rm -rf $(CROSS_BUILD_DIR)
+else
+	@rm -rf build-OS64 build-SIMULATOR64
+endif
