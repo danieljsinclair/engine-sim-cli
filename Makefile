@@ -15,7 +15,7 @@ SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 # Default to parallel build using available CPU cores
 MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all clean scrub test submodules check-cmake check-platform remove-orphans \
+.PHONY: all clean scrub test submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets \
         run run-json help build-cross clean-cross
 
@@ -32,6 +32,11 @@ MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 all: check-platform bridge-presets sync-es
 
 check-platform: check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
+	@if [ "$$(uname)" != "Darwin" ]; then \
+		echo ""; \
+		echo "ERROR: engine-sim-cli only supports macOS (CoreAudio/AudioUnit)."; \
+		exit 1; \
+	fi
 	@cd $(BUILD_DIR) && $(MAKE)
 
 # Build presets in bridge (depends on check-platform so compiler exists)
@@ -64,7 +69,7 @@ presets: bridge-presets
 # ---------------------------------------------------------------------------
 # Submodule and CMake configuration
 # ---------------------------------------------------------------------------
-check-submodule:
+check-submodule: submodules
 	@CURRENT_SUBMODULE=$$(git submodule status engine-sim-bridge | awk '{print $$1}'); \
 	STAMPED_SUBMODULE=$$(cat $(SUBMODULE_STAMP) 2>/dev/null); \
 	if [ "$$CURRENT_SUBMODULE" != "$$STAMPED_SUBMODULE" ]; then \
@@ -88,7 +93,7 @@ submodules:
 		git submodule update --init --recursive; \
 	fi
 
-$(BUILD_DIR)/Makefile: submodules
+$(BUILD_DIR)/Makefile: check-submodule
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
 
@@ -125,8 +130,8 @@ scrub: clean
 # Test — runs all test suites via CTest
 # ---------------------------------------------------------------------------
 test: $(BUILD_DIR)/Makefile
-	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests preset_engine_tests
-	@cd $(BUILD_DIR) && ctest -V --output-on-failure -j$(CTEST_JOBS) 2>&1 | tee ../test.log
+	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests preset_engine_tests
+	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee ../test.log
 
 # ---------------------------------------------------------------------------
 # Convenience targets
