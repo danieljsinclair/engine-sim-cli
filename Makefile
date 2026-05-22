@@ -44,15 +44,20 @@ bridge-presets: check-platform
 	@$(MAKE) -C engine-sim-bridge presets
 
 # ---------------------------------------------------------------------------
-# es/ convenience copy — rebuilt from bridge canonical source
+# es/ convenience copy — full mirror from bridge
+#
+# The bridge/es/ directory is the source of truth for all .mr scripts and
+# supporting files. The bridge Makefile's CANDIDATE_ENGINES controls which
+# get compiled to JSON. This target just mirrors the full directory.
 # ---------------------------------------------------------------------------
 BRIDGE_ES := engine-sim-bridge/es
 BRIDGE_PRESET := engine-sim-bridge/preset
 CLI_ES := es
 
 copy-es-mr:
-	@echo "Syncing es/ .mr files from bridge..."
-	@rsync -a --delete --exclude='.git' $(BRIDGE_ES)/ $(CLI_ES)/
+	@echo "Syncing es/ from bridge..."
+	@mkdir -p $(CLI_ES)
+	@rsync -a --exclude='.git' $(BRIDGE_ES)/ $(CLI_ES)/
 
 copy-es-json: bridge-presets
 	@if [ -d $(BRIDGE_PRESET) ] && ls $(BRIDGE_PRESET)/*.json >/dev/null 2>&1; then \
@@ -130,6 +135,7 @@ scrub: clean
 # Test — runs all test suites via CTest
 # ---------------------------------------------------------------------------
 test: $(BUILD_DIR)/Makefile
+	@$(MAKE) -C engine-sim-bridge test
 	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests preset_engine_tests
 	@cd $(BUILD_DIR) && $(MAKE) test ARGS="-V --output-on-failure -j$(CTEST_JOBS)" 2>&1 | tee ../test.log
 
