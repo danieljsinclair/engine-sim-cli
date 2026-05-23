@@ -115,7 +115,10 @@ if(BUILD_TESTS)
         add_test(NAME bridge_unit_tests COMMAND bridge_unit_tests --gtest_color=yes)
     endif()
     if(TARGET preset_engine_tests)
-        add_test(NAME preset_engine_tests COMMAND preset_engine_tests --gtest_color=yes)
+        include(GoogleTest)
+        gtest_discover_tests(preset_engine_tests
+            DISCOVERY_MODE PRE_TEST
+        )
     endif()
 
     add_custom_target(run_tests
