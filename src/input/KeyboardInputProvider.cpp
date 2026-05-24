@@ -64,7 +64,7 @@ EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     EngineInput input;
     input.throttle = throttle_;
     input.ignition = ignition_;
-    input.starterMotor = starterSwitch_;
+    input.starterSwitch = starterSwitch_;
     input.dynoTorqueScale = dynoTorqueScale_;
     input.gearDelta = gearDelta_;
     gearDelta_ = 0;  // Reset after consuming

@@ -57,7 +57,7 @@ public:
         input::EngineInput input;
         input.throttle = throttle_;
         input.ignition = ignition_;
-        input.starterMotor = starterMotor_;
+        input.starterSwitch = starterMotor_;
         input.shouldContinue = shouldContinue_;
 
         return input;
