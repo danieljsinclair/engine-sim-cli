@@ -120,6 +120,9 @@ if(BUILD_TESTS)
             DISCOVERY_MODE PRE_TEST
         )
     endif()
+    if(TARGET preset_isomorphism_tests)
+        add_test(NAME preset_isomorphism_tests COMMAND preset_isomorphism_tests --gtest_color=yes)
+    endif()
 
     add_custom_target(run_tests
         DEPENDS engine-sim-cli smoke_tests bridge_unit_tests

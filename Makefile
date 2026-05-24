@@ -271,6 +271,8 @@ test-deep: $(BUILD_DIR)/Makefile
 	fi
 
 testdeep: test-deep
+	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests preset_engine_tests preset_isomorphism_tests
+	@cd $(BUILD_DIR) && ctest -V --output-on-failure -j$(CTEST_JOBS) 2>&1 | tee ../test.log
 
 # ---------------------------------------------------------------------------
 # Convenience targets
