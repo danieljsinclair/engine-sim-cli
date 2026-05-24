@@ -10,11 +10,12 @@
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
 CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
+BUILD_PARALLEL_LEVEL ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CTEST_VERBOSE ?= 0
+CTEST_UI_FLAGS := $(if $(filter 1,$(CTEST_VERBOSE)),-V,--progress)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
-# Default to parallel build using available CPU cores
-MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
+CMAKE_BUILD_PARALLEL_FLAG := $(if $(strip $(BUILD_PARALLEL_LEVEL)),--parallel $(BUILD_PARALLEL_LEVEL),)
 
 .PHONY: all clean scrub test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets \
@@ -25,24 +26,24 @@ MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 #
 # Ordering is sequential via dependencies:
 #   1. submodules        — init recursive submodules
-#   2. $(BUILD_DIR)/Makefile — cmake configure
+#   2. $(BUILD_DIR)/CMakeCache.txt — cmake configure
 #   3. check-platform    — verify macOS, then compile everything
 #   4. bridge-presets    — compile .mr → .json (needs preset_compiler from step 3)
 #   5. sync-es           — copy bridge es/ + preset/ → CLI es/
 # ============================================================================
 all: check-platform bridge-presets sync-es
 
-check-platform: check-cmake submodules check-submodule $(BUILD_DIR)/Makefile
+check-platform: check-cmake submodules check-submodule $(BUILD_DIR)/CMakeCache.txt
 	@if [ "$$(uname)" != "Darwin" ]; then \
 		echo ""; \
 		echo "ERROR: engine-sim-cli only supports macOS (CoreAudio/AudioUnit)."; \
 		exit 1; \
 	fi
-	@cd $(BUILD_DIR) && $(MAKE)
+	+@cmake --build $(BUILD_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
 
 # Build presets in bridge (depends on check-platform so compiler exists)
 bridge-presets: check-platform
-	@$(MAKE) -C engine-sim-bridge presets
+	+@$(MAKE) -C engine-sim-bridge presets
 
 # ---------------------------------------------------------------------------
 # es/ convenience copy — full mirror from bridge
@@ -99,7 +100,7 @@ submodules:
 		git submodule update --init --recursive; \
 	fi
 
-$(BUILD_DIR)/Makefile: check-submodule
+$(BUILD_DIR)/CMakeCache.txt: check-submodule
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) ..
 
@@ -119,15 +120,15 @@ remove-orphans:
 	@find . -path ./$(BUILD_DIR) -prune -o -name "_deps" -type d -print -exec rm -rf {} + 2>/dev/null || true
 
 clean: remove-orphans
-	@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
+	+@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
 	@if [ -d $(BUILD_DIR) ]; then \
-		$(MAKE) -C $(BUILD_DIR) clean 2>/dev/null || true; \
+		cmake --build $(BUILD_DIR) --target clean >/dev/null 2>&1 || true; \
 	fi
 	@rm -rf $(CLI_ES)
 
 scrub: clean
 	@echo "Scrubbing all build artifacts..."
-	@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
+	+@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
 	@rm -rf $(BUILD_DIR) $(CLI_ES)
 	@$(MAKE) remove-orphans
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
@@ -135,8 +136,8 @@ scrub: clean
 # ---------------------------------------------------------------------------
 # Test — runs all test suites via CTest
 # ---------------------------------------------------------------------------
-test: $(BUILD_DIR)/Makefile
-	@total_start=$$(date +%s); \
+test: $(BUILD_DIR)/CMakeCache.txt
+	+@total_start=$$(date +%s); \
 	bridge_elapsed=0; \
 	cli_elapsed=0; \
 	echo "=== [engine-sim-cli] Stage 1/2: bridge tests ==="; \
@@ -157,7 +158,7 @@ test: $(BUILD_DIR)/Makefile
 	fi; \
 	echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
 	cli_start=$$(date +%s); \
-	if (cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests preset_engine_tests); then \
+	if cmake --build $(BUILD_DIR) $(CMAKE_BUILD_PARALLEL_FLAG) --target engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests preset_engine_tests; then \
 		:; \
 	else \
 		cli_end=$$(date +%s); \
@@ -169,7 +170,7 @@ test: $(BUILD_DIR)/Makefile
 		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
 		exit 1; \
 	fi; \
-	if (cd $(BUILD_DIR) && $(MAKE) test ARGS="$(if $(filter 1,$(CTEST_VERBOSE)),-V,) --output-on-failure --output-log ../test.log -j$(CTEST_JOBS)"); then \
+	if (cd $(BUILD_DIR) && ctest $(CTEST_UI_FLAGS) --output-on-failure --output-log ../test.log -j$(CTEST_JOBS)); then \
 		cli_end=$$(date +%s); \
 		cli_elapsed=$$((cli_end - cli_start)); \
 		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests PASSED ($${cli_elapsed}s) ==="; \
@@ -192,8 +193,8 @@ test: $(BUILD_DIR)/Makefile
 
 # Fast test path: keep default `make test` full coverage, but allow
 # developer inner-loop skips for known heavy bridge groups.
-test-fast: $(BUILD_DIR)/Makefile
-	@total_start=$$(date +%s); \
+test-fast: $(BUILD_DIR)/CMakeCache.txt
+	+@total_start=$$(date +%s); \
 	bridge_elapsed=0; \
 	cli_elapsed=0; \
 	echo "=== [engine-sim-cli] Fast mode: bridge test-fast + full cli/unit/integration ==="; \
@@ -213,7 +214,7 @@ test-fast: $(BUILD_DIR)/Makefile
 		exit 1; \
 	fi; \
 	cli_start=$$(date +%s); \
-	if (cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests preset_engine_tests); then \
+	if cmake --build $(BUILD_DIR) $(CMAKE_BUILD_PARALLEL_FLAG) --target engine-sim-cli smoke_tests bridge_unit_tests unit_tests telemetry_isp_tests integration_tests preset_engine_tests; then \
 		:; \
 	else \
 		cli_end=$$(date +%s); \
@@ -225,7 +226,7 @@ test-fast: $(BUILD_DIR)/Makefile
 		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
 		exit 1; \
 	fi; \
-	if (cd $(BUILD_DIR) && $(MAKE) test ARGS="$(if $(filter 1,$(CTEST_VERBOSE)),-V,) --output-on-failure --output-log ../test.log -j$(CTEST_JOBS)"); then \
+	if (cd $(BUILD_DIR) && ctest $(CTEST_UI_FLAGS) --output-on-failure --output-log ../test.log -j$(CTEST_JOBS)); then \
 		cli_end=$$(date +%s); \
 		cli_elapsed=$$((cli_end - cli_start)); \
 		total_end=$$(date +%s); \
@@ -245,9 +246,9 @@ test-fast: $(BUILD_DIR)/Makefile
 	fi
 
 # Quick mode: minimal bridge-only infra checks for tight edit/run loops.
-test-quick: $(BUILD_DIR)/Makefile
+test-quick: $(BUILD_DIR)/CMakeCache.txt
 	@echo "=== [engine-sim-cli] Quick mode: bridge test-quick only ==="
-	@if $(MAKE) -C engine-sim-bridge test-quick; then \
+	+@if $(MAKE) -C engine-sim-bridge test-quick; then \
 		echo "=== [engine-sim-cli] SUMMARY: PASS (quick) ==="; \
 		printf '\033[0;32m=== [engine-sim-cli] RESULT: QUICK TESTS PASSED ===\033[0m\n'; \
 	else \
@@ -259,9 +260,9 @@ test-quick: $(BUILD_DIR)/Makefile
 testquick: test-quick
 
 # Explicit long-running tier: bridge golden-audio regressions.
-test-deep: $(BUILD_DIR)/Makefile
+test-deep: $(BUILD_DIR)/CMakeCache.txt
 	@echo "=== [engine-sim-cli] Deep mode: bridge preset golden-audio regressions ==="
-	@if $(MAKE) -C engine-sim-bridge test-deep; then \
+	+@if $(MAKE) -C engine-sim-bridge test-deep; then \
 		echo "=== [engine-sim-cli] SUMMARY: PASS (deep) ==="; \
 		printf '\033[0;32m=== [engine-sim-cli] RESULT: DEEP TESTS PASSED ===\033[0m\n'; \
 	else \
