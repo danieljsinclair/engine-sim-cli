@@ -6,6 +6,8 @@
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
+#include <chrono>
+#include <ctime>
 #include <iostream>
 #include <string>
 
@@ -102,6 +104,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
     app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
+    app.add_option("--gearbox-log", args.gearboxLogPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
 
     try {
@@ -123,6 +126,15 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         args.interactive = true;
         if (scriptPath.empty()) args.useDefaultEngine = true;
         g_interactiveMode.store(true);
+    }
+
+    // Auto-generate gearbox log filename if flag given without value
+    if (args.gearboxLogPath == "true") {
+        auto now = std::chrono::system_clock::now();
+        auto time = std::chrono::system_clock::to_time_t(now);
+        char buf[64];
+        std::strftime(buf, sizeof(buf), "gearbox_%Y%m%d_%H%M%S.csv", std::localtime(&time));
+        args.gearboxLogPath = buf;
     }
 
     args.engineConfig = args.useDefaultEngine ? "(default engine)" : (scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath));

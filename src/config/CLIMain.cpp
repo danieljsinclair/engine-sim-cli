@@ -15,6 +15,7 @@
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "input/KeyboardInput.h"
+#include "input/DemoKeyboardInputProvider.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
 #include "common/ILogging.h"
@@ -22,8 +23,12 @@
 
 // Bridge headers for connect-demo mode
 #include "input/DemoInputProvider.h"
-#include "input/KeyboardDemoThrottleSource.h"
+#include "input/DemoThrottleSource.h"
+#include "input/IDemoControls.h"
+#include "input/GearSelectorInput.h"
+#include "input/IgnitionInput.h"
 #include "twin/IceVehicleProfile.h"
+#include "twin/GearboxCsvLogger.h"
 
 #include "engine-sim/include/simulator.h"
 #include "engine-sim/include/units.h"
@@ -32,18 +37,6 @@
 #include <csignal>
 #include <memory>
 #include <stdexcept>
-
-// Adapter for real KeyboardInput to bridge's IKeyboardInput interface
-namespace {
-class RealKeyboardInputAdapter : public input::IKeyboardInput {
-public:
-    explicit RealKeyboardInputAdapter(::KeyboardInput& realKeyboard) : realKeyboard_(realKeyboard) {}
-    int getKey() override { return realKeyboard_.getKey(); }
-
-private:
-    ::KeyboardInput& realKeyboard_;
-};
-}
 
 // ============================================================================
 // Signal Handler
@@ -63,17 +56,47 @@ namespace {
 input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger, const CommandLineArgs& args) {
     // Connect-demo mode: VirtualICE twin with automatic gearbox
     if (args.connectDemo) {
-        static ::KeyboardInput realKeyboard; // Static for termios persistence (global namespace)
-        static RealKeyboardInputAdapter adapter(realKeyboard); // Adapter to bridge's interface
-        auto throttle = std::make_unique<input::KeyboardDemoThrottleSource>(adapter);
+        // Create sub-components without keyboard dependency
+        auto throttle = std::make_unique<input::DemoThrottleSource>();
+        auto gearSelector = std::make_unique<input::GearSelectorInput>();
+        auto ignition = std::make_unique<input::IgnitionInput>();
+
+        // Create DemoInputProvider (implements both IInputProvider and IDemoControls)
         auto provider = std::make_unique<input::DemoInputProvider>(
             std::move(throttle),
+            std::move(gearSelector),
+            std::move(ignition),
             twin::IceVehicleProfile::zf8hp45()
         );
-        if (provider->Initialize()) {
-            return provider.release();
+
+        // Enable gearbox CSV logging if requested
+        if (!args.gearboxLogPath.empty()) {
+            static twin::GearboxCsvLogger gearboxLogger(args.gearboxLogPath);
+            if (gearboxLogger.isOpen()) {
+                provider->setGearboxLogger(&gearboxLogger);
+                std::cout << "  Gearbox log: " << args.gearboxLogPath << std::endl;
+            } else {
+                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearboxLogPath << std::endl;
+            }
         }
-        throw std::runtime_error("Failed to initialize demo input provider");
+
+        // Get IDemoControls interface (same object as provider)
+        input::IDemoControls* controls = dynamic_cast<input::IDemoControls*>(provider.get());
+
+        // Create CLI keyboard (static for termios persistence)
+        auto keyboard = std::make_unique<::KeyboardInput>();
+
+        // Create wrapper that bridges keyboard to IDemoControls
+        auto wrapper = std::make_unique<input::DemoKeyboardInputProvider>(
+            std::move(keyboard),
+            std::move(provider),
+            controls
+        );
+
+        if (wrapper->Initialize()) {
+            return wrapper.release();
+        }
+        throw std::runtime_error("Failed to initialize demo keyboard input provider");
     }
 
     // Standard interactive mode

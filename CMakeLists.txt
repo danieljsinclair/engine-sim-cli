@@ -38,9 +38,12 @@ add_executable(engine-sim-cli
     # Input layer
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
+    src/input/DemoKeyboardInputProvider.cpp
     # Bridge sources for connect-demo mode
     engine-sim-bridge/src/input/DemoInputProvider.cpp
-    engine-sim-bridge/src/input/KeyboardDemoThrottleSource.cpp
+    engine-sim-bridge/src/input/DemoThrottleSource.cpp
+    engine-sim-bridge/src/input/GearSelectorInput.cpp
+    engine-sim-bridge/src/input/IgnitionInput.cpp
     engine-sim-bridge/src/twin/VirtualIceTwin.cpp
     engine-sim-bridge/src/twin/ThrottleSmoother.cpp
     engine-sim-bridge/src/twin/AutomaticGearbox.cpp

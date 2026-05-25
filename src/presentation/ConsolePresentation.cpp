@@ -15,7 +15,7 @@
 namespace presentation {
 
 namespace {
-// Gear selector character lookup table — index is GearSelector value + 2 (offset PARK=-2 to 0)
+// Gear selector character lookup table
 char gearSelectorChar(int selector) {
     using GS = bridge::GearSelector;
     switch (static_cast<GS>(selector)) {
@@ -24,9 +24,8 @@ char gearSelectorChar(int selector) {
         case GS::NEUTRAL: return 'N';
         case GS::DRIVE:   return 'D';
         default:
-            // Values 1-8 = manual gear select
-            if (selector >= static_cast<int>(GS::NEUTRAL) + 1 &&
-                selector <= static_cast<int>(GS::NEUTRAL) + 8) {
+            // Values 2-8 = manual gear select (DRIVE=1, so manual starts at 2)
+            if (selector >= 2 && selector <= 8) {
                 return '0' + selector;
             }
             return '?';
