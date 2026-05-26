@@ -1,0 +1,461 @@
+import "engine_sim.mr"
+
+units units()
+constants constants()
+impulse_response_library ir_lib()
+
+// Engine Sim V0.1.12A
+// Audi S1 quattro E2 I5
+// Audi s1 quattro
+// Created by Lioneltrains203 2025
+// 1-2-4-5-3
+
+label bore(79.5)
+label stroke(85.0)
+label compression_ratio(7.5)
+label con_rod(144.0)
+label intake_valve_lift(13.25)
+label exhaust_valve_lift(11.45)
+label compression_height(32.8 * units.mm)  // ?
+label intake_valve_diameter(34.5) // ?
+label exhaust_valve_diameter(42.5) // ?
+label intake_valves(2.0)
+label exhaust_valves(2.0)
+label piston_dome(-4.0)
+
+label ci(129.0)
+label redline(8200.0)
+label intake_cfm((ci * redline * 2.0) / 3456.0)
+label exhaust_cfm((redline * 0.004) * ci / 2)
+
+label cyl(5)
+label cycle(2 * 360 * units.deg)
+label rot(2 * (360.0 / cyl) * units.deg)
+label rot90(90.0 * units.deg)
+label rot180(180.0 * units.deg)
+label rot360(360.0 * units.deg)
+
+// Buick Series 40 I6 valve timings
+label IVO(18.0 * units.deg) //BTDC
+label IVC(59.0 * units.deg) //ABDC
+label EVO(58.0 * units.deg) //BBDC
+label EVC(-1.0 * units.deg) //ATDC
+
+label intake_duration(IVO + IVC + rot180)
+label exhaust_duration(EVO + EVC + rot180)
+
+label ILC((-IVO + rot180 + IVC) / 2.0 + rot360)
+label ELC((rot180 - EVO + EVC + rot360) / 2.0)
+
+label con_rod_mass(700.0) // gram
+label crank_mass(20.0) // kg
+label flywheel_mass(5.0) // kg
+
+label exhaust_delay_coeff(1.0)
+
+public node gaa_distributor {
+    input wires;
+    input timing_curve;
+    input rev_limit: 9000 * units.rpm;
+    input limiter_duration: 0.048;
+    alias output __out:
+        ignition_module(timing_curve: timing_curve, rev_limit: rev_limit, limiter_duration: limiter_duration)
+            .connect_wire(wires.wire1, (0.0/cyl) * cycle - 10 * units.deg)
+            .connect_wire(wires.wire2, (1.0/cyl) * cycle - 10 * units.deg)
+            .connect_wire(wires.wire4, (2.0/cyl) * cycle - 10 * units.deg)
+            .connect_wire(wires.wire5, (3.0/cyl) * cycle - 10 * units.deg)
+            .connect_wire(wires.wire3, (4.0/cyl) * cycle - 10 * units.deg);
+}
+
+private node wires {
+    output wire1: ignition_wire();
+    output wire2: ignition_wire();
+    output wire3: ignition_wire();
+    output wire4: ignition_wire();
+    output wire5: ignition_wire();
+}
+
+private node add_sym_sample {
+    input angle;
+    input lift;
+    input this;
+    alias output __out: this;
+
+    this.add_sample(angle * units.deg, lift * units.thou)
+    this.add_sample(-angle * units.deg, lift * units.thou)
+}
+
+public node eng_lobe_profile_int {
+    alias output __out:
+        harmonic_cam_lobe(
+            duration_at_50_thou: intake_duration,
+            gamma: 2.0,
+            lift: intake_valve_lift * units.mm,
+            steps: 100
+        );
+}
+
+public node eng_lobe_profile_exh {
+    alias output __out:
+        harmonic_cam_lobe(
+            duration_at_50_thou: exhaust_duration,
+            gamma: 2.0,
+            lift: exhaust_valve_lift * units.mm,
+            steps: 100
+        );
+}
+
+public node ox5_camshaft_builder {
+    output intake_cam_0: _intake_cam_0;
+    output exhaust_cam_0: _exhaust_cam_0;
+
+    camshaft_parameters params(
+        advance: -10.0 * units.deg,
+        base_radius: 1.6 * units.cm
+    )
+
+    camshaft _intake_cam_0(params, lobe_profile: eng_lobe_profile_int())
+    camshaft _exhaust_cam_0(params, lobe_profile: eng_lobe_profile_exh())
+
+    _intake_cam_0
+        .add_lobe(ILC + 0 * rot)
+        .add_lobe(ILC + 1 * rot)
+        .add_lobe(ILC + 4 * rot)
+        .add_lobe(ILC + 2 * rot)
+        .add_lobe(ILC + 3 * rot)
+    _exhaust_cam_0
+        .add_lobe(ELC + 0 * rot)
+        .add_lobe(ELC + 1 * rot)
+        .add_lobe(ELC + 4 * rot)
+        .add_lobe(ELC + 2 * rot)
+        .add_lobe(ELC + 3 * rot)
+}
+
+private node add_flow_sample {
+    input lift;
+    input flow;
+    input this;
+    alias output __out: this;
+
+    this.add_sample(lift * units.mm, k_28inH2O(flow))
+}
+
+public node ox5_head {
+    input intake_camshaft;
+    input exhaust_camshaft;
+    input flip_display: true;
+    
+    alias output __out: head;
+    
+    label bore_radius(bore / 2)
+
+    // port_flow.py v0.2
+    // intake H: 34.5 L: 13.25 N: 1.0
+    // exhaust H: 42.5 L: 11.45 N: 1.0
+    // intake port area: 794.597 mm2; saturated lift: 7.481 mm
+    // exhaust port area: 1205.832 mm2; saturated lift: 9.216 mm
+    // cylinder volume: 421.933 cc; engine volume: 2.110 L; 128.740 CI
+    // 32 harmonic intake runner length: 5.335 cm; diameter: 4.434 cm
+// primary length: 71.894 cm, area: 10.193 cm2, diameter: 3.603 cm
+    // collector diameter: 5.696 cm, area: 25.482 cm2
+    // target power: 8200 RPM, torque: 5412 RPM
+    function intake_flow(1.325 * units.mm)
+    intake_flow
+        .add_flow_sample(0.0, 0.0)
+        .add_flow_sample(1.325, 26.526)
+        .add_flow_sample(2.650, 47.248)
+        .add_flow_sample(3.975, 65.779)
+        .add_flow_sample(5.300, 82.888)
+        .add_flow_sample(6.625, 98.939)
+        .add_flow_sample(7.950, 108.903)
+        .add_flow_sample(9.275, 109.091)
+        .add_flow_sample(10.600, 109.330)
+        .add_flow_sample(11.925, 109.620)
+        .add_flow_sample(13.250, 109.961)
+
+    function exhaust_flow(1.145 * units.mm)
+    exhaust_flow
+        .add_flow_sample(0.0, 0.0)
+        .add_flow_sample(1.145, 29.817)
+        .add_flow_sample(2.290, 53.457)
+        .add_flow_sample(3.435, 74.764)
+        .add_flow_sample(4.580, 94.557)
+        .add_flow_sample(5.725, 113.224)
+        .add_flow_sample(6.870, 130.994)
+        .add_flow_sample(8.015, 148.018)
+        .add_flow_sample(9.160, 164.402)
+        .add_flow_sample(10.305, 165.384)
+        .add_flow_sample(11.450, 165.641)
+
+    cylinder_head head(
+        chamber_volume: (circle_area(bore_radius) * stroke / compression_ratio + piston_dome) / 1000.0 * units.cc,
+        intake_runner_volume: 82.393 * units.cc,
+        intake_runner_cross_section_area: 15.444 * units.cm2,
+        exhaust_runner_volume: 27.464 * units.cc,
+        exhaust_runner_cross_section_area: 10.193 * units.cm2,
+
+
+        intake_port_flow: intake_flow,
+        exhaust_port_flow: exhaust_flow,
+        intake_camshaft: intake_camshaft,
+        exhaust_camshaft: exhaust_camshaft,
+        flip_display: flip_display
+    )
+}
+
+public node eng {
+    alias output __out: engine;
+
+    engine engine(
+        name: "Audi S1 Quattro",
+        starter_torque: 100 * units.lb_ft,
+        starter_speed: 600 * units.rpm,
+        redline: redline * units.rpm,
+        fuel: fuel(
+            molecular_mass: 102.026214747 * units.g,
+            energy_density: 72.0 * units.kJ / units.g,
+            density: 0.850 * units.kg / units.L,
+            molecular_afr: 10.25,
+            max_turbulence_effect: 4.0,
+            max_dilution_effect: 10.0,
+            burning_efficiency_randomness: 0.1,
+            max_burning_efficiency: 2.9
+            ),
+        throttle_gamma: 1.2,
+        //////////////////////////////////convolution: 1.0,
+        hf_gain: 0.014375,
+        noise: 0.978150,
+        jitter: 0.037150,
+        simulation_frequency: 20000///,
+        //////////////////////////////////max_sle_solver_steps: 8,
+        //////////////////////////////////fluid_simulation_steps: 6
+    )
+
+    connecting_rod_parameters cr_params(
+        mass: con_rod_mass * units.g,
+        moment_of_inertia: rod_moment_of_inertia(
+            mass: con_rod_mass * units.g,
+            length: con_rod * units.mm
+        ),
+        center_of_mass: 0.0,
+        length: con_rod * units.mm
+
+    )
+
+    label crank_moment(
+         disk_moment_of_inertia(mass: crank_mass * units.kg, radius: (stroke / 2.0) * units.mm)
+    )
+    label flywheel_moment(
+        disk_moment_of_inertia(mass: flywheel_mass * units.kg, radius: (stroke * 2.5) * units.mm)
+    )
+    label other_moment(
+        disk_moment_of_inertia(mass: 1 * units.kg, radius: 1.0 * units.cm)
+    )
+
+    wires wires()
+
+    crankshaft c0(
+        throw: (stroke / 2) * units.mm,
+        flywheel_mass: flywheel_mass * units.kg,
+        mass: crank_mass * units.kg,
+        friction_torque: 15.0 * units.Nm,
+        moment_of_inertia: crank_moment + flywheel_moment + other_moment,
+        position_x: 0.0,
+        position_y: 0.0,
+        tdc: (constants.pi / 2 + 27.5 * units.deg)
+    )
+
+    rod_journal rj0(angle: (0.0 / 5.0) * 360 * units.deg)
+	rod_journal rj1(angle: (2.0 / 5.0) * 360 * units.deg)
+	rod_journal rj2(angle: (3.0 / 5.0) * 360 * units.deg)
+	rod_journal rj3(angle: (4.0 / 5.0) * 360 * units.deg)
+    rod_journal rj4(angle: (1.0 / 5.0) * 360 * units.deg)
+    
+    c0
+        .add_rod_journal(rj0)
+        .add_rod_journal(rj1)
+        .add_rod_journal(rj2)
+        .add_rod_journal(rj3)
+        .add_rod_journal(rj4)
+
+
+    piston_parameters piston_params(
+        mass: 600.0 * units.g,
+        compression_height: compression_height,
+        wrist_pin_position: 0.0,
+        displacement: piston_dome * units.cc
+    )
+
+    cylinder_bank_parameters bank_params(
+        bore: bore * units.mm,
+        deck_height: (con_rod + stroke / 2) * units.mm + compression_height
+    )
+
+    label intake_valve_circ(intake_valve_diameter * constants.pi)
+    label intake_valve_area(intake_valve_circ * intake_valve_lift / 100.0) // cm2
+
+    label intake_plenum_area(intake_valve_area * cyl * intake_valves) // cm2
+    label exhaust_crossection_area(25.482) // cm2
+
+    label exhaust_pipe_length_0(80.0) // inch
+    label exhaust_volume_0(exhaust_crossection_area * exhaust_pipe_length_0 / 5.0) // Litres
+    
+    label spacing_factor(1.25)
+    label flange_density(1.0 * exhaust_delay_coeff)
+    label primary_tube_length(71.894)
+
+    intake intake(
+        plenum_volume: 1.0 * units.L,
+        plenum_cross_section_area: intake_plenum_area * units.cm2,
+        intake_flow_rate: k_carb(intake_cfm),
+        idle_flow_rate: k_carb(0.08),
+        idle_throttle_plate_position: 0.9985,
+        runner_flow_rate: k_carb(intake_cfm / cyl * 2),
+       runner_length: 5.335 * units.cm,
+        velocity_decay: 0.05
+    )
+
+    exhaust_system_parameters es_params0(
+        outlet_flow_rate: k_carb(exhaust_cfm / 1.5),
+        collector_cross_section_area:  exhaust_crossection_area * units.cm2,
+        length: exhaust_pipe_length_0 * units.inch,
+        primary_tube_length: primary_tube_length * units.cm,
+        primary_flow_rate: k_carb(exhaust_cfm / 4),
+        velocity_decay: 1.0,
+        volume: (exhaust_volume_0 + 0.0) * units.L
+    )
+    
+    // exhaust_system exhaust0(es_params0, audio_volume: 0.4, impulse_response: impulse_response(filename: "C:/list/111/assets/sound-library/smooth/smooth_42.wav"))
+    exhaust_system exhaust0(es_params0, audio_volume: 1.0, impulse_response: ir_lib.minimal_muffling_01)
+ 
+    cylinder_bank b0(bank_params, angle: 27.5 * units.deg)
+
+    label pl0((4.84 * bore * spacing_factor / flange_density) * units.mm)
+    label pl1((4.49 * bore * spacing_factor / flange_density) * units.mm)
+    label pl2((3.80 * bore * spacing_factor / flange_density) * units.mm)
+    label pl3((4.44 * bore * spacing_factor / flange_density) * units.mm)
+    label pl4((4.78 * bore * spacing_factor / flange_density) * units.mm)
+
+    b0
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.0)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj0,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire1,
+            primary_length: pl0,
+            sound_attenuation: 1.2
+        )
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.0)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj1,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire2,
+            primary_length: pl1,
+            sound_attenuation: 1.1
+        )
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.0)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj2,
+            intake: intake,
+            exhaust_system: exhaust0,
+            primary_length: pl2,
+            ignition_wire: wires.wire3,
+            sound_attenuation: 1.0
+        )
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.0)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj3,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire4,
+            primary_length: pl3,
+            sound_attenuation: 1.2
+        )
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.0)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj4,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire5,
+            primary_length: pl4,
+            sound_attenuation: 1.0
+        )
+
+    engine
+        .add_cylinder_bank(b0)
+
+    engine.add_crankshaft(c0)
+
+    ox5_camshaft_builder camshaft()
+
+    b0.set_cylinder_head (
+        ox5_head(
+            intake_camshaft: camshaft.intake_cam_0,
+            exhaust_camshaft: camshaft.exhaust_cam_0
+        )
+    )
+
+    function timing_curve(1000 * units.rpm)
+    timing_curve
+        .add_sample(0000 * units.rpm, 12 * units.deg)
+        .add_sample(1000 * units.rpm, 12 * units.deg)
+        .add_sample(2000 * units.rpm, 20 * units.deg)
+        .add_sample(3000 * units.rpm, 26 * units.deg)
+        .add_sample(4000 * units.rpm, 30 * units.deg)
+        .add_sample(5000 * units.rpm, 34 * units.deg)
+        .add_sample(6000 * units.rpm, 38 * units.deg)
+        .add_sample(7000 * units.rpm, 39 * units.deg)
+        .add_sample(8000 * units.rpm, 39 * units.deg)
+
+    engine.add_ignition_module(
+        gaa_distributor(
+            wires: wires,
+            timing_curve: timing_curve
+        )
+    )
+}
+
+label car_mass(2403 * units.lb)
+private node random_car {
+    alias output __out:
+        vehicle(
+            mass: car_mass,
+            drag_coefficient: 0.42,
+            cross_sectional_area: (72 * units.inch) * (56 * units.inch),
+            diff_ratio: 4.675,
+            tire_radius: 16 * units.inch,
+            rolling_resistance: 0.015 * car_mass * 9.81
+        );
+}
+
+private node random_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 5000 * units.lb_ft
+        )
+        .add_gear(3.50)
+        .add_gear(2.273)
+        .add_gear(1.706)
+        .add_gear(1.318)
+        .add_gear(1.04)
+        .add_gear(0.889);
+}
+
+//public node main {
+//    run(
+//        engine: eng(),
+//        transmission: random_transmission(),
+//        vehicle: random_car()
+//    )
+//}
+
+set_engine(eng())
+set_transmission(random_transmission())
+set_vehicle(random_car())

@@ -1,0 +1,811 @@
+// Ange The Great Engine Simulator v0.1.14A //
+// Engine Simulator Official Discord: https://discord.gg/engine-sim-official //
+
+// Engine template made by Archangel Motors //
+// Discord: Archangel Motors#5271 //
+
+// Imports Start //
+
+import "engine_sim.mr"
+
+units units()
+constants constants()
+
+impulse_response_library ir_lib()
+
+// Imports End //
+
+// Simulation Parameters Start //
+
+label Simulation_Frequency(8500)    // Simulation frequency, in hertz //
+label High_Frequency_Gain(1.00)    // Sound simulation high frequency gain //
+label High_Frequency_Noise(0.11)    // Sound simulation  high frequency noise //
+label Low_Frequency_Noise(1.0)    // Sound simulation low frequency noise //
+
+// Simulation Parameters End //
+
+// Main Parameters Start //
+
+label Cylinder_Amount(8.0)    // Cylinder amount. Does not create cylinders automatically //
+label Cylinder_Bank_Amount(2.0)    // Cylinder bank amount. Does not create cylinder banks automatically //
+
+label Bore_MM(103.987)    // Cylinder bore diameter, in millimeters //
+label Stroke_MM(94.488)    // Piston stroke, in millimiters //
+
+label Rev_Limit_RPM(6400.0)    // Maximum engine speed, in revolutions per minute //
+label Rev_Limit_Duration(0.0900)    // Ignition cut-off duration, in seconds //
+
+label Starter_Speed_RPM(1300.0)    // Starter speed, in revolutions per minute //
+label Starter_Torque_NM(185.0)    // Starter torque, in newton meters //
+
+// Main Parameters End //
+
+// Displacements //
+
+label Single_Cylinder_Displacement_CC((((((Bore_MM / 2.0) * (Bore_MM / 2.0)) * constants.pi) * Stroke_MM) / 1000.0))    // Do not touch //
+label Single_Cylinder_Displacement_CUI(Single_Cylinder_Displacement_CC * 0.061024)    // Do not touch //
+label Engine_Displacement_CC(Single_Cylinder_Displacement_CC * Cylinder_Amount)    // Do not touch //
+label Engine_Displacement_CUI(Single_Cylinder_Displacement_CUI * Cylinder_Amount)    // Do not touch //
+
+// Displacements //
+
+// Piston Parameters Start //
+
+label Piston_Mass_Multiplier(1.0)    // Piston mass multiplier //
+label Piston_Mass_G(444.0)    // Piston mass, in grams //
+label Piston_Compression_Height_MM(Stroke_MM / 4.0)    // Piston compression height, in millimeters //
+label Piston_Rings_Blowby_CFM28inH20(0.1) // Piston rings blowby, in cubic feet per minute at 28 inches of water pressure drop //
+
+// Piston Parameters End //
+
+// Connecting Rod Parameters Start //
+
+label Connecting_Rod_Mass_Multiplier(0.0) // Connecting rod weight multiplier //
+label Connecting_Rod_To_Stroke_Ratio(1.66)    // "Connecting rod length/Piston Stroke" ratio //
+label Connecting_Rod_Mass_G(582.0)    // Connecting rod mass, in grams //
+label Connecting_Rod_Length_MM(157.48)    // Connecting rod length, in millimeters //
+label Connecting_Rod_Moment_Of_Inertia(rod_moment_of_inertia(mass: Connecting_Rod_Mass_G * units.g, length: Connecting_Rod_Length_MM * units.mm) / Cylinder_Amount)    // Do not touch //
+
+// Connecting Rod Parameters End //
+
+// Crankshaft Parameters Start //
+
+label Crankshaft_Throw_MM(Stroke_MM / 2.0)    // Do not touch //
+label Crankshaft_Counterweight_Mass_Multiplier(1.0)    // "Crankshaft counterweight mass/Piston and connecting rod mass" ratio multiplier //
+label Crankshaft_Counterweights_Mass_G(((Piston_Mass_G + Connecting_Rod_Mass_G) * Crankshaft_Counterweight_Mass_Multiplier) * (Cylinder_Amount / Cylinder_Bank_Amount))    // Total crankshaft counterweights mass, in grams //
+label Crankshaft_Mass_Multiplier(2.0)    // Crankshaft mass multiplier //
+label Crankshaft_Mass_G(23586.803)    // Crankshaft mass, in grams //
+label Crankshaft_Moment_Of_Inertia(disk_moment_of_inertia(mass: Crankshaft_Mass_G * units.g, radius: Crankshaft_Throw_MM * units.mm) * (Cylinder_Amount * 2))    // Do not touch //
+label Crankshaft_Bearing_Amount((Cylinder_Amount / Cylinder_Bank_Amount) + 1.0)    // Amount of main crankshaft bearings //
+label Crankshaft_Friction_NM(((Crankshaft_Mass_G / 1000.0) * 9.80665) * (0.0015 * Crankshaft_Bearing_Amount))    // Do not touch //
+label Crankshaft_Pulley_Mass_G(1905.09)    // Crankshaft pulley mass, in grams //
+label Crankshaft_Pulley_Diameter_MM(177.8)    // Crankshaft pulley diameter, in millimeters //
+label Crankshaft_Pulley_Moment_Of_Inertia(disk_moment_of_inertia(mass: Crankshaft_Pulley_Mass_G * units.g, radius: (Crankshaft_Pulley_Diameter_MM / 2) * units.mm))    // Do not touch //
+label Crankshaft_Pulley_Friction_NM(((Crankshaft_Pulley_Mass_G / 1000) * 9.80665) * 0.0015)    // Do not touch //
+
+// Crankshaft Parameters End //
+
+// Flywheel Parameters Start //
+
+label Flywheel_Mass_Multiplier(0.0)    // Flywheel mass multiplier //
+label Flywheel_Mass_G(5500.63)    // Flywheel mass, in grams //
+label Flywheel_Diameter_MM(259.7)    // Flywheel diameter, in millimeters //
+label Flywheel_Moment_Of_Inertia(disk_moment_of_inertia(mass: Flywheel_Mass_G * units.g, radius: Flywheel_Diameter_MM * units.mm))    // Do not touch //
+label Flywheel_Friction_NM(((Flywheel_Mass_G / 1000.0) * 9.80665) * 0.0015)    // Do not touch //
+
+// Flywheel Parameters End //
+
+// Valvetrain Parameters Start //
+
+label Camshaft_Amount(1.0)    // Camshaft amount. Does not create camshafts automatically //
+label Camshaft_Mass_G(5550.7822)    // Mass of a single camshaft, in grams //
+label Camshaft_Diameter_MM(66.04)    // Camshaft diameter, in millimeters //
+label Camshafts_Moment_Of_Inertia(disk_moment_of_inertia(mass: Camshaft_Mass_G * units.g, radius: (Camshaft_Diameter_MM / 2) * units.mm) * Camshaft_Amount)    // Do not touch //
+label Camshaft_Bearing_Amount((Cylinder_Amount / Cylinder_Bank_Amount) + 1.0)    // Amount of camshaft bearings //
+label Camshaft_Friction_NM((((Camshaft_Mass_G / 1000.0) * 9.80665) * (0.0015 * Camshaft_Bearing_Amount)) * Camshaft_Amount)    // Do not touch //
+label Camshaft_Gear_Mass_G(2023.022)    // Single camshaft gear mass, in grams //
+label Camshaft_Gear_Diameter_MM(173.99)    // Camshaft gear diameter, in millimeters //
+label Camshaft_Gears_Moment_Of_Inertia(disk_moment_of_inertia(mass: Camshaft_Gear_Mass_G * units.g, radius: (Camshaft_Gear_Diameter_MM / 2) * units.mm) * Camshaft_Amount)    // Do not touch //
+label Camshaft_Gear_Friction_NM((((Camshaft_Gear_Mass_G / 1000.0) * 9.80665) * 0.0015) * Camshaft_Amount)    // Do not touch //
+
+// Credit for this camshaft builder goes to Oror: https://www.youtube.com/@orwhat //
+
+label IVA(1.0)    // Intake valve amount //
+label EVA(1.0)    // Exhaust valve amount //
+
+label IVD(54.356)    // Intake valve diameter, in millimeters //
+label EVD(41.910)    // Exhaust valve diameter, in millimeters //
+
+label IVL(14.503)    // Intake valve lift, in millimeters //
+label EVL(13.741)    // Exhaust valve lift, in millimeters //
+
+label IVO(11.0 * units.deg)    // Intake valve opening, measured at 0.050 inches, degrees before top dead center //
+label IVC(51.0 * units.deg)    // Intake valve closing, measured at 0.050 inches, degress after bottom dead center //
+
+label EVO(63.0 * units.deg)    // Exhaust valve opening, measured at 0.050 inches, degrees before bottom dead center //
+label EVC(11.0 * units.deg)    // Exhaust valve closing, measured at 0.050 inches, degrees after top dead center //
+
+label ID0050(IVO + (180.0 * units.deg) + IVC)    // Intake duration measured at 0.050 inches, in degrees of crankshaft rotation  //
+label ED0050(EVO + (180.0 * units.deg) + EVC)    // Exhaust duration measured at 0.050 inches, in degrees of crankshaft rotation //
+
+label STS0050D(68.0)    // Difference between duration at 0.050 inches and seat-to-seat duration, in degrees of crankshaft rotation //
+
+label ILC(((IVC + (180.0 * units.deg) - IVO) / 2.0) + (360.0 * units.deg))    // Intake lobe centerline, in degrees after top dead center //
+label ELC((EVC + (540.0 * units.deg) - EVO) / 2.0)    // Exhaust lobe centerline, in degrees before top dead center //
+
+// ^^^ End of Oror's Credit //
+
+label ILG(1.0)    // Intake lobe gamma //
+label ELG(1.0)    // Exhaust lobe gamma //
+
+label ILS(100)    // Intake Lobe Steps //
+label ELS(100)    // Exhaust Lobe Steps //
+
+// Valvetrain Parameters End //
+
+// https://www.desmos.com/calculator/fbuddiephc //
+// http://www.wallaceracing.com/flow-rpm.php /// 
+
+// Cylinder Head Parameters Start //
+
+label Compression_Ratio(10.9)    // (Cylinder displacement + Combustion chamber volume)/Combustion chamber volume ratio //
+label Chamber_Volume_CC(Single_Cylinder_Displacement_CC / (Compression_Ratio - 1.0))    // Combustion chamber volume, in cubic centimeters //
+label Cylinder_Head_Intake_Port_Diameter_Multiplier(0.85)    // Cylinder head intake port diameter/Intake valve diameter ratio multiplier //
+label Cylinder_Head_Intake_Port_Cross_Section_Area_CM2(17.54836)    // Cylinder head intake port cross section area, in square centimeters //
+label Cylinder_Head_Intake_Port_Volume_Multiplier(0.25)    // Cylinder head intake port volume/cylinder displacement ratio multiplier //
+label Cylinder_Head_Intake_Port_Volume_CC(Single_Cylinder_Displacement_CC * Cylinder_Head_Intake_Port_Volume_Multiplier)    // Cylinder head intake port volume, in cubic centimeters //
+label Cylinder_Head_Intake_Port_Length_MM((Cylinder_Head_Intake_Port_Volume_CC / Cylinder_Head_Intake_Port_Cross_Section_Area_CM2) * 10.0)    // Cylinder head intake port length, in millimeters //
+label Cylinder_Head_Exhaust_Port_Diameter_Multiplier(0.85)    // Cylinder head exhaust port diameter/Exhaust valve diameter ratio multiplier //
+label Cylinder_Head_Exhaust_Port_Cross_Section_Area_CM2(15.49999)    // Cylinder head exhaust port cross section area, in square centimeters //
+label Cylinder_Head_Exhaust_Port_Volume_Multiplier(0.5625)    // Exhaust port volume/Intake port volume ratio //
+label Cylinder_Head_Exhaust_Port_Volume_CC(Cylinder_Head_Intake_Port_Volume_CC * Cylinder_Head_Exhaust_Port_Volume_Multiplier)    // Cylinder head exhaust port volume, in cubic centimeters //
+label Cylinder_Head_Exhaust_Port_Length_MM((Cylinder_Head_Exhaust_Port_Volume_CC / Cylinder_Head_Exhaust_Port_Cross_Section_Area_CM2) * 10.0)    // Cylinder head exhaust port length, in millimeters //
+
+// Cylinder Head Parameters End //
+
+// Intake Parameters Start //
+
+label Intake_Manifold_Amount(1.0)    // Does not create intake manifolds automatically //
+label Intake_Manifold_Velocity_Decay(1.15)    // Multiplier of intake manifold air rate of velocity loss //
+label Intake_Runners_Optimal_RPM(2000.0)    // Engine speed at which intake runners work the best in theory, in revolutions per minute //
+label Resonance_Waves(12.0)    // Theoretical amount of times the low pressure wave travels through intake runners //
+label Intake_Runner_Length_MM(254)    // Intake runner length, in millimeters //
+label Intake_Plenum_CFM(((Engine_Displacement_CUI * Rev_Limit_RPM) / 3456.0) / Intake_Manifold_Amount)    // Maximum intake plenum flow rate, in cubic feet per minute //
+label Intake_Runner_Cross_Section_Area_CM2(Cylinder_Head_Intake_Port_Cross_Section_Area_CM2)    // Intake runner cross section area, in square centimeters //
+label Intake_Runner_CFM(Intake_Runner_Cross_Section_Area_CM2 * 0.155 * 146.0)    // Maximum intake runner flow rate, in cubic feet per minute //
+label Intake_Plenum_Cross_Section_Area_CM2(100.884)    // Intake plenum cross section area, in square centimeters //
+label Intake_Plenum_Volume_Multiplier(1.0)    // Multiplier of intake plenum volume in relation to engine displacement //
+label Intake_Plenum_Volume_CC((Engine_Displacement_CC * Intake_Plenum_Volume_Multiplier) / Intake_Manifold_Amount)    // Intake plenum volume, in cubic centimeters //
+label Fuel_Mixture_Adjustment(13.8)    // AFR adjustment //
+label Idle_Throttle_Adjustment(0.99773)    // Idle throttle adjustment //
+label Idle_Fuel_Adjusment(0.081)    // Idle fueling adjustment //
+
+// Intake Parameters End //
+
+// Fuel Parameters Start //
+
+label Fuel_Name("Gasoline")    // Fuel name //
+label Fuel_Molecular_Mass(120.558)    // Mass of a fuel molecule //
+label Fuel_Density(1200.0 * (units.g / units.L))    // Fuel mass per unit volume //
+label Fuel_Energy_Density(52.3 * (units.kJ / units.g))    // Fuel energy released by combustion per unit weight //
+label Fuel_Molecular_AFR(12.5)    // Amount of oxygen molecules required to burn a single molecule of fuel //
+label Fuel_Maximum_Burning_Efficiency(0.8)    // Maximum combustion efficiency of fuel //
+label Fuel_Burning_Efficiency_Randomness(0.5)    // Randomness of fuel combustion efficiency //
+label Fuel_Low_Efficiency_Attenuation(1.32)    // Attenuation of low fuel burning efficiency //
+label Fuel_Max_Turbulence_Effect(10.0)    // Maximum turbulence of air-fuel mixture // 
+label Fuel_Max_Dilution_Effect(1000.0)    // Maximum fuel dilution //
+
+// Fuel Parameters End //
+
+// Exhaust Parameters Start //
+
+label Exhaust_Manifold_Velocity_Decay(1.15)    // Multiplier of exhaust manifold exhaust gases rate of velocity loss //
+label Exhaust_Collector_CFM((((Rev_Limit_RPM * 0.001) * Engine_Displacement_CUI) / 2.0))    // Maximum exhaust flow rate, in cubic feet per minute //
+label Exhaust_Headers_Optimal_RPM(2000.0)    // Engine speed at which exhaust headers work the best in theory, in revolutions per minute //
+label EVO_ATDC(((180.0 * units.deg) - (EVO + (STS0050D / 2.0))) / units.deg)    // Do not touch //
+label Primary_Tube_Cross_Section_Area_CM2(17.49999)    // Exhaust primary tube cross section area, in square centimeters //
+label Primary_Tube_Length_MM(558.8)    // Exhaust primary tube length, in millimeters //
+label Collector_Cross_Section_Area_CM2(48.790225)    // Exhaust collector cross section area, in square centimeters //
+label Collector_Length_MM(5016.5)    // Exhaust collector length, in millimeters //
+label Collector_Volume_CC((Collector_Cross_Section_Area_CM2 * Collector_Length_MM) / 10.0)    // Exhaust collector volume, in cubic centimeters //
+label Exhaust_Primary_CFM(Primary_Tube_Cross_Section_Area_CM2 * 0.155 * 146.0)    // Maximum exhaust header primary tube flow rate, in cubic feet per minute //
+
+// Exhaust Parameters End //
+
+// Moment of Inertia and Friction Start //
+
+label Total_Moment_Of_Inertia(Crankshaft_Moment_Of_Inertia + Crankshaft_Pulley_Moment_Of_Inertia + Flywheel_Moment_Of_Inertia + Camshafts_Moment_Of_Inertia + Camshaft_Gears_Moment_Of_Inertia)    // Do not touch //
+label Total_Friction_NM(Crankshaft_Friction_NM + Crankshaft_Pulley_Friction_NM + Flywheel_Friction_NM + Camshaft_Friction_NM + Camshaft_Gear_Friction_NM)    // Do not touch //
+
+// Moment of Inertia and Friction End //
+
+// Vehicle Parameters Start //
+
+label Vehicle_Mass_KG(1955.0)    // Vehicle mass, in kilograms //
+
+label Vehicle_Width_MM(2169.0)    // Vehicle width, in millimeters //
+label Vehicle_Height_MM(1461.0)    // Vehicle height, in millimeters //
+
+label Vehicle_Drag_Coefficient(0.4)    // Vehicle Drag Coefficient //
+
+label Vehicle_Rolling_Resistance_N(Vehicle_Mass_KG * 9.80665 * 0.015)    // Vehicle Rolling Resistance, in newtons //
+
+label Vehicle_Stopping_Distance_M(32.918) // Vehicle Stopping Distance from 100km/h, in meters //
+label Vehicle_Braking_Force_N(((Vehicle_Mass_KG * (27.77778 * 27.77778)) / 2.0) / Vehicle_Stopping_Distance_M)    // Do not touch //
+
+label Tire_Width_MM(305.0)    // Tire width, in millimeters //
+label Tire_Aspect_Ratio(35.0)    // Tire aspect ratio, in percents //
+label Rim_Diameter_IN(20.0)    // Rim diameter, in inches //
+label Wheel_Diameter_IN((((Tire_Width_MM * Tire_Aspect_Ratio) / 2540.0) * 2.0) + Rim_Diameter_IN)    // Do not touch //
+
+// Vehicle Parameters End //
+
+// Transmission Parameters Start //
+
+label Engine_Torque_NM(655.0)    // Peak engine torque. Measure it on the dynomometer and specify the value, in newton meters //
+
+label Maximum_Clutch_Torque_NM(Engine_Torque_NM * 1.333)    // Clutch torque rating, in newton meters //
+label Maximum_Clutch_Flex_DEG(5.0)    // Maximum clutch twist, in degrees //
+label Clutch_Stiffness_NM(Maximum_Clutch_Torque_NM / Maximum_Clutch_Flex_DEG)    // Clutch torsional stiffness, in newton meters per degree //
+label Clutch_Torsional_Damping_Coefficient(1.0)    // Clutch torsional damping coefficient //
+
+label Maximum_Transmission_Flex_DEG(5.0)    // Maximum drivetrain twist, in degrees //
+label Transmission_Stiffness_NM((Engine_Torque_NM * 50.777) / Maximum_Transmission_Flex_DEG)    // Drivertrain torsional stiffness, in newton meters per degree //
+label Transmission_Torsional_Damping_Coefficient(1.0)    // Drivetrain torsional damping coefficient //
+
+// https://www.tremec.com/calculadora.php //
+
+label Axle_Gear_Ratio(3.90)    // Final drive ratio //
+
+label Gear_Ratio_1(2.97)    // Does not create gears automatically //
+label Gear_Ratio_2(2.10)    // Does not create gears automatically //
+label Gear_Ratio_3(1.46)    // Does not create gears automatically //
+label Gear_Ratio_4(1.00)    // Does not create gears automatically //
+label Gear_Ratio_5(0.74)    // Does not create gears automatically //
+label Gear_Ratio_6(0.50)    // Does not create gears automatically //
+
+// Transmission Parameters End //
+
+// Dynamometer Parameters Start //
+
+label Dyno_Minimum_Speed(800.0)    // Minimum dyno speed, in revolutions per minute //
+label Dyno_Maximum_Speed(Rev_Limit_RPM)    // Maximum dyno speed, in revolutions per minute //
+label Dyno_Hold_Steps(100.0)    // Step size of dyno hold function, in revoltions per minute //
+
+// Dynamometer Parameters End //
+
+// Wires start //
+
+private node wires {
+    output wire1: ignition_wire();
+    output wire2: ignition_wire();
+    output wire3: ignition_wire();
+    output wire4: ignition_wire();
+    output wire5: ignition_wire();
+    output wire6: ignition_wire();
+    output wire7: ignition_wire();
+    output wire8: ignition_wire();
+}
+
+// Wires end //
+
+// Distributor start //
+
+public node Engine_Distributor {
+    input wires;
+    input timing_curve;
+    input rev_limit: Rev_Limit_RPM * units.rpm;
+    input limiter_duration: Rev_Limit_Duration * units.sec;
+    alias output __out:
+        ignition_module(timing_curve: timing_curve, rev_limit: rev_limit, limiter_duration: limiter_duration)
+            .connect_wire(wires.wire1, 0 * units.deg)
+            .connect_wire(wires.wire2, 90 * units.deg)
+            .connect_wire(wires.wire3, 270 * units.deg)
+            .connect_wire(wires.wire4, 360 * units.deg)
+            .connect_wire(wires.wire5, 450 * units.deg)
+            .connect_wire(wires.wire6, 540 * units.deg)
+            .connect_wire(wires.wire7, 180 * units.deg)
+            .connect_wire(wires.wire8, 630 * units.deg);
+}
+
+// Distributor End //
+
+// Camshaft Lobes Start //
+
+private node add_sym_sample {
+    input angle;
+    input lift;
+    input this;
+    alias output __out: this;
+    
+    this.add_sample(angle * units.deg, lift * units.mm)
+    this.add_sample(-angle * units.deg, lift * units.mm)
+}
+
+public node Engine_Camshaft_Intake_Lobe {
+    alias output __out:
+        harmonic_cam_lobe(
+            duration_at_50_thou: ID0050,
+            gamma: ILG,
+            lift: IVL * units.mm,
+            steps: ILS
+        );
+}
+
+public node Engine_Camshaft_Exhaust_Lobe {
+    alias output __out:
+        harmonic_cam_lobe(
+            duration_at_50_thou: ED0050,
+            gamma: ELG,
+            lift: EVL * units.mm,
+            steps: ELS
+        );
+}
+ 
+// Camshaft Lobes End //
+
+// Camshafts Start //
+
+public node Engine_Camshaft_Builder {
+    output intake_cam_1: Intake_Camshaft_1;
+    output exhaust_cam_1: Exhaust_Camshaft_1;
+
+    output intake_cam_2: Intake_Camshaft_2;
+    output exhaust_cam_2: Exhaust_Camshaft_2;
+
+    camshaft_parameters Camshaft_Parameters(
+        advance: 0.0 * units.deg,
+        base_radius: (Camshaft_Diameter_MM / 2) * units.mm
+    )
+
+    camshaft Intake_Camshaft_1(Camshaft_Parameters, lobe_profile: Engine_Camshaft_Intake_Lobe())
+    camshaft Exhaust_Camshaft_1(Camshaft_Parameters, lobe_profile: Engine_Camshaft_Exhaust_Lobe())
+
+    camshaft Intake_Camshaft_2(Camshaft_Parameters, lobe_profile: Engine_Camshaft_Intake_Lobe())
+    camshaft Exhaust_Camshaft_2(Camshaft_Parameters, lobe_profile: Engine_Camshaft_Exhaust_Lobe())
+
+    Intake_Camshaft_1
+        .add_lobe(ILC + (0 * units.deg))
+        .add_lobe(ILC + (270 * units.deg))
+        .add_lobe(ILC + (450 * units.deg))
+        .add_lobe(ILC + (180 * units.deg))
+    Exhaust_Camshaft_1
+        .add_lobe(ELC + (0 * units.deg))
+        .add_lobe(ELC + (270 * units.deg))
+        .add_lobe(ELC + (450 * units.deg))
+        .add_lobe(ELC + (180 * units.deg))
+
+    Intake_Camshaft_2
+        .add_lobe(ILC + (90 * units.deg))
+        .add_lobe(ILC + (360 * units.deg))
+        .add_lobe(ILC + (540 * units.deg))
+        .add_lobe(ILC + (630 * units.deg))
+    Exhaust_Camshaft_2
+        .add_lobe(ELC + (90 * units.deg))
+        .add_lobe(ELC + (360 * units.deg))
+        .add_lobe(ELC + (540 * units.deg))
+        .add_lobe(ELC + (630 * units.deg))
+}
+
+// Camshafts End //
+
+// Cylinder head start //
+
+private node add_flow_sample {
+    input lift;
+    input flow;
+    input this;
+    alias output __out: this;
+
+    this.add_sample(lift * units.mm, k_28inH2O(flow))
+}
+
+public node Engine_Cylinder_Head {
+    input intake_camshaft;
+    input exhaust_camshaft;
+    input flip_display: false;
+    alias output __out: head;
+
+    label CIV(IVD * constants.pi)    // Do not touch //
+    label CEV(EVD * constants.pi)    // Do not touch //
+
+    label QIV(CIV * 0.98 * 0.00155 * 146.0 * IVA)    // Do not touch //
+    label QEV(CEV * 0.98 * 0.00155 * 146.0 * EVA)    // Do not touch //
+
+    label QIP(Cylinder_Head_Intake_Port_Cross_Section_Area_CM2 * 0.155 * 146.0)    // Do not touch //
+    label QEP(Cylinder_Head_Exhaust_Port_Cross_Section_Area_CM2 * 0.155 * 146.0)    // Do not touch //
+
+    function intake_flow(1 * units.mm)
+    intake_flow
+        .add_flow_sample(0, (QIV * 0.0) * (1.0 / (1.0 + (0.75 * ((QIV * 0.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(1, (QIV * 1.0) * (1.0 / (1.0 + (0.75 * ((QIV * 1.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(2, (QIV * 2.0) * (1.0 / (1.0 + (0.75 * ((QIV * 2.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(3, (QIV * 3.0) * (1.0 / (1.0 + (0.75 * ((QIV * 3.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(4, (QIV * 4.0) * (1.0 / (1.0 + (0.75 * ((QIV * 4.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(5, (QIV * 5.0) * (1.0 / (1.0 + (0.75 * ((QIV * 5.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(6, (QIV * 6.0) * (1.0 / (1.0 + (0.75 * ((QIV * 6.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(7, (QIV * 7.0) * (1.0 / (1.0 + (0.75 * ((QIV * 7.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(8, (QIV * 8.0) * (1.0 / (1.0 + (0.75 * ((QIV * 8.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(9, (QIV * 9.0) * (1.0 / (1.0 + (0.75 * ((QIV * 9.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(10, (QIV * 10.0) * (1.0 / (1.0 + (0.75 * ((QIV * 10.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(11, (QIV * 11.0) * (1.0 / (1.0 + (0.75 * ((QIV * 11.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(12, (QIV * 12.0) * (1.0 / (1.0 + (0.75 * ((QIV * 12.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(13, (QIV * 13.0) * (1.0 / (1.0 + (0.75 * ((QIV * 13.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(14, (QIV * 14.0) * (1.0 / (1.0 + (0.75 * ((QIV * 14.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(15, (QIV * 15.0) * (1.0 / (1.0 + (0.75 * ((QIV * 15.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(16, (QIV * 16.0) * (1.0 / (1.0 + (0.75 * ((QIV * 16.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(17, (QIV * 17.0) * (1.0 / (1.0 + (0.75 * ((QIV * 17.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(18, (QIV * 18.0) * (1.0 / (1.0 + (0.75 * ((QIV * 18.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(19, (QIV * 19.0) * (1.0 / (1.0 + (0.75 * ((QIV * 19.0) / QIP)))))    // Do not touch //
+        .add_flow_sample(20, (QIV * 20.0) * (1.0 / (1.0 + (0.75 * ((QIV * 20.0) / QIP)))))    // Do not touch //
+
+    function exhaust_flow(1 * units.mm)
+    exhaust_flow
+        .add_flow_sample(0, (QEV * 0.0) * (1.0 / (1.0 + (0.75 * ((QEV * 0.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(1, (QEV * 1.0) * (1.0 / (1.0 + (0.75 * ((QEV * 1.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(2, (QEV * 2.0) * (1.0 / (1.0 + (0.75 * ((QEV * 2.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(3, (QEV * 3.0) * (1.0 / (1.0 + (0.75 * ((QEV * 3.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(4, (QEV * 4.0) * (1.0 / (1.0 + (0.75 * ((QEV * 4.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(5, (QEV * 5.0) * (1.0 / (1.0 + (0.75 * ((QEV * 5.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(6, (QEV * 6.0) * (1.0 / (1.0 + (0.75 * ((QEV * 6.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(7, (QEV * 7.0) * (1.0 / (1.0 + (0.75 * ((QEV * 7.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(8, (QEV * 8.0) * (1.0 / (1.0 + (0.75 * ((QEV * 8.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(9, (QEV * 9.0) * (1.0 / (1.0 + (0.75 * ((QEV * 9.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(10, (QEV * 10.0) * (1.0 / (1.0 + (0.75 * ((QEV * 10.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(11, (QEV * 11.0) * (1.0 / (1.0 + (0.75 * ((QEV * 11.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(12, (QEV * 12.0) * (1.0 / (1.0 + (0.75 * ((QEV * 12.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(13, (QEV * 13.0) * (1.0 / (1.0 + (0.75 * ((QEV * 13.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(14, (QEV * 14.0) * (1.0 / (1.0 + (0.75 * ((QEV * 14.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(15, (QEV * 15.0) * (1.0 / (1.0 + (0.75 * ((QEV * 15.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(16, (QEV * 16.0) * (1.0 / (1.0 + (0.75 * ((QEV * 16.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(17, (QEV * 17.0) * (1.0 / (1.0 + (0.75 * ((QEV * 17.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(18, (QEV * 18.0) * (1.0 / (1.0 + (0.75 * ((QEV * 18.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(19, (QEV * 19.0) * (1.0 / (1.0 + (0.75 * ((QEV * 19.0) / QEP)))))    // Do not touch //
+        .add_flow_sample(20, (QEV * 20.0) * (1.0 / (1.0 + (0.75 * ((QEV * 20.0) / QEP)))))    // Do not touch //
+    
+    cylinder_head head(
+        chamber_volume: Chamber_Volume_CC * units.cc,
+        intake_runner_cross_section_area: Cylinder_Head_Intake_Port_Cross_Section_Area_CM2 * units.cm2,
+        intake_runner_volume: Cylinder_Head_Intake_Port_Volume_CC * units.cc,
+        exhaust_runner_cross_section_area: Cylinder_Head_Exhaust_Port_Cross_Section_Area_CM2 * units.cm2,
+        exhaust_runner_volume: Cylinder_Head_Exhaust_Port_Volume_CC * units.cc,
+        
+        intake_port_flow: intake_flow,
+        exhaust_port_flow: exhaust_flow,
+        intake_camshaft: intake_camshaft,
+        exhaust_camshaft: exhaust_camshaft,
+        flip_display: flip_display
+    )
+} 
+
+// Cylinder head end //
+
+// Engine assembly start //
+
+public node Hemi_392 {
+    alias output __out: engine;
+
+// Miscellaneous parameters start //
+
+    engine engine(
+        name: "Chrysler 392 Hemi",
+        starter_torque: Starter_Torque_NM * units.Nm,
+        starter_speed: Starter_Speed_RPM * units.rpm,
+        redline: Rev_Limit_RPM * units.rpm,
+        fuel: fuel(
+            name: Fuel_Name,
+            molecular_mass: Fuel_Molecular_Mass * units.g,
+            density: Fuel_Density,
+            energy_density: Fuel_Energy_Density,
+            molecular_afr: Fuel_Molecular_AFR,
+            max_burning_efficiency: Fuel_Maximum_Burning_Efficiency,
+            burning_efficiency_randomness: Fuel_Burning_Efficiency_Randomness,
+            low_efficiency_attenuation: Fuel_Low_Efficiency_Attenuation,
+            max_turbulence_effect: Fuel_Max_Turbulence_Effect,
+            max_dilution_effect: Fuel_Max_Dilution_Effect
+        ),
+        throttle_gamma: 2.0,
+        hf_gain: High_Frequency_Gain,
+        jitter: High_Frequency_Noise,
+        noise: Low_Frequency_Noise,
+        simulation_frequency: Simulation_Frequency,
+        dyno_min_speed: Dyno_Minimum_Speed * units.rpm,
+        dyno_max_speed: Dyno_Maximum_Speed * units.rpm,
+        dyno_hold_step: Dyno_Hold_Steps * units.rpm
+    )
+
+// Miscellaneous parameters end //
+
+// Wires start //
+
+    wires wires()
+
+// Wires end //
+
+// Crankshaft starts //
+
+    crankshaft Crankshaft_1(
+        throw: Crankshaft_Throw_MM * units.mm,
+        mass: Crankshaft_Mass_G * units.g,
+        flywheel_mass: Flywheel_Mass_G * units.g,
+        friction_torque: Total_Friction_NM * units.Nm,
+        moment_of_inertia: Total_Moment_Of_Inertia,
+        position_x: 0.0,
+        position_y: 0.0,
+        tdc: 135.0 * units.deg
+    )
+
+    rod_journal Rod_Journal_1(angle: 0 * units.deg)
+    rod_journal Rod_Journal_2(angle: 270 * units.deg)
+    rod_journal Rod_Journal_3(angle: 450 * units.deg)
+    rod_journal Rod_Journal_4(angle: 180 * units.deg)
+
+    Crankshaft_1
+        .add_rod_journal(Rod_Journal_1)
+        .add_rod_journal(Rod_Journal_2)
+        .add_rod_journal(Rod_Journal_3)
+        .add_rod_journal(Rod_Journal_4)
+
+// Crankshaft ends //
+
+// Pistons Parameters Start //
+    
+    piston_parameters Piston_Parameters(
+        mass: Piston_Mass_G * units.g,
+        compression_height: Piston_Compression_Height_MM * units.mm,
+        wrist_pin_position: 0.0,
+        displacement: 0.0,
+        blowby: k_28inH2O(Piston_Rings_Blowby_CFM28inH20)
+    )
+
+// Pistons End //
+
+// Connecting Rods Parameters Start //
+
+    connecting_rod_parameters Connecting_Rod_Parameters(
+        mass: Connecting_Rod_Mass_G * units.g,
+        length: Connecting_Rod_Length_MM * units.mm,
+        moment_of_inertia: Connecting_Rod_Moment_Of_Inertia,
+        center_of_mass: 0.0
+    )
+
+// Connnecting Rods Parameters End //
+
+// Cylinder Bank Parameters Start //
+
+    cylinder_bank_parameters Cylinder_Bank_Parameters(
+        bore: Bore_MM * units.mm,
+        deck_height: (Crankshaft_Throw_MM + Connecting_Rod_Length_MM + Piston_Compression_Height_MM) * units.mm
+    )
+
+// Cylinder Bank Parameters End //
+
+// Intake Manifolds Start //
+    
+    intake Intake_Manifold_1(
+        plenum_cross_section_area: Intake_Plenum_Cross_Section_Area_CM2 * units.cm2,
+        plenum_volume: Intake_Plenum_Volume_CC * units.cc,
+        intake_flow_rate: k_carb(Intake_Plenum_CFM),
+        runner_length: Intake_Runner_Length_MM * units.mm,
+        runner_flow_rate: k_28inH2O(Intake_Runner_CFM),
+        idle_throttle_plate_position: Idle_Throttle_Adjustment,
+        idle_flow_rate: k_carb(Idle_Fuel_Adjusment),
+        molecular_afr: Fuel_Mixture_Adjustment,
+        velocity_decay: Intake_Manifold_Velocity_Decay
+    )
+
+// Intake Manifolds End //
+
+// Exhaust Headers Start //
+
+    exhaust_system_parameters Exhaust_System_Parameters(
+        length: Collector_Length_MM * units.mm,
+        collector_cross_section_area: Collector_Cross_Section_Area_CM2 * units.cm2,
+        volume: Collector_Volume_CC * units.cc,
+        outlet_flow_rate: k_carb(Exhaust_Collector_CFM),
+        primary_tube_length: Primary_Tube_Length_MM * units.mm,
+        primary_flow_rate: k_28inH2O(Exhaust_Primary_CFM),
+        velocity_decay: Exhaust_Manifold_Velocity_Decay
+    )
+
+    exhaust_system Exhaust_Headers_1(Exhaust_System_Parameters, impulse_response: ir_lib.default_0, audio_volume: 0.05)
+    exhaust_system Exhaust_Headers_2(Exhaust_System_Parameters, impulse_response: ir_lib.default_0, audio_volume: 0.05)
+
+// Exhaust Headers End //
+
+// Cylinder Banks Start //
+
+    cylinder_bank Cylinder_Bank_1(Cylinder_Bank_Parameters, angle: 45.0 * units.deg)
+        Cylinder_Bank_1
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_1,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_1,
+                primary_length: (Primary_Tube_Length_MM + 76.2) * units.mm,
+                sound_attenuation: 0.34,
+                ignition_wire: wires.wire1
+            )
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_2,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_1,
+                primary_length: (Primary_Tube_Length_MM + 152.4) * units.mm,
+                sound_attenuation: 0.31,
+                ignition_wire: wires.wire3
+            )
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_3,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_1,
+                primary_length: (Primary_Tube_Length_MM + 127.0) * units.mm,
+                sound_attenuation: 0.33,
+                ignition_wire: wires.wire5
+            )
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_4,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_1,
+                primary_length: (Primary_Tube_Length_MM + 162.56) * units.mm,
+                sound_attenuation: 0.30,
+                ignition_wire: wires.wire7
+            )
+
+    cylinder_bank Cylinder_Bank_2(Cylinder_Bank_Parameters, angle: -45.0 * units.deg)
+        Cylinder_Bank_2
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_1,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_2,
+                primary_length: (Primary_Tube_Length_MM + 76.2) * units.mm,
+                sound_attenuation: 0.38,
+                ignition_wire: wires.wire2
+            )
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_2,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_2,
+                primary_length: (Primary_Tube_Length_MM + 152.4) * units.mm,
+                sound_attenuation: 0.34,
+                ignition_wire: wires.wire4
+            )
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_3,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_2,
+                primary_length: (Primary_Tube_Length_MM + 127.0) * units.mm,
+                sound_attenuation: 0.33,
+                ignition_wire: wires.wire6
+            )
+            .add_cylinder(
+                piston: piston(Piston_Parameters),
+                connecting_rod: connecting_rod(Connecting_Rod_Parameters),
+                rod_journal: Rod_Journal_4,
+                intake: Intake_Manifold_1,
+                exhaust_system: Exhaust_Headers_2,
+                primary_length: (Primary_Tube_Length_MM + 162.56) * units.mm,
+                sound_attenuation: 0.30,
+                ignition_wire: wires.wire8
+            )
+    
+    engine.add_cylinder_bank(Cylinder_Bank_1)
+    engine.add_cylinder_bank(Cylinder_Bank_2)
+
+    engine.add_crankshaft(Crankshaft_1)
+
+    Engine_Camshaft_Builder camshaft()
+
+    Cylinder_Bank_1.set_cylinder_head(
+        Engine_Cylinder_Head(
+            intake_camshaft: camshaft.intake_cam_1,
+            exhaust_camshaft: camshaft.exhaust_cam_1,
+            flip_display: true
+        )
+    )
+
+    Cylinder_Bank_2.set_cylinder_head(
+        Engine_Cylinder_Head(
+            intake_camshaft: camshaft.intake_cam_2,
+            exhaust_camshaft: camshaft.exhaust_cam_2,
+            flip_display: false
+        )
+    )
+
+// Cylinder Banks End //
+
+// Ignition Start //
+
+    function timing_curve(500 * units.rpm)
+    timing_curve
+        .add_sample(0 * units.rpm, 14 * units.deg)
+        .add_sample(500 * units.rpm, 15 * units.deg)
+        .add_sample(1000 * units.rpm, 16 * units.deg)
+        .add_sample(1500 * units.rpm, 17 * units.deg)
+        .add_sample(2000 * units.rpm, 18 * units.deg)
+        .add_sample(2500 * units.rpm, 19 * units.deg)
+        .add_sample(3000 * units.rpm, 20 * units.deg)
+        .add_sample(3500 * units.rpm, 21 * units.deg)
+        .add_sample(4000 * units.rpm, 22 * units.deg)
+        .add_sample(4500 * units.rpm, 23 * units.deg)
+        .add_sample(5000 * units.rpm, 24 * units.deg)
+        .add_sample(5500 * units.rpm, 25 * units.deg)
+        .add_sample(6000 * units.rpm, 26 * units.deg)
+        .add_sample(6500 * units.rpm, 26 * units.deg)
+        .add_sample(7000 * units.rpm, 26 * units.deg)
+
+    engine.add_ignition_module(
+        Engine_Distributor(
+            wires: wires,
+            timing_curve: timing_curve
+        )
+    )
+}
+
+// Ignition End //
+
+// Engine assembly end //
+
+// Vehicle Start //
+
+public node Challenger_widebody {
+    alias output __out:
+        vehicle(
+            mass: Vehicle_Mass_KG * units.kg,
+            drag_coefficient: Vehicle_Drag_Coefficient,
+            cross_sectional_area: (Vehicle_Width_MM * units.mm) * (Vehicle_Height_MM * units.mm),
+            diff_ratio: Axle_Gear_Ratio,
+            tire_radius: (Wheel_Diameter_IN / 2) * units.inch,
+            rolling_resistance: Vehicle_Rolling_Resistance_N * units.Nm /////////,
+            //max_brake_force: Vehicle_Braking_Force_N * units.Nm,
+            //simulate_flex: true,
+            //stiffness: Transmission_Stiffness_NM * units.Nm / units.deg,
+            //limit_flex: true,
+            //max_flex: Maximum_Transmission_Flex_DEG * units.deg,
+            //damping: Transmission_Torsional_Damping_Coefficient
+        );
+}
+
+// Vehicle End //
+
+// Transmission start //
+
+public node Tremec_TR6060 {
+    alias output __out:
+        transmission(
+            max_clutch_torque: Maximum_Clutch_Torque_NM * units.Nm ////////////,
+            //simulate_flex: true,
+            //clutch_stiffness: Clutch_Stiffness_NM * units.Nm / units.deg,
+            //limit_clutch_flex: true,
+            //max_clutch_flex: Maximum_Clutch_Flex_DEG * units.deg,
+            //clutch_damping: Clutch_Torsional_Damping_Coefficient
+        )
+        .add_gear(Gear_Ratio_1)
+        .add_gear(Gear_Ratio_2)
+        .add_gear(Gear_Ratio_3)
+        .add_gear(Gear_Ratio_4)
+        .add_gear(Gear_Ratio_5)
+        .add_gear(Gear_Ratio_6);
+}
+
+// Transmission End //
+
+public node main {
+    set_engine(Hemi_392())
+    set_vehicle(Challenger_widebody())
+    set_transmission(Tremec_TR6060())
+}
+
+main()
