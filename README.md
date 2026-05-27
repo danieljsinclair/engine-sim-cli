@@ -10,7 +10,7 @@ This tool allows you to generate high-quality engine audio from command line wit
 |----------|--------|---------------|
 | **macOS** | ✅ Production | CoreAudio / AudioUnit |
 | **iOS** | ✅ Done | AVAudioEngine (see `escli-ios/`) |
-| **ESP32** | 🔧 Planned | `IAudioHardwareProvider` stub ready |
+| **ESP32** | 🔧 In Progress | I2S via MAX98357A (see `engine-sim-esp32/`) |
 | **Android** | 🔧 Planned | `IAudioHardwareProvider` stub ready |
 | Linux | ❌ Not supported | No audio provider; build blocked |
 | Windows | ❌ Not supported | No audio provider; build blocked |
@@ -62,6 +62,28 @@ make
 # Install build tools
 brew install cmake bison flex boost
 ```
+
+### ESP32 Setup (Optional)
+
+For ESP32-S3 target with I2S audio output:
+
+```bash
+# Install ESP-IDF via EIM (Espressif Installation Manager)
+brew tap espressif/eim
+brew install eim
+eim install          # installs ESP-IDF and toolchain
+
+# Build firmware
+make esp32
+
+# Flash to connected ESP32-S3
+make deploy_esp32
+
+# Flash + serial monitor
+make run_esp32
+```
+
+Hardware: ESP32-S3 DevKit + MAX98357A I2S amp. Wiring: GPIO 4=BCLK, GPIO 5=LRCLK, GPIO 6=DIN, GND, 3V3.
 
 ## Usage
 
