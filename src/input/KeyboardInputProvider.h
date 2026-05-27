@@ -32,7 +32,7 @@ private:
     double throttle_;
     double baselineThrottle_;
     bool ignition_;
-    bool starterSwitch_;
+    bool starterMotor_;
     double dynoTorqueScale_;
     int gearDelta_;
     int lastKey_;

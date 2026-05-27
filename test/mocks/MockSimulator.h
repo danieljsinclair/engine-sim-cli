@@ -112,11 +112,11 @@ public:
     }
 
     void stop() override {
-        // Production-like shutdown: use input provider mechanism
-        // No sleeps or CPU spinning - clean, immediate shutdown
         signalShutdown();
         audioThreadRunning_ = false;
     }
+
+    int getSimulationFrequency() const override { return config_.simulationFrequency; }
 
 private:
     ISimulatorConfig config_{};

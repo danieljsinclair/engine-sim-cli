@@ -16,7 +16,20 @@ target_link_libraries(telemetry_isp_tests
 target_include_directories(telemetry_isp_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/include
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/dependencies/dr_libs
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include
 )
+
+# Set rpath for test executable to find dylibs in bridge build directory
+if(APPLE)
+    set_target_properties(telemetry_isp_tests PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "${CMAKE_SOURCE_DIR}/engine-sim-bridge/build"
+        BUILD_RPATH "${CMAKE_SOURCE_DIR}/engine-sim-bridge/build"
+    )
+endif()
 
 add_test(NAME telemetry_isp_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/telemetry_isp_tests

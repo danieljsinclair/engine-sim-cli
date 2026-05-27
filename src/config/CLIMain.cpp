@@ -112,7 +112,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
 
     // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
-    config.engineConfig.simulationFrequency = (args.simulationFrequency > 0) ? args.simulationFrequency : config.engineConfig.simulationFrequency;
+    if (args.simulationFrequency > 0) {
+        config.engineConfig.simulationFrequency = args.simulationFrequency;
+    }
     config.engineConfig.targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : config.engineConfig.targetSynthesizerLatency;
 
     // Color the simulator label for CLI output

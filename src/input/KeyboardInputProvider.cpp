@@ -14,7 +14,7 @@ KeyboardInputProvider::KeyboardInputProvider(ILogging* logger, double initialDyn
     , throttle_(0.1)
     , baselineThrottle_(0.1)
     , ignition_(true)
-    , starterSwitch_(false)
+    , starterMotor_(true)
     , dynoTorqueScale_(initialDynoTorqueScale)
     , gearDelta_(0)
     , lastKey_(-1)
@@ -64,7 +64,7 @@ EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     EngineInput input;
     input.throttle = throttle_;
     input.ignition = ignition_;
-    input.starterMotor = starterSwitch_;
+    input.starterSwitch = starterMotor_;
     input.dynoTorqueScale = dynoTorqueScale_;
     input.gearDelta = gearDelta_;
     gearDelta_ = 0;  // Reset after consuming
@@ -96,10 +96,9 @@ void KeyboardInputProvider::processKeyPress(int key) {
             break;
         }
         case 's': case 'S': {
-            static bool starterState = false;
+            static bool starterState = true;
             starterState = !starterState;
-            starterSwitch_ = starterState;
-            logger_->info(LogMask::UI, "Starter motor %s", starterState ? "enabled" : "disabled");
+            starterMotor_ = starterState;
             break;
         }
         

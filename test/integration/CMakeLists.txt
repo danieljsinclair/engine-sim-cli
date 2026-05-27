@@ -23,7 +23,6 @@ target_link_libraries(integration_tests
     PRIVATE
         gtest
         gtest_main
-        engine-sim
         engine-sim-bridge
         ${AUDIO_LIBRARY}
 )
@@ -34,8 +33,20 @@ target_include_directories(integration_tests
         ${CMAKE_SOURCE_DIR}/test/unit
         ${CMAKE_SOURCE_DIR}/test/mocks
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/include
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/dependencies/dr_libs
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include
+        ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include
 )
+
+# Set rpath for test executable to find dylibs in bridge build directory
+if(APPLE)
+    set_target_properties(integration_tests PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "${CMAKE_SOURCE_DIR}/engine-sim-bridge/build"
+        BUILD_RPATH "${CMAKE_SOURCE_DIR}/engine-sim-bridge/build"
+    )
+endif()
 
 # Register integration tests per test case so CTest can parallelize safely.
 # Avoid fixed gtest JSON output here to prevent artifact collisions between

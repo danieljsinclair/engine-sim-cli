@@ -46,6 +46,12 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     if (rpm < 10 && state.rpm > 0) rpm = 0;
     out << "[" << std::setw(5) << rpm << " RPM] ";
 
+    // Starter & Ignition — labels plain, digits colored
+    auto boolColor = [](bool on) { return on ? ANSIColors::GREEN : ANSIColors::RED; };
+    out << "[S:" << boolColor(state.starterMotorEngaged) << (state.starterMotorEngaged ? 1 : 0)
+        << ANSIColors::RESET << " I:" << boolColor(state.ignition) << (state.ignition ? 1 : 0)
+        << ANSIColors::RESET << "] ";
+
     // Throttle
     out << "[Throttle: " << std::setw(4) << static_cast<int>(state.throttle * 100) << "%] ";
 
@@ -87,6 +93,11 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         double neededKfps = state.sampleRate / 1000.0;
         double generatingKfps = state.generatingRateFps / 1000.0;
 
+        // Simulation frequency: green <=10000, yellow <=15000, orange >15000
+        std::string freqColor = state.simulationFrequency <= 10000 ? ANSIColors::GREEN
+                              : state.simulationFrequency <= 15000 ? ANSIColors::YELLOW
+                              : ANSIColors::WARNING;
+
         // Colour coding: green if generating >= needed, yellow if >= 90%, red otherwise
         std::string genColor = ANSIColors::getDispositionColour(
             generatingKfps >= neededKfps, generatingKfps >= neededKfps * 0.9);
@@ -95,7 +106,8 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         std::string trendColor = ANSIColors::getDispositionColour(
             state.trendPct >= 0.0, state.trendPct >= -1.0);
 
-        out << "[calls=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
+        out << "[Freq=" << freqColor << state.simulationFrequency << ANSIColors::RESET
+            << " calls=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
             << "need" << std::setw(5) << std::setprecision(1) << neededKfps << "kfps "
             << "actual=" << genColor << std::setw(5) << generatingKfps << "kfps" << ANSIColors::RESET << " "
             << "trend=" << trendColor << std::setw(5) << std::showpos << std::setprecision(1) << state.trendPct
