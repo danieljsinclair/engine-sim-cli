@@ -1,0 +1,124 @@
+import "engine_sim.mr"
+
+units units()
+constants constants()
+
+public node simple_v8 {
+    alias output __out: engine(
+        name: "Simple V8 Test",
+        starter_torque: 100 * units.lb_ft,
+        starter_speed: 500 * units.rpm,
+        redline: 6000 * units.rpm,
+        simulation_frequency: 10000
+    )
+
+    crankshaft c0(
+        throw: 90 * units.mm / 2,
+        flywheel_mass: 20 * units.lb,
+        mass: 30 * units.lb,
+        friction_torque: 10.0 * units.lb_ft,
+        moment_of_inertia: 0.4,
+        position_x: 0.0,
+        position_y: 0.0,
+        tdc: constants.pi / 2
+    )
+
+    rod_journal rj0(angle: 0.0)
+    c0.add_rod_journal(rj0)
+
+    cylinder_bank_parameters bank_params(
+        bore: 100 * units.mm,
+        deck_height: 200 * units.mm
+    )
+
+    piston_parameters piston_params(
+        mass: 350 * units.g,
+        compression_height: 1.2 * units.inch,
+        wrist_pin_position: 0.0,
+        displacement: 0.0
+    )
+
+    connecting_rod_parameters cr_params(
+        mass: 400.0 * units.g,
+        moment_of_inertia: 0.002,
+        center_of_mass: 0.0,
+        length: 6.0 * units.inch
+    )
+
+    intake_parameters intake_params(
+        flow_rate: 5.0,
+        radius: 35 * units.mm
+    )
+
+    exhaust_system_parameters exhaust_params(
+        primary_length: 600 * units.mm,
+        primary_radius: 25 * units.mm,
+        collector_radius: 40 * units.mm,
+        collector_length: 200 * units.mm,
+        secondary_radius: 35 * units.mm,
+        secondary_length: 500 * units.mm,
+        tailpipe_radius: 40 * units.mm,
+        tailpipe_length: 1500 * units.mm,
+        atmosphere_volume: 100.0
+    )
+
+    ignition_wire_parameters wire_params(index: 0)
+
+    cylinder_bank b0(bank_params, angle: 0 * units.deg)
+    b0.add_cylinder(
+        intake: intake_params,
+        exhaust_system: exhaust_params,
+        piston: piston_params,
+        connecting_rod: cr_params,
+        rod_journal: rj0,
+        ignition_wire: wire_params,
+        sound_attenuation: 1.0,
+        primary_length: 0.0
+    )
+
+    __out.add_cylinder_bank(b0)
+    __out.add_crankshaft(c0)
+
+    harmonic_cam_lobe lobe(
+        duration_at_50_thou: 220 * units.deg,
+        gamma: 1.0,
+        lift: 250 * units.thou,
+        steps: 100
+    )
+
+    harmonic_camshaft camshaft(
+        lobe_profile: lobe,
+        base_radius: 500 * units.thou
+    )
+
+    b0.set_cylinder_head(
+        cylinder_head(
+            chambers: [
+                combustion_chamber(chamber_volume: 65 * units.cc)
+            ],
+            intake_camshaft: camshaft,
+            exhaust_camshaft: camshaft,
+            intake_flow_attenuation: 1.5,
+            exhaust_flow_attenuation: 1.5,
+            intake_runner_cross_section_area: 12.0 * units.cm2,
+            exhaust_runner_cross_section_area: 12.0 * units.cm2
+        )
+    )
+
+    function timing_curve(1000 * units.rpm)
+    timing_curve
+        .add_sample(0000 * units.rpm, 10 * units.deg)
+        .add_sample(1000 * units.rpm, 15 * units.deg)
+        .add_sample(2000 * units.rpm, 25 * units.deg)
+        .add_sample(3000 * units.rpm, 32 * units.deg)
+
+    distributor distributor(
+        wires: [wire_params],
+        timing_curve: timing_curve,
+        rev_limit: 6000 * units.rpm
+    )
+
+    __out.add_ignition_module(distributor)
+}
+
+set_engine(simple_v8())

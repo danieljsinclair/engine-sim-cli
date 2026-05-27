@@ -1,4 +1,5 @@
 tap "homebrew/core"
+tap "espressif/eim"
 
 brew "bison"
 brew "flex"
@@ -8,3 +9,4 @@ brew "xxhash"
 brew "hiredis"
 brew "fmt"
 brew "blake3"
+brew "eim"

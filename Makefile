@@ -4,9 +4,9 @@
 # IMPORTANT: Always use 'make' from project root, never run 'cmake' directly.
 # Running 'cmake -S . -B .' will overwrite this Makefile and break the build.
 #
-# Build cascade: make build → cmake → compile → presets → sync-es
-# Test cascade:  make test → build → bridge tests + CLI tests
-# Full pipeline: make all → build + test
+# Build cascade: make build -> cmake -> compile -> presets -> sync-es
+# Test cascade:  make test -> build -> bridge tests + CLI tests
+# Full pipeline: make all -> build + test
 
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
@@ -18,25 +18,32 @@ SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
 CMAKE_BUILD_PARALLEL_FLAG := $(if $(strip $(BUILD_PARALLEL_LEVEL)),--parallel $(BUILD_PARALLEL_LEVEL),)
 
+ESP32_DIR ?= engine-sim-esp32
+ESP32_PORT ?= $(shell ls /dev/cu.usbserial-* 2>/dev/null | head -1)
+# Auto-detect EIM-installed ESP-IDF: prefers latest versioned install, falls back to IDF_PATH env var
+IDF_PATH ?= $(or $(wildcard $(HOME)/.espressif/v6.*/esp-idf),$(HOME)/esp/esp-idf)
+IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.sh))
+
 .DEFAULT_GOAL := all
 .PHONY: all build clean scrub test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross
+.PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 
 # ============================================================================
-# all: Full pipeline — build + test (default target)
+# all: Full pipeline -- build + test (default target)
 # ============================================================================
 all: build test
 
 # ============================================================================
-# build: Compile everything — configure, compile, build presets, sync es/
+# build: Compile everything -- configure, compile, build presets, sync es/
 #
 # Ordering is sequential via dependencies:
-#   1. submodules        — init recursive submodules
-#   2. $(BUILD_DIR)/CMakeCache.txt — cmake configure
-#   3. check-platform    — verify macOS, then compile everything
-#   4. bridge-presets    — compile .mr → .json (needs preset_compiler from step 3)
-#   5. sync-es           — copy bridge es/ + preset/ → CLI es/
+#   1. submodules        -- init recursive submodules
+#   2. $(BUILD_DIR)/CMakeCache.txt -- cmake configure
+#   3. check-platform    -- verify macOS, then compile everything
+#   4. bridge-presets    -- compile .mr -> .json (needs preset_compiler from step 3)
+#   5. sync-es           -- copy bridge es/ + preset/ -> CLI es/
 # ============================================================================
 build: check-platform bridge-presets sync-es
 
@@ -48,7 +55,7 @@ check-platform: check-cmake bridge-build $(BUILD_DIR)/CMakeCache.txt
 	fi
 	+@cmake --build $(BUILD_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
 
-# Bridge builds independently — must complete before CLI cmake configure
+# Bridge builds independently -- must complete before CLI cmake configure
 bridge-build: submodules check-submodule
 	+@$(MAKE) -C engine-sim-bridge build
 
@@ -57,7 +64,7 @@ bridge-presets: check-platform
 	+@$(MAKE) -C engine-sim-bridge presets
 
 # ---------------------------------------------------------------------------
-# es/ convenience copy — full mirror from bridge
+# es/ convenience copy -- full mirror from bridge
 #
 # The bridge/es/ directory is the source of truth for all .mr scripts and
 # supporting files. The bridge Makefile's CANDIDATE_ENGINES controls which
@@ -77,7 +84,7 @@ copy-es-json: bridge-presets
 		echo "Syncing JSON presets..."; \
 		cp $(BRIDGE_PRESET)/*.json $(CLI_ES)/; \
 	else \
-		echo "No presets built yet — run 'make presets' first."; \
+		echo "No presets built yet -- run 'make presets' first."; \
 	fi
 
 sync-es: copy-es-mr copy-es-json
@@ -120,7 +127,7 @@ $(BUILD_DIR)/CMakeCache.txt: check-submodule
 		..
 
 # ---------------------------------------------------------------------------
-# Clean targets — cascade to bridge
+# Clean targets -- cascade to bridge
 # ---------------------------------------------------------------------------
 remove-orphans:
 	@rm -f assets
@@ -135,7 +142,7 @@ remove-orphans:
 	@find . -path ./$(BUILD_DIR) -prune -o -name "*.a" -type f -print -delete 2>/dev/null || true
 	@find . -path ./$(BUILD_DIR) -prune -o -name "_deps" -type d -print -exec rm -rf {} + 2>/dev/null || true
 
-clean: remove-orphans
+clean: remove-orphans clean_esp32
 	+@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
 	@if [ -d $(BUILD_DIR) ]; then \
 		cmake --build $(BUILD_DIR) --target clean >/dev/null 2>&1 || true; \
@@ -150,7 +157,7 @@ scrub: clean
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
 
 # ---------------------------------------------------------------------------
-# Test — build first, then run all test suites via CTest
+# Test -- build first, then run all test suites via CTest
 # ---------------------------------------------------------------------------
 test: build
 	+@total_start=$$(date +%s); \
@@ -177,7 +184,6 @@ test: build
 	if (cd $(BUILD_DIR) && ctest $(CTEST_UI_FLAGS) --output-on-failure --output-log ../test.log -j$(CTEST_JOBS)); then \
 		cli_end=$$(date +%s); \
 		cli_elapsed=$$((cli_end - cli_start)); \
-		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests PASSED ($${cli_elapsed}s) ==="; \
 		total_end=$$(date +%s); \
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: bridge=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
@@ -186,7 +192,6 @@ test: build
 	else \
 		cli_end=$$(date +%s); \
 		cli_elapsed=$$((cli_end - cli_start)); \
-		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests FAILED ($${cli_elapsed}s) ==="; \
 		total_end=$$(date +%s); \
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: bridge=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
@@ -288,13 +293,16 @@ help:
 	@echo "  make presets  - Compile .mr wrappers to JSON presets"
 	@echo "  make clean    - Clean build artifacts (fast rebuild)"
 	@echo "  make scrub    - Remove entire build directory (full clean)"
-	@echo "  make run      - Build+test and run CLI with .mr script"
-	@echo "  make run-json - Build+test and run CLI with JSON preset"
+	@echo "  make run      - Build and run CLI with .mr script"
+	@echo "  make run-json - Build and run CLI with JSON preset"
+	@echo "  make esp32    - Build ESP32 firmware"
+	@echo "  make deploy_esp32 - Flash ESP32 firmware"
+	@echo "  make run_esp32    - Build, flash, and monitor ESP32"
 	@echo "  make help     - Show this help"
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
-# Not iOS-aware — just accepts a platform variable for the CMake toolchain.
+# Not iOS-aware -- just accepts a platform variable for the CMake toolchain.
 # ---------------------------------------------------------------------------
 ifdef PLATFORM
 CROSS_BUILD_DIR := build-$(PLATFORM)
@@ -322,3 +330,52 @@ ifdef PLATFORM
 else
 	@rm -rf build-OS64 build-SIMULATOR64
 endif
+
+# -----------------------------------------------------------------------------
+# ESP32 targets (ESP32-S3 + MAX98357A I2S DAC)
+# Prerequisites: ESP-IDF installed via EIM
+#   brew tap espressif/eim && brew install eim && eim install
+# Hardware: GPIO 4=BCLK, GPIO 5=LRCLK, GPIO 6=DIN -> MAX98357A
+# -----------------------------------------------------------------------------
+
+# Resolve activation: source EIM activation script or legacy export.sh
+# idf.py invocation: EIM uses shell aliases (invisible to make's non-interactive shells),
+# so we call it directly via the venv python instead.
+IDF_VENV_PYTHON := $(shell ls $(HOME)/.espressif/tools/python/v*/venv/bin/python 2>/dev/null | head -1)
+IDF_PYTHON ?= $(or $(IDF_VENV_PYTHON),python3)
+IDF_PY ?= $(IDF_PYTHON) $(IDF_PATH)/tools/idf.py
+define ESP32_ACTIVATE
+if [ -f "$(IDF_ACTIVATE)" ]; then . "$(IDF_ACTIVATE)" 2>/dev/null; elif [ -f "$(IDF_PATH)/export.sh" ]; then . "$(IDF_PATH)/export.sh" 2>/dev/null; fi
+endef
+
+esp32: submodules
+	@if [ ! -d "$(IDF_PATH)" ] && [ -z "$(IDF_ACTIVATE)" ]; then \
+		echo ""; \
+		echo "ERROR: ESP-IDF not found."; \
+		echo "  Install via EIM: brew tap espressif/eim && brew install eim && eim install"; \
+		echo "  Or set IDF_PATH manually: make esp32 IDF_PATH=/path/to/esp-idf"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if [ ! -d $(ESP32_DIR) ]; then \
+		echo "ERROR: ESP32 project not found at $(ESP32_DIR)/"; \
+		exit 1; \
+	fi
+	@$(ESP32_ACTIVATE) && cd $(ESP32_DIR) && $(IDF_PY) build
+
+deploy_esp32: esp32
+	@if [ -z "$(ESP32_PORT)" ]; then \
+		echo "ERROR: No ESP32 serial port found."; \
+		echo "Connect ESP32 via USB and check /dev/cu.usbserial-*"; \
+		echo "Or set ESP32_PORT manually: make deploy_esp32 ESP32_PORT=/dev/cu.usbserial-XXXX"; \
+		exit 1; \
+	fi
+	@$(ESP32_ACTIVATE) && cd $(ESP32_DIR) && $(IDF_PY) -p $(ESP32_PORT) flash
+
+run_esp32: deploy_esp32
+	@$(ESP32_ACTIVATE) && cd $(ESP32_DIR) && $(IDF_PY) -p $(ESP32_PORT) monitor
+
+clean_esp32:
+	@if [ -d $(ESP32_DIR) ]; then \
+		rm -rf $(ESP32_DIR)/build; \
+	fi
