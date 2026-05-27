@@ -1,0 +1,28 @@
+name: ESP32 Build
+
+on:
+  push:
+    branches:
+      - esp32_max
+  pull_request:
+    branches:
+      - esp32_max
+
+jobs:
+  esp32-build:
+    name: Build ESP32-S3 Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+        submodules: recursive
+
+    - name: Build ESP32 firmware
+      uses: espressif/esp-idf-ci-action@v1
+      with:
+        esp_idf_version: v5.4.2
+        target: esp32s3
+        path: 'engine-sim-esp32'

@@ -1,0 +1,19 @@
+# ESP32-S3 defaults for engine-sim-cli sine mode
+# I2S audio output to MAX98357A, PSRAM for audio buffers, C++17
+
+# Target: ESP32-S3
+CONFIG_IDF_TARGET="esp32s3"
+
+# PSRAM (needed for audio buffers)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+
+# C++ exceptions (SimulationLoop throws std::runtime_error)
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+
+# FreeRTOS: run on both cores
+CONFIG_FREERTOS_UNICORE=n
+
+# I2S: use new driver
+CONFIG_I2S_ENABLE_DEBUG_LOG=n
