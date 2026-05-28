@@ -57,7 +57,7 @@ public:
         input::EngineInput input;
         input.throttle = throttle_;
         input.ignition = ignition_;
-        input.starterSwitch = starterMotor_;
+        input.starterButton = starterButton_;
         input.shouldContinue = shouldContinue_;
 
         return input;
@@ -92,8 +92,8 @@ public:
     /**
      * Set starter motor state
      */
-    void setStarterMotor(bool starter) {
-        starterMotor_ = starter;
+    void setStarterButton(bool pressed) {
+        starterButton_ = pressed;
     }
 
     /**
@@ -117,7 +117,7 @@ public:
     void reset() {
         throttle_ = 0.1;
         ignition_ = true;
-        starterMotor_ = false;
+        starterButton_ = false;
         shouldContinue_ = true;
         lastError_.clear();
         connected_ = false;
@@ -127,7 +127,7 @@ private:
     // Input state
     double throttle_ = 0.1;
     bool ignition_ = true;
-    bool starterMotor_ = false;
+    bool starterButton_ = false;
     bool shouldContinue_ = true;
 
     // State tracking
