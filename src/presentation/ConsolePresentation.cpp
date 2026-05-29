@@ -52,8 +52,8 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         << ANSIColors::RESET << " I:" << boolColor(state.ignition) << (state.ignition ? 1 : 0)
         << ANSIColors::RESET << "] ";
 
-    // Throttle
-    out << "[Throttle: " << std::setw(4) << static_cast<int>(state.throttle * 100) << "%] ";
+    // Engine state and Throttle
+    out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%] ";
 
     // Gear
     out << "[Gear: " << state.gear << "] ";
