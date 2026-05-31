@@ -92,7 +92,6 @@ void KeyboardInputProvider::processKeyPress(int key) {
             static bool ignitionState = true;
             ignitionState = !ignitionState;
             ignition_ = ignitionState;
-            logger_->info(LogMask::UI, "Ignition %s", ignitionState ? "enabled" : "disabled");
             break;
         }
         case 's': case 'S':
