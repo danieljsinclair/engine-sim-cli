@@ -10,7 +10,6 @@
 #include "telemetry/ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
 #include "simulator/SimulatorFactory.h"
-#include "simulator/BridgeSimulator.h"
 #include "simulator/EngineSimTypes.h"
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
@@ -18,9 +17,6 @@
 #include "presentation/ConsolePresentation.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
-
-#include "engine-sim/include/simulator.h"
-#include "engine-sim/include/units.h"
 
 #include <iostream>
 #include <csignal>
@@ -67,31 +63,7 @@ presentation::IPresentation* createPresentation(const SimulationConfig& config) 
     throw std::runtime_error("Failed to initialize presentation");
 }
 
-// Configure dyno in load torque mode if --load is specified.
-// hold=false + rotationSpeed=0 = brake-only (velocity-dependent damping).
-// m_maxTorque is the load knob — the engine must work against this torque.
-// Returns true if dyno was configured, false otherwise.
-bool configureLoadTorque(ISimulator* simulator, double loadFraction) {
-    if (loadFraction <= 0) return false;
-
-    auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator);
-    if (!bridgeSim) return false;
-
-    Simulator* rawSim = bridgeSim->getInternalSimulator();
-    if (!rawSim) return false;
-
-    rawSim->m_dyno.m_enabled = true;
-    rawSim->m_dyno.m_hold = false;       // Brake-only: resists but doesn't drive
-    const double radPerRpm = 3.14159265358979323846 / 30.0;
-    rawSim->m_dyno.m_rotationSpeed = 700.0 * radPerRpm; // Idle RPM: no braking below idle
-    rawSim->m_dyno.m_maxTorque = units::torque(EngineSimDefaults::DYNO_MAX_TORQUE_FT_LBS, units::ft_lb) * loadFraction;
-
-    std::cout << "  Load: " << static_cast<int>(loadFraction * 100)
-              << "% (" << static_cast<int>(loadFraction * EngineSimDefaults::DYNO_MAX_TORQUE_FT_LBS) << " ft*lbs max)" << std::endl;
-    return true;
-}
-
-} // anonymous namespace
+}  // anonymous namespace
 
 SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     SimulationConfig config;
@@ -158,12 +130,9 @@ int main(int argc, char* argv[]) {
 
         try
         {
-            simulator = SimulatorFactory::create(
+            simulator = SimulatorFactory::createAndConfigure(
                 type, scriptPath, assetBasePath, config.engineConfig,
-                cliLogger.get(), telemetry.get());
-
-            // Configure dyno load torque if specified (--load flag)
-            configureLoadTorque(simulator.get(), config.targetLoad);
+                config.targetLoad, cliLogger.get(), telemetry.get());
 
             // Create strategy via factory - pass telemetry so strategies push diagnostics
             AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
@@ -171,8 +140,8 @@ int main(int argc, char* argv[]) {
             inputProvider = createInputProvider(config, cliLogger.get());
             presentation = createPresentation(config);
 
-            // Run simulation with ISimulator (holy trinity: ISimulator -> IAudioBuffer -> IAudioHardwareProvider)
-            result = runSimulation(config, *simulator, audioBuffer.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+            // Run simulation — iterator pattern handles preset hot-swap internally
+            result = runNextSimulation(config, simulator, audioBuffer.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
         }
         catch (const std::exception& e) {
             std::cerr << "ERROR: " << e.what() << std::endl;

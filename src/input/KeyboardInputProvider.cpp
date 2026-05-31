@@ -67,6 +67,8 @@ EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     input.starterButton = starterButton_;
     input.dynoTorqueScale = dynoTorqueScale_;
     input.gearDelta = gearDelta_;
+    input.presetCycle = presetCycle_;
+    presetCycle_ = false;
     gearDelta_ = 0;
     starterButton_ = false;  // Momentary: reset after consuming
     input.shouldContinue = true;
@@ -137,6 +139,11 @@ void KeyboardInputProvider::processKeyPress(int key) {
             break;
         case '[':  // Shift down
             gearDelta_ = -1;
+            break;
+
+        // PRESET CYCLING
+        case 'p': case 'P':
+            presetCycle_ = true;
             break;
     }
     lastKey_ = key;

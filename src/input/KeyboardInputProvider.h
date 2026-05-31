@@ -37,6 +37,7 @@ private:
     int gearDelta_;
     int lastKey_;
     std::string lastError_;
+    bool presetCycle_{false};
 
     std::unique_ptr<ConsoleLogger> defaultLogger_;
     ILogging* logger_;

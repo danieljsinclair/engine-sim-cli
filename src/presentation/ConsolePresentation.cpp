@@ -52,6 +52,9 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         << ANSIColors::RESET << " I:" << boolColor(state.ignition) << (state.ignition ? 1 : 0)
         << ANSIColors::RESET << "] ";
 
+    // Preset short name (empty is fine — just a double space)
+    out << state.presetShortName << " ";
+
     // Engine state and Throttle
     out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%] ";
 
@@ -69,11 +72,11 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     }
 
     // Underruns
-    out << "[Underruns: " << state.underrunCount << "] ";
+    out << "[UR: " << state.underrunCount << "] ";
 
-    // Exhaust flow
+    // Exhaust flow (cm³/s)
     out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8)
-        << std::setprecision(5) << state.exhaustFlow << std::noshowpos << " m3/s]"
+        << std::setprecision(3) << (state.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
 
     // Audio timing diagnostics

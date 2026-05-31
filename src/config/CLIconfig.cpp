@@ -55,6 +55,7 @@ void printUsage(const char* progName) {
     std::cout << "  D                      Decrease dyno load torque\n";
     std::cout << "  E                      Release dyno (free-revving)\n";
     std::cout << "  ] / [                  Shift up / shift down\n";
+    std::cout << "  P                      Cycle to next engine preset (in .json preset mode)\n";
     std::cout << "  Q/ESC                  Quit\n\n";
     std::cout << "Examples:\n";
     std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive --play\n";
