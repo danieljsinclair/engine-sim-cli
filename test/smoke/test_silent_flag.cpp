@@ -36,12 +36,12 @@ TEST_F(SilentFlagTest, SilentModeProducesOutput) {
 }
 
 TEST_F(SilentFlagTest, SilentModeWithDefaultEngine) {
-    // Test: Run --default-engine with --silent flag
+    // Test: Run with --silent flag
     // Expect: No crash
-    int result = runCLI("--default-engine --silent --duration 0.1 > /dev/null 2>&1");
+    int result = runCLI("--silent --duration 0.1 > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
-    EXPECT_EQ(exitCode, 0) << "CLI failed with --default-engine --silent. Exit code: " << exitCode;
+    EXPECT_EQ(exitCode, 0) << "CLI failed with --silent. Exit code: " << exitCode;
 }
 
 TEST_F(SilentFlagTest, SilentModeWithThreaded) {

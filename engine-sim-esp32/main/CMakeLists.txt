@@ -107,7 +107,7 @@ set(SCS_SOURCES
 
 idf_component_register(
     SRCS
-        main.cpp
+        esp32_main.cpp
         ${BRIDGE_SOURCES}
         ${ENGINE_SIM_SOURCES}
         ${SCS_SOURCES}

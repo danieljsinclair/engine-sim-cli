@@ -18,7 +18,7 @@ int main() {
     std::cout << "Starting test..." << std::endl;
     
     // Run the CLI with default engine
-    int result = system("./build/engine-sim-cli --default-engine --duration 0.1 --silent > /dev/null 2>&1");
+    int result = system("./build/engine-sim-cli --duration 0.1 --silent > /dev/null 2>&1");
     
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
     std::cout << "CLI exit code: " << exitCode << std::endl;

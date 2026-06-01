@@ -21,8 +21,8 @@ std::atomic<bool> g_interactiveMode(false);
 
 void printUsage(const char* progName) {
     std::cout << "Engine Simulator CLI v2.0\n";
-    std::cout << "Usage: " << progName << " [options] <engine_config.mr> <output.wav>\n";
-    std::cout << "   OR: " << progName << " --script <engine_config.mr|.json> [options] [output.wav]\n\n";
+    std::cout << "Usage: " << progName << " [options]\n";
+    std::cout << "   OR: " << progName << " --script <engine_config.mr|.json> [options]\n\n";
     std::cout << "Options:\n";
     std::cout << "  --script <path>      Path to engine config (.mr script or .json preset)\n";
     std::cout << "  --load <0-100>       Dyno load torque percentage (engine works against this)\n";
@@ -30,7 +30,6 @@ void printUsage(const char* progName) {
     std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
-    std::cout << "  --default-engine     Use default engine from main repo (ignores config file)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
@@ -40,6 +39,7 @@ void printUsage(const char* progName) {
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
     std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n\n";
     std::cout << "NOTES:\n";
+    std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
     std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
     std::cout << "  Default mode is sync-pull (synchronous render in audio callback)\n";
     std::cout << "  Use --threaded for cursor-chasing circular buffer mode\n";
@@ -58,11 +58,10 @@ void printUsage(const char* progName) {
     std::cout << "  P                      Cycle to next engine preset (in .json preset mode)\n";
     std::cout << "  Q/ESC                  Quit\n\n";
     std::cout << "Examples:\n";
+    std::cout << "  " << progName << " --interactive --play              # Cycle presets, interactive\n";
     std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive --play\n";
-    std::cout << "  " << progName << " --script v8_engine.mr --interactive --play\n";
-    std::cout << "  " << progName << " --script engine-sim-bridge/engine-sim/assets/main.mr --load 30 --duration 5 --output output.wav\n";
-    std::cout << "  " << progName << " --default-engine --load 75 --play\n";
-    std::cout << "  " << progName << " --default-engine --cranking-volume 2.0 --play  # 2x volume during cranking\n";
+    std::cout << "  " << progName << " --sine --interactive --play\n";
+    std::cout << "  " << progName << " --load 75 --play                   # Default presets with load\n";
 }
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
@@ -84,12 +83,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
-    auto defaultEngineOpt = app.add_flag("--default-engine", args.useDefaultEngine, "Use default engine from main repo (ignores config file)");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
     // Mutual exclusions
-    defaultEngineOpt->excludes(scriptOpt);
-    defaultEngineOpt->excludes(engineConfigOpt);
     scriptOpt->excludes(engineConfigOpt);
 
     bool threadedFlag = false;
@@ -113,18 +109,12 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     if (silentFlag) args.silent = args.playAudio = true;
     if (args.interactive) g_interactiveMode.store(true);
 
-    args.engineConfig = args.useDefaultEngine ? "(default engine)" : (scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath));
+    args.engineConfig = scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath);
 
     auto fail = [&](const char* message) {
         std::cerr << message;
         return false;
     };
-
-    if (args.engineConfig.empty() && !args.sineMode) {
-        std::cerr << "ERROR: Engine configuration file is required\n       Use --script <path>, --sine, or provide positional argument\n\n";
-        printUsage(argv[0]);
-        return false;
-    }
 
     if (args.targetLoad < -1.0 || args.targetLoad > 1.0) return fail("ERROR: Load must be between 0 and 100\n");
 

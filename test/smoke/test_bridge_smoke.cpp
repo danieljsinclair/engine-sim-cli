@@ -16,7 +16,7 @@ protected:
 TEST_F(BridgeSmokeTest, LoadsWithoutCrash) {
     // Test: Run CLI with default engine, short duration
     // Expect: Exit code 0, no crash
-    int result = runCLI("--default-engine --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
     EXPECT_EQ(exitCode, 0) << "CLI failed with exit code " << exitCode;

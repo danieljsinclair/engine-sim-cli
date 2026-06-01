@@ -7,6 +7,7 @@
 #define MOCK_SIMULATOR_H
 
 #include "simulator/ISimulator.h"
+#include "simulator/ICombustionEngine.h"
 #include "simulator/EngineSimTypes.h"
 #include "MockInputProvider.h"
 #include <cstring>
@@ -15,7 +16,7 @@
 #include <string>
 #include <memory>
 
-class MockSimulator : public ISimulator {
+class MockSimulator : public ICombustionEngine {
 public:
     MockSimulator() = default;
     ~MockSimulator() override = default;

@@ -9,6 +9,7 @@
 #include "strategy/IAudioBuffer.h"
 #include "telemetry/ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
+#include "session/ISimulatorSession.h"
 #include "simulator/SimulatorFactory.h"
 #include "simulator/EngineSimTypes.h"
 #include "io/IInputProvider.h"
@@ -18,10 +19,10 @@
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
 
-#include <iostream>
 #include <csignal>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 // ============================================================================
 // Signal Handler
@@ -37,6 +38,8 @@ void signalHandler(int signal) {
 // ============================================================================
 
 namespace {
+
+constexpr const char* DEFAULT_PRESET_DIR = "engine-sim-bridge/preset/";
 
 input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger) {
     if (config.interactive) {
@@ -63,6 +66,30 @@ presentation::IPresentation* createPresentation(const SimulationConfig& config) 
     throw std::runtime_error("Failed to initialize presentation");
 }
 
+std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILogging* logger) {
+    const std::string& scriptPath = args.engineConfig;
+    constexpr const char* presetDir = DEFAULT_PRESET_DIR;
+
+    // .mr or .json script: run directly, no preset scan
+    if (scriptPath.size() >= 3) {
+        return {scriptPath};
+    }
+
+    // No script specified: default to cycling all presets
+    auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir);
+    if (!presetDiscovery.presets.empty()) {
+        std::vector<std::string> paths;
+        for (const auto& preset : presetDiscovery.presets) {
+            paths.push_back(preset.fullPath);
+        }
+        logger->info(LogMask::BRIDGE, "Presets: %zu found (P to cycle)", paths.size());
+        return paths;
+    }
+
+    // No engine config and no presets found
+    throw std::runtime_error("No engine presets found at " + std::string(presetDir) + ". Use --script <path> to specify an engine.");
+}
+
 }  // anonymous namespace
 
 SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
@@ -78,12 +105,14 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
-    config.useDefaultEngine = args.useDefaultEngine != config.useDefaultEngine ? args.useDefaultEngine : config.useDefaultEngine;
     config.preFillMs = (args.preFillMs > 0) ? args.preFillMs : config.preFillMs;
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
 
     // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
+    // simulationFrequency: 0 means "use engine's built-in frequency" (piston engines get it from
+    // their script). SineEngine has no built-in frequency, so the factory applies the default.
+    // If the user provides an explicit value, use that; otherwise leave as 0 (engine decides).
     if (args.simulationFrequency > 0) {
         config.engineConfig.simulationFrequency = args.simulationFrequency;
     }
@@ -92,6 +121,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
     config.simulatorLabel = ANSIColors::CYAN + name + ANSIColors::RESET;
+
+    // Factory instruction
+    config.simulatorType = args.sineMode ? SimulatorType::SineWave : SimulatorType::PistonEngine;
 
     return config;
 }
@@ -102,49 +134,52 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 
 int main(int argc, char* argv[]) {
     int result = 1;
-    
-    std::cout << "Engine Simulator CLI v2.0\n";
-    std::cout << "========================\n\n";
 
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
+
+    auto cliLogger = std::make_unique<ConsoleLogger>();
+    auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
 
     CommandLineArgs args;
     if (parseArguments(argc, argv, args)) {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
 
-        // Create shared telemetry (simulator and strategies write, presentation reads)
-        auto cliLogger = std::make_unique<ConsoleLogger>();
-        auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
+        auto inputProvider = createInputProvider(config, cliLogger.get());
+        auto presentation = createPresentation(config);
 
-        // Create simulator via factory (composition root — wires mode-specific details)
-        SimulatorType type = args.sineMode ? SimulatorType::SineWave : SimulatorType::PistonEngine;
-        std::string scriptPath = args.useDefaultEngine ? "engine-sim-bridge/engine-sim/assets/main.mr" : std::string(args.engineConfig);
-        std::string assetBasePath = "";
+        try {
+            // Determine paths to run
+            auto paths = resolveConfigPaths(args, cliLogger.get());
 
-        std::unique_ptr<ISimulator> simulator;
-        std::unique_ptr<IAudioBuffer> audioBuffer;
-        input::IInputProvider* inputProvider = nullptr;
-        presentation::IPresentation* presentation = nullptr;
+            // Create audio buffer once (client owns for session lifetime)
+            AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+            auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
 
-        try
-        {
-            simulator = SimulatorFactory::createAndConfigure(
-                type, scriptPath, assetBasePath, config.engineConfig,
-                config.targetLoad, cliLogger.get(), telemetry.get());
+            // cycle through the available engine presets unless a specific one is configured
+            std::unique_ptr<ISimulatorSession> session;
+            result = EXIT_BUT_CONTINUE_NEXT;
+            for (size_t presetIndex = 0; result == EXIT_BUT_CONTINUE_NEXT; presetIndex = (presetIndex + 1) % paths.size()) {
+                const std::string& currentPath = paths[presetIndex];
 
-            // Create strategy via factory - pass telemetry so strategies push diagnostics
-            AudioMode mode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-            audioBuffer = IAudioBufferFactory::createBuffer(mode, cliLogger.get(), telemetry.get());
-            inputProvider = createInputProvider(config, cliLogger.get());
-            presentation = createPresentation(config);
-
-            // Run simulation — iterator pattern handles preset hot-swap internally
-            result = runNextSimulation(config, simulator, audioBuffer.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+                if (!session) {
+                    // First run: create session with audio hardware
+                    auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
+                    session = initSimulation(config, currentPath, std::move(simulator), audioBuffer.get(), nullptr, inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+                } else {
+                    // Subsequent: lightweight swap within existing session
+                    session->swapPreset(currentPath);
+                }
+                result = session->run();
+            }
+            
+            if (session) {
+                session->close();
+            }
         }
         catch (const std::exception& e) {
-            std::cerr << "ERROR: " << e.what() << std::endl;
+            cliLogger->error(LogMask::BRIDGE, "%s", e.what());
             result = 1;
         }
 

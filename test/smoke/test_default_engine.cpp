@@ -1,6 +1,6 @@
-// test_default_engine.cpp - Smoke tests for --default-engine flag
+// test_default_engine.cpp - Smoke tests for flag
 //
-// Purpose: Verify that --default-engine flag works without crashing.
+// Purpose: Verify that flag works without crashing.
 // This is a happy-path test that verifies the basic default engine functionality.
 
 #include <gtest/gtest.h>
@@ -18,35 +18,35 @@ protected:
 };
 
 TEST_F(DefaultEngineSmokeTest, RunsWithoutCrash) {
-    // Test: Run with --default-engine --duration 0.1 --silent
+    // Test: Run with --duration 0.1 --silent
     // Expect: Exit code 0, no crash
-    int result = runCLI("--default-engine --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
     EXPECT_EQ(exitCode, 0) << "CLI failed with exit code " << exitCode;
 }
 
 TEST_F(DefaultEngineSmokeTest, ProducesAudioOutput) {
-    // Test: Run with --default-engine --duration 0.1 --silent
+    // Test: Run with --duration 0.1 --silent
     // Expect: CLI runs successfully (WAV export not supported, but audio pipeline works)
-    int result = runCLI("--default-engine --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--duration 0.1 --silent > /dev/null 2>&1");
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
     EXPECT_EQ(exitCode, 0) << "CLI failed with exit code " << exitCode;
 }
 
 TEST_F(DefaultEngineSmokeTest, DefaultEngineWithLoadFlagHigh) {
-    // Test: Run with --default-engine --load 75 --duration 0.1 --silent
+    // Test: Run with --load 75 --duration 0.1 --silent
     // Expect: Exit code 0, no crash
-    int result = runCLI("--default-engine --load 75 --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--load 75 --duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
     EXPECT_EQ(exitCode, 0) << "CLI failed with load flag. Exit code: " << exitCode;
 }
 
 TEST_F(DefaultEngineSmokeTest, DefaultEngineWithLoadFlag) {
-    // Test: Run with --default-engine --load 50 --duration 0.1 --silent
+    // Test: Run with --load 50 --duration 0.1 --silent
     // Expect: Exit code 0, no crash
-    int result = runCLI("--default-engine --load 50 --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--load 50 --duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
     EXPECT_EQ(exitCode, 0) << "CLI failed with load flag. Exit code: " << exitCode;
