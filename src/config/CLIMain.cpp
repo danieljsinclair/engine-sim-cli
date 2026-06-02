@@ -162,17 +162,16 @@ int main(int argc, char* argv[]) {
             result = EXIT_BUT_CONTINUE_NEXT;
             for (size_t presetIndex = 0; result == EXIT_BUT_CONTINUE_NEXT; presetIndex = (presetIndex + 1) % paths.size()) {
                 const std::string& currentPath = paths[presetIndex];
-
-                if (!session) {
-                    // First run: create session with audio hardware
+                {
+                    // Create new simulator for this preset
                     auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
-                    session = initSimulation(config, currentPath, std::move(simulator), audioBuffer.get(), nullptr, inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
-                } else {
-                    // Subsequent: lightweight swap within existing session
-                    session->swapPreset(currentPath);
+                    
+                    // Pass existing session for hot-swap (null on first run → fresh audio hardware)
+                    auto prevSession = std::move(session);
+                    session = initSimulation(config, currentPath, std::move(simulator), audioBuffer.get(), prevSession.get(), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
                 }
                 result = session->run();
-            }
+            }//for
             
             if (session) {
                 session->close();

@@ -58,8 +58,9 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     // Engine state and Throttle
     out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%] ";
 
-    // Gear
+    // Gear & Speed
     out << "[Gear: " << state.gear << "] ";
+    out << "[" << std::setw(3) << static_cast<int>(state.speed) << " mph] ";
 
     // Dyno load (shown when torque is being applied)
     if (state.dynoTorque > 0) {
