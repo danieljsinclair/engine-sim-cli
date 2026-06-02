@@ -97,6 +97,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control (overrides --load)");
     app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
+    app.add_flag("--no-clip", args.noClip, "Disable speaker protection (soft-clipping is on by default)");
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
 
     try {

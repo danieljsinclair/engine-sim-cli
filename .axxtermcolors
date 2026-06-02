@@ -22,4 +22,7 @@ function not_shell_code() {
 
     bg!engine-sim-cli.esp32=#8AB857
     fg!engine-sim-cli.esp32=#222222
+
+    bg!escli.waveguard=#884444
+    fg!escli.waveguard=#eeeeee
 }
