@@ -1,6 +1,6 @@
 // MockInputProvider.h - Mock input provider for testing
 // Purpose: Enable deterministic input testing for integration tests
-// Provides controlled input including shutdown signaling via shouldContinue=false
+// Provides controlled input for integration testing
 
 #ifndef MOCK_INPUT_PROVIDER_H
 #define MOCK_INPUT_PROVIDER_H
@@ -13,9 +13,9 @@ namespace test {
 /**
  * MockInputProvider - Test double for IInputProvider
  *
- * Provides controlled input for integration testing, including
- * the ability to signal shutdown via shouldContinue=false.
- * This enables clean shutdown without relying on ISimulator::stop().
+ * Provides controlled input for integration testing.
+ * Stop signalling is handled by the session's stop() method,
+ * not through the input provider.
  */
 class MockInputProvider : public input::IInputProvider {
 public:
@@ -33,8 +33,6 @@ public:
 
     void Shutdown() override {
         connected_ = false;
-        // Note: We don't set shouldContinue_ here - that's controlled
-        // by test code via setShouldContinue()
     }
 
     bool IsConnected() const override {
@@ -47,8 +45,6 @@ public:
 
     /**
      * Poll for input and return current engine inputs.
-     * Returns the current input state, with shouldContinue
-     * controlling whether the simulation should continue running.
      */
     input::EngineInput OnUpdateSimulation(double dt) override {
         (void)dt; // Ignore delta time for mock
@@ -57,8 +53,7 @@ public:
         input::EngineInput input;
         input.throttle = throttle_;
         input.ignition = ignition_;
-        input.starterSwitch = starterMotor_;
-        input.shouldContinue = shouldContinue_;
+        input.starterButton = starterButton_;
 
         return input;
     }
@@ -92,16 +87,8 @@ public:
     /**
      * Set starter motor state
      */
-    void setStarterMotor(bool starter) {
-        starterMotor_ = starter;
-    }
-
-    /**
-     * Set shouldContinue flag for shutdown signaling
-     * When false, the simulation loop will terminate cleanly
-     */
-    void setShouldContinue(bool shouldContinue) {
-        shouldContinue_ = shouldContinue;
+    void setStarterButton(bool pressed) {
+        starterButton_ = pressed;
     }
 
     /**
@@ -117,8 +104,7 @@ public:
     void reset() {
         throttle_ = 0.1;
         ignition_ = true;
-        starterMotor_ = false;
-        shouldContinue_ = true;
+        starterButton_ = false;
         lastError_.clear();
         connected_ = false;
     }
@@ -127,8 +113,7 @@ private:
     // Input state
     double throttle_ = 0.1;
     bool ignition_ = true;
-    bool starterMotor_ = false;
-    bool shouldContinue_ = true;
+    bool starterButton_ = false;
 
     // State tracking
     bool connected_ = false;

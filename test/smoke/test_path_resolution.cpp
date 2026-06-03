@@ -49,7 +49,7 @@ private:
 // ============================================================================
 
 TEST_F(PathResolutionSmokeTest, DefaultEnginePathResolves) {
-    // Test: Run with --default-engine flag
+    // Test: Run with flag
     // Expect: CLI successfully loads the hardcoded default engine path
     // Implementation note: Tests that the hardcoded path "engine-sim-bridge/engine-sim/assets/main.mr"
     // resolves correctly from project root
@@ -61,7 +61,7 @@ TEST_F(PathResolutionSmokeTest, DefaultEnginePathResolves) {
     ASSERT_TRUE(std::filesystem::exists(fullPath))
         << "Default engine file not found at: " << fullPath.string();
 
-    int result = runCLI("--default-engine --duration 0.1 --silent");
+    int result = runCLI("--duration 0.1 --silent");
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
 
     EXPECT_EQ(exitCode, 0) << "Default engine path resolution failed. "

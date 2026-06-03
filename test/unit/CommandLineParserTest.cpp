@@ -1,13 +1,11 @@
 #include "config/CLIconfig.h"
 #include "gtest/gtest.h"
 
-TEST(CommandLineParserTest, ParsesDefaultEngineAndOutputPath) {
-    const char* argv[] = {"engine-sim-cli", "--default-engine", "recording.wav"};
+TEST(CommandLineParserTest, ParsesOutputPathWithoutScript) {
+    const char* argv[] = {"engine-sim-cli", "recording.wav"};
     CommandLineArgs args;
 
-    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_TRUE(args.useDefaultEngine);
-    EXPECT_EQ(args.engineConfig, "(default engine)");
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
     EXPECT_EQ(args.outputWav, "recording.wav");
 }
 

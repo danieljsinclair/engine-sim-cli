@@ -489,18 +489,22 @@ TEST_F(ISimulatorStrategyTest, SyncPullStrategy_Render_UsesISimulator) {
 // ============================================================================
 
 TEST_F(ISimulatorTest, MockSimulator_CanBeUsedBySimulationLoop) {
-    // Arrange: Create ISimulator (MockSimulator for testing)
+    // Arrange: Create ICombustionEngine (MockSimulator for testing)
     auto sim = std::make_unique<MockSimulator>();
 
     // Act: Verify the simulator has all methods SimulationLoop needs
     ISimulator* iface = sim.get();
     ASSERT_NE(iface, nullptr);
 
-    // SimulationLoop needs these operations:
+    // Base ISimulator operations:
     iface->update(0.016667);
     iface->setThrottle(0.5);
-    iface->setIgnition(true);
-    iface->setStarterMotor(true);
+
+    // Combustion-specific operations via ICombustionEngine:
+    ICombustionEngine* combustion = sim.get();
+    ASSERT_NE(combustion, nullptr);
+    combustion->setIgnition(true);
+    combustion->setStarterMotor(true);
 
     auto stats = iface->getStats();
     EXPECT_GE(stats.currentRPM, 0.0);

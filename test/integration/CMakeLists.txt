@@ -52,7 +52,7 @@ endif()
 # Avoid fixed gtest JSON output here to prevent artifact collisions between
 # concurrently running test cases.
 gtest_discover_tests(integration_tests
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 60
     EXTRA_ARGS
         --gtest_color=yes
     PROPERTIES

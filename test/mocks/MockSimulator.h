@@ -1,48 +1,24 @@
 // MockSimulator.h - Test double for ISimulator
 // Returns predictable values for deterministic testing.
 // Does NOT depend on the engine-sim library.
-// Uses input provider for shutdown signaling (production-like behavior).
 
 #ifndef MOCK_SIMULATOR_H
 #define MOCK_SIMULATOR_H
 
 #include "simulator/ISimulator.h"
+#include "simulator/ICombustionEngine.h"
 #include "simulator/EngineSimTypes.h"
-#include "MockInputProvider.h"
+#include "simulation/EnginePhase.h"
 #include <cstring>
 #include <vector>
 #include <atomic>
 #include <string>
 #include <memory>
 
-class MockSimulator : public ISimulator {
+class MockSimulator : public ICombustionEngine {
 public:
     MockSimulator() = default;
     ~MockSimulator() override = default;
-
-    // ================================================================
-    // Input Provider Integration
-    // ================================================================
-
-    /**
-     * Set input provider for shutdown signaling.
-     * Production-like behavior: shutdown comes from input provider,
-     * not from direct stop() calls.
-     */
-    void setInputProvider(test::MockInputProvider* provider) {
-        inputProvider_ = provider;
-    }
-
-    /**
-     * Signal shutdown via input provider.
-     * Production-like: sets shouldContinue=false on input provider.
-     * No sleeps or CPU spinning.
-     */
-    void signalShutdown() {
-        if (inputProvider_) {
-            inputProvider_->setShouldContinue(false);
-        }
-    }
 
     // Lifecycle
     bool create(const ISimulatorConfig& config, ILogging* logger, telemetry::ITelemetryWriter* telemetryWriter) override {
@@ -89,6 +65,10 @@ public:
         starterMotor_ = on;
     }
 
+    void setEnginePhase(EnginePhase phase) override {
+        enginePhase_ = phase;
+    }
+
     // Audio frame production -- produces silence
     bool renderOnDemand(float* buffer, int32_t frames, int32_t* written) override {
         if (buffer && frames > 0) {
@@ -112,7 +92,6 @@ public:
     }
 
     void stop() override {
-        signalShutdown();
         audioThreadRunning_ = false;
     }
 
@@ -130,11 +109,7 @@ private:
     bool created_ = false;
     bool audioThreadRunning_ = false;
     double deltaTime_ = 0.0;
-
-    // ================================================================
-    // Input Provider
-    // ================================================================
-    test::MockInputProvider* inputProvider_ = nullptr;
+    EnginePhase enginePhase_ = EnginePhase::Stopped;
 };
 
 #endif // MOCK_SIMULATOR_H
