@@ -1,4 +1,4 @@
-// esp32_main.cpp — ESP32-S3 entry point for engine-sim-cli
+// main.cpp — ESP32-S3 entry point for engine-sim-cli
 // Audio output via I2S to MAX98357A (GPIO 4=BCLK, 5=LRCLK, 6=DIN)
 
 #include "freertos/FreeRTOS.h"
@@ -9,7 +9,6 @@
 #include "simulator/EngineSimTypes.h"
 #include "strategy/IAudioBuffer.h"
 #include "simulation/SimulationLoop.h"
-#include "session/ISimulatorSession.h"
 #include "common/ILogging.h"
 #include "telemetry/ITelemetryProvider.h"
 
@@ -42,33 +41,42 @@ extern "C" void app_main(void)
     config.syncPull = !ESP_USE_THREADED;
     config.volume = 0.8f;
 
-    config.simulatorType = SimulatorType::SineWave;
-    AudioMode audioMode = ESP_USE_THREADED ? AudioMode::Threaded : AudioMode::SyncPull;
+    SimulatorType simType = SimulatorType::SineWave;
+    const char* modeLabel = "sine";
 
-    ESP_LOGI(TAG, "Starting sine simulation (%s strategy)...",
-             ESP_USE_THREADED ? "threaded" : "sync-pull");
-
-    // Client creates simulator (DI — always explicit)
-    auto simulator = SimulatorFactory::createAndConfigure(config, "", "", logger.get(), telemetry.get());
-
-    // Client creates audio buffer (DI — always explicit)
-    auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, logger.get(), telemetry.get());
-
-    auto session = createSession(
-        config,
-        "",                  // no script for sine mode
-        std::move(simulator),
-        audioBuffer.get(),
-        nullptr,             // no existing session (fresh start)
-        nullptr,             // no input provider (timed auto-throttle)
-        nullptr,             // no presentation (ESP_LOG only)
-        telemetry.get(),     // telemetry writer
-        telemetry.get(),     // telemetry reader
-        logger.get()
+    auto simulator = SimulatorFactory::create(
+        simType,
+        "", "",
+        config.engineConfig,
+        logger.get(),
+        telemetry.get()
     );
 
-    int result = session->run();
-    session->close();
+    if (!simulator) {
+        ESP_LOGE(TAG, "Failed to create %s simulator", modeLabel);
+        return;
+    }
+
+    AudioMode audioMode = ESP_USE_THREADED ? AudioMode::Threaded : AudioMode::SyncPull;
+    auto audioBuffer = IAudioBufferFactory::createBuffer(
+        audioMode,
+        logger.get(),
+        telemetry.get()
+    );
+
+    ESP_LOGI(TAG, "Starting %s simulation (%s strategy)...",
+             modeLabel, ESP_USE_THREADED ? "threaded" : "sync-pull");
+
+    int result = runSimulation(
+        config,
+        *simulator,
+        audioBuffer.get(),
+        nullptr,               // no input provider (timed auto-throttle)
+        nullptr,               // no presentation (ESP_LOG only)
+        telemetry.get(),
+        telemetry.get(),
+        logger.get()
+    );
 
     ESP_LOGI(TAG, "Simulation finished with result %d", result);
 }
