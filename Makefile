@@ -112,7 +112,7 @@ all: build test
 # ============================================================================
 build: $(BUILD_STAMP)
 
-$(BUILD_STAMP): check-platform bridge-presets sync-es
+$(BUILD_STAMP): Makefile check-platform bridge-presets sync-es
 	@mkdir -p $(BUILD_DIR)
 	@touch $@
 
@@ -188,7 +188,7 @@ submodules:
 		git submodule update --init --recursive; \
 	fi
 
-$(BUILD_DIR)/CMakeCache.txt: check-submodule
+$(BUILD_DIR)/CMakeCache.txt: check-submodule CMakeLists.txt
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
