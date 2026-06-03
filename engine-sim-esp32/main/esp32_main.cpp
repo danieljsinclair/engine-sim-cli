@@ -54,7 +54,7 @@ extern "C" void app_main(void)
     // Client creates audio buffer (DI — always explicit)
     auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, logger.get(), telemetry.get());
 
-    auto session = initSimulation(
+    auto session = createSession(
         config,
         "",                  // no script for sine mode
         std::move(simulator),

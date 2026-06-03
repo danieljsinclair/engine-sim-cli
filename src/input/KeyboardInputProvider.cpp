@@ -2,10 +2,9 @@
 // Wraps existing KeyboardInput for IInputProvider interface
 
 #include "KeyboardInputProvider.h"
+#include "session/ISimulatorSession.h"
 
 #include <algorithm>
-
-extern std::atomic<bool> g_running;
 
 namespace input {
 
@@ -47,10 +46,8 @@ bool KeyboardInputProvider::IsConnected() const {
 EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     (void)dt;
 
-    if (!keyboardInput_ || !g_running.load()) {
-        EngineInput input;
-        input.shouldContinue = false;
-        return input;
+    if (!keyboardInput_) {
+        return EngineInput{};
     }
 
     int key = keyboardInput_->getKey();
@@ -71,8 +68,11 @@ EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     presetCycle_ = false;
     gearDelta_ = 0;
     starterButton_ = false;  // Momentary: reset after consuming
-    input.shouldContinue = true;
     return input;
+}
+
+void KeyboardInputProvider::setSession(ISimulatorSession* session) {
+    session_ = session;
 }
 
 void KeyboardInputProvider::processKeyPress(int key) {
@@ -87,7 +87,7 @@ void KeyboardInputProvider::processKeyPress(int key) {
 
     switch (key) {
         case 27: case 'q': case 'Q':
-            g_running.store(false);
+            if (session_) session_->stop();
             break;
 
         case 'i': case 'I': {

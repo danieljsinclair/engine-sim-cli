@@ -28,9 +28,13 @@
 // Signal Handler
 // ============================================================================
 
+namespace {
+ISimulatorSession* g_sessionForSignal = nullptr;
+}
+
 void signalHandler(int signal) {
     (void)signal;
-    g_running.store(false);
+    if (g_sessionForSignal) g_sessionForSignal->stop();
 }
 
 // ============================================================================
@@ -101,7 +105,8 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
     config.interactive = args.interactive != config.interactive ? args.interactive : config.interactive;
     config.playAudio = args.playAudio != config.playAudio ? args.playAudio : config.playAudio;
-    config.duration = args.duration > 0.0 ? args.duration : config.duration;
+    // Interactive mode runs until user quits (duration=0). Non-interactive defaults to 3s.
+    config.duration = args.duration > 0.0 ? args.duration : (config.interactive ? 0.0 : config.duration);
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
@@ -157,6 +162,9 @@ int main(int argc, char* argv[]) {
             AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
             auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
 
+            // Wire keyboard provider to session for Q/Esc stop signalling
+            auto* keyboardProvider = dynamic_cast<input::KeyboardInputProvider*>(inputProvider);
+
             // cycle through the available engine presets unless a specific one is configured
             // Each initSimulation() creates a new session, subsequent uses runs hot-swap on the same session
             std::unique_ptr<ISimulatorSession> session;
@@ -164,9 +172,16 @@ int main(int argc, char* argv[]) {
             for (size_t presetIndex = 0; result == EXIT_BUT_CONTINUE_NEXT; presetIndex = (presetIndex + 1) % paths.size()) {
                 const std::string& currentPath = paths[presetIndex];
                 auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
-                session = initSimulation(config, currentPath, std::move(simulator), audioBuffer.get(), std::move(session), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+                session = createSession(config, currentPath, std::move(simulator), audioBuffer.get(), std::move(session), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+
+                // Expose session to signal handler and keyboard provider
+                g_sessionForSignal = session.get();
+                if (keyboardProvider) keyboardProvider->setSession(session.get());
+
                 result = session->run();
             }//for
+
+            g_sessionForSignal = nullptr;
             
             if (session) {
                 session->close();

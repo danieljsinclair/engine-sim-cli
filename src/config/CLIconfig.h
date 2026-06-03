@@ -35,7 +35,6 @@ struct CommandLineArgs {
 // Global State (required for signal handling)
 // ============================================================================
 
-extern std::atomic<bool> g_running;
 extern std::atomic<bool> g_interactiveMode;
 
 // ============================================================================

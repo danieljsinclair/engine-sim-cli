@@ -12,7 +12,6 @@
 // Global State (required for signal handling)
 // ============================================================================
 
-std::atomic<bool> g_running(true);
 std::atomic<bool> g_interactiveMode(false);
 
 // ============================================================================
