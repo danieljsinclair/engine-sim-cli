@@ -15,6 +15,7 @@ BUILD_PARALLEL_LEVEL ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CTEST_VERBOSE ?= 0
 CTEST_UI_FLAGS := $(if $(filter 1,$(CTEST_VERBOSE)),-V,--progress)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
+BUILD_STAMP = $(BUILD_DIR)/.build-ready.stamp
 
 CMAKE_BUILD_PARALLEL_FLAG := $(if $(strip $(BUILD_PARALLEL_LEVEL)),--parallel $(BUILD_PARALLEL_LEVEL),)
 
@@ -109,7 +110,11 @@ all: build test
 #   4. bridge-presets    -- compile .mr -> .json (needs preset_compiler from step 3)
 #   5. sync-es           -- copy bridge es/ + preset/ -> CLI es/
 # ============================================================================
-build: check-platform bridge-presets sync-es
+build: $(BUILD_STAMP)
+
+$(BUILD_STAMP): check-platform bridge-presets sync-es
+	@mkdir -p $(BUILD_DIR)
+	@touch $@
 
 check-platform: check-cmake bridge-build $(BUILD_DIR)/CMakeCache.txt
 	@if [ "$$(uname)" != "Darwin" ]; then \
@@ -207,6 +212,7 @@ remove-orphans:
 	@find . -path ./$(BUILD_DIR) -prune -o -name "_deps" -type d -print -exec rm -rf {} + 2>/dev/null || true
 
 clean: remove-orphans clean_esp32
+	@rm -f $(BUILD_STAMP)
 	+@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
 	@if [ -d $(BUILD_DIR) ]; then \
 		cmake --build $(BUILD_DIR) --target clean >/dev/null 2>&1 || true; \
