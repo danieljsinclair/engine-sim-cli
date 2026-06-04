@@ -8,6 +8,8 @@
 #include "common/ILogging.h"
 #include <memory>
 
+class ISimulatorSession;
+
 namespace input {
 
 class KeyboardInputProvider : public IInputProvider {
@@ -24,6 +26,9 @@ public:
     std::string GetProviderName() const override;
     std::string GetLastError() const override;
 
+    /// Register the session for stop signalling. Q/Esc will call session->stop().
+    void setSession(ISimulatorSession* session);
+
 private:
     void processKeyPress(int key);
 
@@ -32,12 +37,15 @@ private:
     double throttle_;
     double baselineThrottle_;
     bool ignition_;
-    bool starterSwitch_;
+    bool starterButton_;
     double dynoTorqueScale_;
     int gearDelta_;
     int gearSelector_;
     int lastKey_;
     std::string lastError_;
+    bool presetCycle_{false};
+
+    ISimulatorSession* session_{nullptr};
 
     std::unique_ptr<ConsoleLogger> defaultLogger_;
     ILogging* logger_;

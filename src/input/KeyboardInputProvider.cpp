@@ -2,10 +2,9 @@
 // Wraps existing KeyboardInput for IInputProvider interface
 
 #include "KeyboardInputProvider.h"
+#include "session/ISimulatorSession.h"
 
 #include <algorithm>
-
-extern std::atomic<bool> g_running;
 
 namespace input {
 
@@ -14,7 +13,7 @@ KeyboardInputProvider::KeyboardInputProvider(ILogging* logger, double initialDyn
     , throttle_(0.1)
     , baselineThrottle_(0.1)
     , ignition_(true)
-    , starterSwitch_(false)
+    , starterButton_(false)
     , dynoTorqueScale_(initialDynoTorqueScale)
     , gearDelta_(0)
     , gearSelector_(0)
@@ -48,10 +47,8 @@ bool KeyboardInputProvider::IsConnected() const {
 EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     (void)dt;
 
-    if (!keyboardInput_ || !g_running.load()) {
-        EngineInput input;
-        input.shouldContinue = false;
-        return input;
+    if (!keyboardInput_) {
+        return EngineInput{};
     }
 
     int key = keyboardInput_->getKey();
@@ -65,14 +62,23 @@ EngineInput KeyboardInputProvider::OnUpdateSimulation(double dt) {
     EngineInput input;
     input.throttle = throttle_;
     input.ignition = ignition_;
-    input.starterMotor = starterSwitch_;
+    input.starterButton = starterButton_;
     input.dynoTorqueScale = dynoTorqueScale_;
     input.gearDelta = gearDelta_;
+
     input.gearSelector = gearSelector_;
     input.gearAutoMode = false;
     gearDelta_ = 0;  // Reset after consuming
-    input.shouldContinue = true;
+    
+    input.presetCycle = presetCycle_;
+    presetCycle_ = false;
+    starterButton_ = false;  // Momentary: reset after consuming
+    
     return input;
+}
+
+void KeyboardInputProvider::setSession(ISimulatorSession* session) {
+    session_ = session;
 }
 
 void KeyboardInputProvider::processKeyPress(int key) {
@@ -87,25 +93,19 @@ void KeyboardInputProvider::processKeyPress(int key) {
 
     switch (key) {
         case 27: case 'q': case 'Q':
-            g_running.store(false);
+            if (session_) session_->stop();
             break;
-        
-        // ENGINE START
+
         case 'i': case 'I': {
             static bool ignitionState = true;
             ignitionState = !ignitionState;
             ignition_ = ignitionState;
-            logger_->info(LogMask::UI, "Ignition %s", ignitionState ? "enabled" : "disabled");
             break;
         }
-        case 's': case 'S': {
-            static bool starterState = false;
-            starterState = !starterState;
-            starterSwitch_ = starterState;
-            logger_->info(LogMask::UI, "Starter motor %s", starterState ? "enabled" : "disabled");
+        case 's': case 'S':
+            starterButton_ = true;
             break;
-        }
-        
+
         // THROTTLE CONTROL
         case ' ':
             throttle_ = 0.0;
@@ -147,6 +147,11 @@ void KeyboardInputProvider::processKeyPress(int key) {
         case '[':  // Shift down
             gearDelta_ = -1;
             if (gearSelector_ > 0) gearSelector_--;
+            break;
+
+        // PRESET CYCLING
+        case 'p': case 'P':
+            presetCycle_ = true;
             break;
     }
     lastKey_ = key;

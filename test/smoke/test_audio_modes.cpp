@@ -35,21 +35,21 @@ TEST_F(AudioModesTest, SyncPullModeWorks) {
 }
 
 TEST_F(AudioModesTest, ThreadedModeWithDefaultEngine) {
-    // Test: Run --default-engine with --threaded flag
+    // Test: Run with --threaded flag
     // Expect: No crash
-    int result = runCLI("--default-engine --threaded --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--threaded --duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
-    EXPECT_EQ(exitCode, 0) << "CLI failed with --default-engine --threaded. Exit code: " << exitCode;
+    EXPECT_EQ(exitCode, 0) << "CLI failed with --threaded. Exit code: " << exitCode;
 }
 
 TEST_F(AudioModesTest, SyncPullModeWithDefaultEngine) {
-    // Test: Run --default-engine with sync-pull mode (default)
+    // Test: Run with sync-pull mode (default)
     // Expect: No crash
-    int result = runCLI("--default-engine --duration 0.1 --silent > /dev/null 2>&1");
+    int result = runCLI("--duration 0.1 --silent > /dev/null 2>&1");
 
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
-    EXPECT_EQ(exitCode, 0) << "CLI failed with --default-engine sync-pull. Exit code: " << exitCode;
+    EXPECT_EQ(exitCode, 0) << "CLI failed with sync-pull. Exit code: " << exitCode;
 }
 
 TEST_F(AudioModesTest, ThreadedModeProducesOutput) {

@@ -69,8 +69,17 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     if (rpm < EngineSimDefaults::RPM_DISPLAY_FLOOR && state.rpm > 0) rpm = 0;
     out << "[" << std::setw(5) << rpm << " RPM] ";
 
-    // Throttle
-    out << "[Throttle: " << std::setw(4) << static_cast<int>(state.throttle * 100) << "%] ";
+    // Starter & Ignition — labels plain, digits colored
+    auto boolColor = [](bool on) { return on ? ANSIColors::GREEN : ANSIColors::RED; };
+    out << "[S:" << boolColor(state.starterMotorEngaged) << (state.starterMotorEngaged ? 1 : 0)
+        << ANSIColors::RESET << " I:" << boolColor(state.ignition) << (state.ignition ? 1 : 0)
+        << ANSIColors::RESET << "] ";
+
+    // Preset short name (empty is fine — just a double space)
+    out << state.presetShortName << " ";
+
+    // Engine state and Throttle
+    out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%] ";
 
     // Gear: [Gear:XMG] format where X=selector, M/A=mode, G=gear number
     {
@@ -115,11 +124,11 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     }
 
     // Underruns
-    out << "[Underruns: " << state.underrunCount << "] ";
+    out << "[UR: " << state.underrunCount << "] ";
 
-    // Exhaust flow
+    // Exhaust flow (cm³/s)
     out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8)
-        << std::setprecision(5) << state.exhaustFlow << std::noshowpos << " m3/s]"
+        << std::setprecision(3) << (state.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
 
     // Audio timing diagnostics
@@ -139,13 +148,20 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         double neededKfps = state.sampleRate / 1000.0;
         double generatingKfps = state.generatingRateFps / 1000.0;
 
+        // Simulation frequency: green <=10000, yellow <=15000, orange >15000
+        std::string freqColor = state.simulationFrequency <= 10000 ? ANSIColors::GREEN
+                              : state.simulationFrequency <= 15000 ? ANSIColors::YELLOW
+                              : ANSIColors::WARNING;
+
+        // Colour coding: green if generating >= needed, yellow if >= 90%, red otherwise
         std::string genColor = ANSIColors::getDispositionColour(
             generatingKfps >= neededKfps, generatingKfps >= neededKfps * 0.9);
 
         std::string trendColor = ANSIColors::getDispositionColour(
             state.trendPct >= 0.0, state.trendPct >= -1.0);
 
-        out << "[calls=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
+        out << "[Freq=" << freqColor << state.simulationFrequency << ANSIColors::RESET
+            << " calls=" << std::setw(4) << std::fixed << std::setprecision(0) << state.callbackRateHz << "Hz "
             << "need" << std::setw(5) << std::setprecision(1) << neededKfps << "kfps "
             << "actual=" << genColor << std::setw(5) << generatingKfps << "kfps" << ANSIColors::RESET << " "
             << "trend=" << trendColor << std::setw(5) << std::showpos << std::setprecision(1) << state.trendPct

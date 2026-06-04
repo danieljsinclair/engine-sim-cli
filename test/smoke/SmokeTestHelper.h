@@ -56,7 +56,14 @@ public:
         std::string projectRoot = getProjectRoot();
         std::string cliPath = getCLIPath();
         std::string logFile = projectRoot + "/build/cli_test_" + std::to_string(getpid()) + ".log";
-        std::string command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + args + " >> " + logFile + " 2>&1";
+        std::string command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + args;
+
+        // Many tests already provide explicit shell redirection in args.
+        // Avoid appending a second redirection chain to keep command behavior deterministic.
+        if (args.find('>') == std::string::npos) {
+            command += " >> \"" + logFile + "\" 2>&1";
+        }
+
         return system(command.c_str());
     }
 };

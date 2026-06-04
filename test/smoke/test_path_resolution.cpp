@@ -49,17 +49,25 @@ private:
 // ============================================================================
 
 TEST_F(PathResolutionSmokeTest, DefaultEnginePathResolves) {
-    // Test: Run with --default-engine flag
+    // Test: Run with flag
     // Expect: CLI successfully loads the hardcoded default engine path
     // Implementation note: Tests that the hardcoded path "engine-sim-bridge/engine-sim/assets/main.mr"
     // resolves correctly from project root
 
-    int result = runCLI("--default-engine --duration 0.1 --silent > /dev/null 2>&1");
+    std::string projectRoot = getProjectRoot();
+    std::string defaultEnginePath = "engine-sim-bridge/engine-sim/assets/main.mr";
+    std::filesystem::path fullPath = std::filesystem::path(projectRoot) / defaultEnginePath;
+
+    ASSERT_TRUE(std::filesystem::exists(fullPath))
+        << "Default engine file not found at: " << fullPath.string();
+
+    int result = runCLI("--duration 0.1 --silent");
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
 
     EXPECT_EQ(exitCode, 0) << "Default engine path resolution failed. "
                             << "The hardcoded path 'engine-sim-bridge/engine-sim/assets/main.mr' "
-                            << "could not be resolved from project root.";
+                            << "could not be resolved from project root. "
+                            << "projectRoot=" << projectRoot << ", enginePath=" << fullPath.string();
 }
 
 // ============================================================================
@@ -76,9 +84,8 @@ TEST_F(PathResolutionSmokeTest, RelativeScriptPathResolves) {
 
     // Verify the file exists first
     std::filesystem::path fullPath = std::filesystem::path(projectRoot) / defaultEnginePath;
-    if (!std::filesystem::exists(fullPath)) {
-        GTEST_SKIP() << "Default engine file not found at: " << fullPath.string();
-    }
+    ASSERT_TRUE(std::filesystem::exists(fullPath))
+        << "Default engine file not found at: " << fullPath.string();
 
     int result = runCLI("--script " + defaultEnginePath + " --duration 0.1 --silent > /dev/null 2>&1");
     int exitCode = WIFEXITED(result) ? WEXITSTATUS(result) : -1;
@@ -100,9 +107,8 @@ TEST_F(PathResolutionSmokeTest, AbsoluteScriptPathResolves) {
     std::filesystem::path fullPath = std::filesystem::path(projectRoot) / defaultEnginePath;
 
     // Verify the file exists
-    if (!std::filesystem::exists(fullPath)) {
-        GTEST_SKIP() << "Default engine file not found at: " << fullPath.string();
-    }
+    ASSERT_TRUE(std::filesystem::exists(fullPath))
+        << "Default engine file not found at: " << fullPath.string();
 
     std::string absolutePath = fullPath.string();
     int result = runCLI("--script \"" + absolutePath + "\" --duration 0.1 --silent > /dev/null 2>&1");
@@ -128,9 +134,8 @@ TEST_F(PathResolutionSmokeTest, AssetBasePathDerivedCorrectly) {
     std::string defaultEnginePath = "engine-sim-bridge/engine-sim/assets/main.mr";
     std::filesystem::path fullPath = std::filesystem::path(projectRoot) / defaultEnginePath;
 
-    if (!std::filesystem::exists(fullPath)) {
-        GTEST_SKIP() << "Default engine file not found at: " << fullPath.string();
-    }
+    ASSERT_TRUE(std::filesystem::exists(fullPath))
+        << "Default engine file not found at: " << fullPath.string();
 
     // Run the CLI - if asset base path is wrong, impulse responses won't load
     int result = runCLI("--script " + defaultEnginePath + " --duration 0.1 --silent > /dev/null 2>&1");
@@ -170,9 +175,8 @@ TEST_F(PathResolutionSmokeTest, CurrentDirectoryPathResolves) {
     std::string defaultEnginePath = "engine-sim-bridge/engine-sim/assets/main.mr";
     std::filesystem::path fullPath = std::filesystem::path(projectRoot) / defaultEnginePath;
 
-    if (!std::filesystem::exists(fullPath)) {
-        GTEST_SKIP() << "Default engine file not found at: " << fullPath.string();
-    }
+    ASSERT_TRUE(std::filesystem::exists(fullPath))
+        << "Default engine file not found at: " << fullPath.string();
 
     // Change to project root and use ./
     chdir(projectRoot.c_str());

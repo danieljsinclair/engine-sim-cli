@@ -47,11 +47,8 @@ bool DemoKeyboardInputProvider::IsConnected() const {
 }
 
 EngineInput DemoKeyboardInputProvider::OnUpdateSimulation(double dt) {
-    EngineInput input;
-
     if (!keyboard_ || !provider_ || !controls_) {
-        input.shouldContinue = false;
-        return input;
+        return EngineInput{};
     }
 
     // Read and dispatch keyboard input each frame
@@ -59,12 +56,7 @@ EngineInput DemoKeyboardInputProvider::OnUpdateSimulation(double dt) {
     dispatchKey(key);
 
     // Delegate to the underlying provider
-    input = provider_->OnUpdateSimulation(dt);
-
-    // Check if exit was requested via requestExit()
-    if (key == 'q' || key == 'Q' || key == 27) {
-        input.shouldContinue = false;
-    }
+    EngineInput input = provider_->OnUpdateSimulation(dt);
 
     return input;
 }

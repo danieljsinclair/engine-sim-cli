@@ -4,6 +4,7 @@ project(engine-sim-cli VERSION 1.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
 
 # Find required packages
 find_package(Threads REQUIRED)
@@ -16,8 +17,40 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cli11)
 
-# Add engine-sim-bridge submodule
-add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge )
+# engine-sim-bridge: consumed as pre-built shared library (macOS) or built from
+# source via add_subdirectory (iOS cross-compilation).
+set(BRIDGE_USE_PREBUILT ON CACHE BOOL "Link against pre-built bridge dylib (disable for iOS cross-build)" )
+
+if(BRIDGE_USE_PREBUILT)
+    # macOS: bridge builds independently via its own Makefile BEFORE cmake configure.
+    if(NOT DEFINED BRIDGE_BUILD_DIR)
+        set(BRIDGE_BUILD_DIR "${CMAKE_SOURCE_DIR}/engine-sim-bridge/build")
+    endif()
+
+    set(BRIDGE_DYLIB "${BRIDGE_BUILD_DIR}/libenginesim.dylib")
+
+    if(NOT EXISTS "${BRIDGE_DYLIB}")
+        message(FATAL_ERROR
+            "engine-sim-bridge dylib not found at ${BRIDGE_DYLIB}\n"
+            "The bridge must be built first. Run 'make build' from the CLI root."
+        )
+    endif()
+
+    add_library(engine-sim-bridge SHARED IMPORTED)
+    set_target_properties(engine-sim-bridge PROPERTIES
+        IMPORTED_LOCATION "${BRIDGE_DYLIB}"
+        IMPORTED_SONAME "${BRIDGE_BUILD_DIR}/libenginesim.1.dylib"
+        INTERFACE_INCLUDE_DIRECTORIES
+            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/include"
+            "${CMAKE_SOURCE_DIR}/engine-sim-bridge"
+            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/dependencies/dr_libs"
+            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include"
+            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include"
+    )
+else()
+    # iOS: build bridge from source with the active toolchain.
+    add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge)
+endif()
 
 # Platform-specific audio libraries
 if(APPLE)
@@ -63,6 +96,10 @@ target_compile_definitions(engine-sim-cli PRIVATE BUILDING_FROM_PARENT_REPO)
 target_include_directories(engine-sim-cli
     PRIVATE
     engine-sim-bridge/include
+    engine-sim-bridge
+    engine-sim-bridge/engine-sim/dependencies/dr_libs
+    engine-sim-bridge/engine-sim/include
+    engine-sim-bridge/engine-sim/scripting/include
     src
 )
 
@@ -77,22 +114,18 @@ if(APPLE)
     )
 endif()
 
-# Post-build: Copy engine-sim libraries from bridge build directory
-add_custom_command(TARGET engine-sim-cli POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_BINARY_DIR}/engine-sim-bridge/libenginesim.dylib
-        ${CMAKE_BINARY_DIR}/libenginesim.dylib
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_BINARY_DIR}/engine-sim-bridge/libenginesim.1.dylib
-        ${CMAKE_BINARY_DIR}/libenginesim.1.dylib
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim
-        ${CMAKE_BINARY_DIR}/engine-sim-bridge/engine-sim
-    COMMENT "Copying engine-sim libraries from bridge build directory"
-)
-
-add_dependencies(engine-sim-cli engine-sim-bridge)
+# Post-build: Copy engine-sim-bridge dylib from bridge's own build tree (macOS only)
+if(BRIDGE_USE_PREBUILT)
+    add_custom_command(TARGET engine-sim-cli POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${BRIDGE_BUILD_DIR}/libenginesim.1.dylib"
+            "${CMAKE_BINARY_DIR}/libenginesim.1.dylib"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${BRIDGE_BUILD_DIR}/libenginesim.dylib"
+            "${CMAKE_BINARY_DIR}/libenginesim.dylib"
+        COMMENT "Copying engine-sim-bridge dylib from ${BRIDGE_BUILD_DIR}"
+    )
+endif()
 
 # Installation
 install(TARGETS engine-sim-cli
@@ -105,11 +138,14 @@ install(TARGETS engine-sim-cli
 # -----------------------------------------------------------------------------
 option(BUILD_TESTS "Build engine-sim-cli unit tests" ON)
 if(BUILD_TESTS)
+    # Suppress deprecation warnings from googletest's old cmake_minimum_required
+    set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
+
     include(FetchContent)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG release-1.12.1
+        GIT_TAG v1.17.0
     )
 
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -120,15 +156,12 @@ if(BUILD_TESTS)
     add_subdirectory(test)
 
     add_custom_target(run_tests
-        DEPENDS engine-sim-cli smoke_tests bridge_unit_tests
-        COMMAND ${CMAKE_COMMAND} -E echo "=== Bridge Unit Tests ==========================================="
-        COMMAND ${CMAKE_BINARY_DIR}/engine-sim-bridge/bridge_unit_tests --gtest_color=yes
-        COMMAND ${CMAKE_COMMAND} -E echo ""
-        COMMAND ${CMAKE_COMMAND} -E echo "=== CLI Smoke Tests ============================================="
+        DEPENDS engine-sim-cli smoke_tests unit_tests integration_tests telemetry_isp_tests
+        COMMAND ${CMAKE_COMMAND} -E echo "=== CLI Smoke Tests ==="
         COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test/smoke_tests --gtest_color=yes
-        COMMAND ${CMAKE_COMMAND} -E echo ""
-        COMMAND ${CMAKE_COMMAND} -E echo "=== All tests complete ==========================================="
+        COMMAND ${CMAKE_COMMAND} -E echo "=== CLI Unit Tests ==="
+        COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test/unit/unit_tests --gtest_color=yes
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        COMMENT "Running all tests with real-time output"
+        COMMENT "Running CLI tests (bridge tests run separately via Makefile)"
     )
 endif()
