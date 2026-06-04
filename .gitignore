@@ -47,4 +47,5 @@ escli-ios/EngineSimApp/EngineSimApp.xcodeproj/xcuserdata/
 # es/ is a transient copy — rebuilt by 'make sync-es'
 # Canonical source: engine-sim-bridge/es/
 es/
+assets/
 _escli_preset_wrapper.mr

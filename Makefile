@@ -88,7 +88,6 @@ copy-es-json: bridge-presets
 	fi
 
 sync-es: copy-es-mr copy-es-json
-	@ln -sfn engine-sim-bridge/engine-sim/assets assets
 
 presets: bridge-presets
 
@@ -130,7 +129,7 @@ $(BUILD_DIR)/CMakeCache.txt: check-submodule
 # Clean targets -- cascade to bridge
 # ---------------------------------------------------------------------------
 remove-orphans:
-	@rm -f assets
+	@rm -rf assets
 	@rm -f *.dylib libenginesim*.dylib
 	@find . -name "*.dylib*" -type l -delete 2>/dev/null || true
 	@rm -f $(SUBMODULE_STAMP)
