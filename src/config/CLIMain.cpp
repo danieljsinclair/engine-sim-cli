@@ -38,6 +38,7 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
+#include <common/Verification.h>
 
 // ============================================================================
 // Signal Handler
@@ -215,6 +216,9 @@ int main(int argc, char* argv[]) {
         auto inputProvider = createInputProvider(config, cliLogger.get(), args);
         auto presentation = createPresentation(config);
 
+        ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
+        ASSERT(presentation, "A presentation provider must be created successfully");
+
         try {
             // Determine paths to run
             auto paths = resolveConfigPaths(args, cliLogger.get());
@@ -253,7 +257,7 @@ int main(int argc, char* argv[]) {
             result = 1;
         }
 
-        delete inputProvider;
+        if (inputProvider) delete inputProvider;
         delete presentation;
     }
     return result;
