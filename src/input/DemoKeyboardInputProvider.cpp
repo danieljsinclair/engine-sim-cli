@@ -102,6 +102,12 @@ void DemoKeyboardInputProvider::dispatchKey(int key) {
         controls_->toggleIgnition();
         return;
     }
+
+    // Brake: b, B (momentary via key repeat — releases when key released)
+    if (key == 'b' || key == 'B') {
+        controls_->setBrake(1.0);
+        return;
+    }
 }
 
 double DemoKeyboardInputProvider::keyToThrottle(int key) {
