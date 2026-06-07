@@ -13,17 +13,19 @@
 #include <fcntl.h>
 #endif
 
+#include "IKeyboardInput.h"
+
 // ============================================================================
 // Terminal Keyboard Input (Non-blocking)
 // ============================================================================
 
-class KeyboardInput {
+class KeyboardInput : public IKeyboardInput {
 public:
     KeyboardInput();
-    ~KeyboardInput();
+    ~KeyboardInput() override;
 
     // Get key press, returns -1 if no key pressed
-    int getKey();
+    int getKey() override;
 
 private:
 #ifndef _WIN32

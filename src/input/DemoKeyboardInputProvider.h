@@ -6,7 +6,8 @@
 #define DEMO_KEYBOARD_INPUT_PROVIDER_H
 
 #include "io/IInputProvider.h"
-#include "input/KeyboardInput.h"
+#include "input/IKeyboardInput.h"
+#include "input/KeyHoldBridge.h"
 #include <memory>
 
 namespace input {
@@ -16,7 +17,7 @@ class IDemoControls;
 class DemoKeyboardInputProvider : public IInputProvider {
 public:
     DemoKeyboardInputProvider(
-        std::unique_ptr<::KeyboardInput> keyboard,
+        std::unique_ptr<IKeyboardInput> keyboard,
         std::unique_ptr<IInputProvider> provider,
         IDemoControls* controls);
     ~DemoKeyboardInputProvider() override = default;
@@ -29,12 +30,13 @@ public:
     std::string GetLastError() const override;
 
 private:
-    void dispatchKey(int key);
+    void processKeyState();
     double keyToThrottle(int key);
 
-    std::unique_ptr<::KeyboardInput> keyboard_;
+    std::unique_ptr<IKeyboardInput> keyboard_;
     std::unique_ptr<IInputProvider> provider_;
-    IDemoControls* controls_;  // Non-owning pointer to same object as provider_
+    IDemoControls* controls_;
+    KeyHoldBridge keyState_;
     std::string lastError_;
 };
 

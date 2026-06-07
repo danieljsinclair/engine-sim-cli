@@ -4,7 +4,8 @@
 #define KEYBOARD_INPUT_PROVIDER_H
 
 #include "io/IInputProvider.h"
-#include "KeyboardInput.h"
+#include "IKeyboardInput.h"
+#include "input/KeyHoldBridge.h"
 #include "common/ILogging.h"
 #include <memory>
 
@@ -15,6 +16,7 @@ namespace input {
 class KeyboardInputProvider : public IInputProvider {
 public:
     explicit KeyboardInputProvider(ILogging* logger = nullptr, double initialDynoTorqueScale = -1.0);
+    explicit KeyboardInputProvider(std::unique_ptr<IKeyboardInput> keyboard, ILogging* logger = nullptr);
     ~KeyboardInputProvider() override;
 
     bool Initialize() override;
@@ -30,9 +32,10 @@ public:
     void setSession(ISimulatorSession* session);
 
 private:
-    void processKeyPress(int key);
+    void processKeyState();
 
-    KeyboardInput* keyboardInput_;
+    std::unique_ptr<IKeyboardInput> keyboardInput_;
+    KeyHoldBridge keyState_;
 
     double throttle_;
     double baselineThrottle_;
@@ -41,7 +44,7 @@ private:
     double dynoTorqueScale_;
     int gearDelta_;
     int gearSelector_;
-    int lastKey_;
+    double brakeLevel_;
     std::string lastError_;
     bool presetCycle_{false};
 

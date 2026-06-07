@@ -7,7 +7,7 @@
 namespace input {
 
 DemoKeyboardInputProvider::DemoKeyboardInputProvider(
-    std::unique_ptr<::KeyboardInput> keyboard,
+    std::unique_ptr<IKeyboardInput> keyboard,
     std::unique_ptr<IInputProvider> provider,
     IDemoControls* controls)
     : keyboard_(std::move(keyboard))
@@ -29,7 +29,6 @@ bool DemoKeyboardInputProvider::Initialize() {
         return false;
     }
 
-    // The underlying provider should already be initialized
     return provider_->Initialize();
 }
 
@@ -51,14 +50,13 @@ EngineInput DemoKeyboardInputProvider::OnUpdateSimulation(double dt) {
         return EngineInput{};
     }
 
-    // Read and dispatch keyboard input each frame
-    int key = keyboard_->getKey();
-    dispatchKey(key);
+    // Drain all pending OS key events into key state tracker
+    keyState_.drainInput([this]() { return keyboard_->getKey(); }, dt * 1000.0);
 
-    // Delegate to the underlying provider
-    EngineInput input = provider_->OnUpdateSimulation(dt);
+    // Dispatch based on key state
+    processKeyState();
 
-    return input;
+    return provider_->OnUpdateSimulation(dt);
 }
 
 std::string DemoKeyboardInputProvider::GetProviderName() const {
@@ -69,45 +67,38 @@ std::string DemoKeyboardInputProvider::GetLastError() const {
     return lastError_;
 }
 
-void DemoKeyboardInputProvider::dispatchKey(int key) {
-    if (!controls_ || key < 0) {
-        return;
-    }
+void DemoKeyboardInputProvider::processKeyState() {
+    if (!controls_) return;
 
-    // Quit: q, Q, ESC
-    if (key == 'q' || key == 'Q' || key == 27) {
+    // Quit: edge-triggered (pressed)
+    if (keyState_.isKeyPressed('q') || keyState_.isKeyPressed('Q') || keyState_.isKeyPressed(27)) {
         controls_->requestExit();
         return;
     }
 
-    // Throttle: 1-9, 0
-    double throttle = keyToThrottle(key);
-    if (throttle >= 0.0) {
-        controls_->setThrottle(throttle);
+    // Throttle: level-triggered (down) — first matching number wins
+    for (int k = '1'; k <= '9'; ++k) {
+        if (keyState_.isKeyDown(k)) {
+            controls_->setThrottle(keyToThrottle(k));
+            return;
+        }
+    }
+    if (keyState_.isKeyDown('0')) {
+        controls_->setThrottle(1.0);
         return;
     }
 
-    // Gear: ] = up, [ = down
-    if (key == ']') {
-        controls_->shiftUp();
-        return;
-    }
-    if (key == '[') {
-        controls_->shiftDown();
-        return;
-    }
+    // Gear: edge-triggered (pressed)
+    if (keyState_.isKeyPressed(']')) controls_->shiftUp();
+    if (keyState_.isKeyPressed('[')) controls_->shiftDown();
 
-    // Ignition: i, I
-    if (key == 'i' || key == 'I') {
+    // Ignition: edge-triggered (pressed)
+    if (keyState_.isKeyPressed('i') || keyState_.isKeyPressed('I')) {
         controls_->toggleIgnition();
-        return;
     }
 
-    // Brake: b, B (momentary via key repeat — releases when key released)
-    if (key == 'b' || key == 'B') {
-        controls_->setBrake(1.0);
-        return;
-    }
+    // Brake: level-triggered (down) — KeyHoldBridge handles hold/timeout
+    controls_->setBrake(keyState_.isKeyDown('b') ? 1.0 : 0.0);
 }
 
 double DemoKeyboardInputProvider::keyToThrottle(int key) {

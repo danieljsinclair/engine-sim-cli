@@ -15,6 +15,7 @@
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "input/KeyboardInput.h"
+#include "input/IKeyboardInput.h"
 #include "input/DemoKeyboardInputProvider.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
@@ -92,7 +93,7 @@ input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogg
         input::IDemoControls* controls = dynamic_cast<input::IDemoControls*>(provider.get());
 
         // Create CLI keyboard (static for termios persistence)
-        auto keyboard = std::make_unique<::KeyboardInput>();
+        std::unique_ptr<IKeyboardInput> keyboard = std::make_unique<::KeyboardInput>();
 
         // Create wrapper that bridges keyboard to IDemoControls
         auto wrapper = std::make_unique<input::DemoKeyboardInputProvider>(

@@ -12,6 +12,8 @@ add_executable(unit_tests
     CommandLineParserTest.cpp
     ConsolePresentationTest.cpp
     AudioTestConstants.cpp
+    DemoKeyboardInputProviderTest.cpp
+    KeyboardInputProviderTest.cpp
     StrategyPipelineTest.cpp
     BufferContextEradicationTest.cpp
     ISimulatorTest.cpp
@@ -19,6 +21,9 @@ add_executable(unit_tests
     ../../src/config/CLIconfig.cpp
     ../../src/config/ANSIColors.cpp
     ../../src/presentation/ConsolePresentation.cpp
+    ../../src/input/DemoKeyboardInputProvider.cpp
+    ../../src/input/KeyboardInputProvider.cpp
+    ../../src/input/KeyboardInput.cpp
     ../../test/mocks/MockDataSimulator.cpp
     ../../test/mocks/MockAudioUnit.cpp
 )
