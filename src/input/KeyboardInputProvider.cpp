@@ -99,6 +99,10 @@ void KeyboardInputProvider::setSession(ISimulatorSession* session) {
     session_ = session;
 }
 
+bool KeyboardInputProvider::keyActive(int key) const {
+    return keyState_.isKeyPressed(key) || keyState_.isKeyRepeating(key);
+}
+
 void KeyboardInputProvider::processKeyState() {
     // Quit: edge-triggered (pressed)
     if (keyState_.isKeyPressed('q') || keyState_.isKeyPressed('Q') || keyState_.isKeyPressed(27)) {
@@ -106,45 +110,45 @@ void KeyboardInputProvider::processKeyState() {
         return;
     }
 
-    // Throttle: level-triggered (down)
-    if (keyState_.isKeyDown(' ')) {
+    // Throttle: edge-triggered (one-shot) for set-to-value keys
+    if (keyState_.isKeyPressed(' ')) {
         throttle_ = 0.0;
         baselineThrottle_ = 0.0;
     }
-    if (keyState_.isKeyDown('r') || keyState_.isKeyDown('R')) {
+    if (keyState_.isKeyPressed('r') || keyState_.isKeyPressed('R')) {
         throttle_ = 0.2;
         baselineThrottle_ = throttle_;
     }
-
-    if (keyState_.isKeyDown('a') || keyState_.isKeyDown('w') || keyState_.isKeyDown('W') || keyState_.isKeyDown(65)) {
+    // Throttle ramp: responds to OS repeat (hold to gradually increase/decrease)
+    if (keyActive('a') || keyActive('w') || keyActive('W') || keyActive(65)) {
         throttle_ = std::min(1.0, throttle_ + 0.05);
         baselineThrottle_ = throttle_;
     }
-    if (keyState_.isKeyDown('z') || keyState_.isKeyDown('Z') || keyState_.isKeyDown(66)) {
+    if (keyActive('z') || keyActive('Z') || keyActive(66)) {
         throttle_ = std::max(0.0, throttle_ - 0.05);
         baselineThrottle_ = throttle_;
     }
 
-    // Dyno Torque: level-triggered (down)
-    if (keyState_.isKeyDown('e')) {
+    // Dyno Torque: responds to OS repeat (hold to gradually adjust)
+    if (keyActive('e')) {
         dynoTorqueScale_ = std::max(0.0, dynoTorqueScale_ - 0.1);
         logger_->info(LogMask::UI, "Dyno torque: %.0f%%", dynoTorqueScale_ * 100.0);
     }
-    if (keyState_.isKeyDown('d')) {
+    if (keyActive('d')) {
         dynoTorqueScale_ = std::min(1.0, dynoTorqueScale_ + 0.1);
         logger_->info(LogMask::UI, "Dyno torque: %.0f%%", dynoTorqueScale_ * 100.0);
     }
-    if (keyState_.isKeyDown('c')) {
+    if (keyState_.isKeyPressed('c')) {
         dynoTorqueScale_ = 0.0;
         logger_->info(LogMask::UI, "Dyno torque: RELEASED (0%%)");
     }
 
-    // Gear: level-triggered (down)
-    if (keyState_.isKeyDown(']')) {
+    // Gear: edge-triggered (pressed)
+    if (keyState_.isKeyPressed(']')) {
         gearDelta_ = 1;
         if (gearSelector_ < 8) gearSelector_++;
     }
-    if (keyState_.isKeyDown('[')) {
+    if (keyState_.isKeyPressed('[')) {
         gearDelta_ = -1;
         if (gearSelector_ > 0) gearSelector_--;
     }

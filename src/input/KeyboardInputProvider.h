@@ -34,6 +34,9 @@ public:
 private:
     void processKeyState();
 
+    // True on initial press OR OS key repeat (one-shot per event)
+    bool keyActive(int key) const;
+
     std::unique_ptr<IKeyboardInput> keyboardInput_;
     KeyHoldBridge keyState_;
 
