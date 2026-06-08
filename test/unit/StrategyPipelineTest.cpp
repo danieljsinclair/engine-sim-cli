@@ -15,6 +15,9 @@
 #include "simulator/ISimulator.h"
 #include "simulator/BridgeSimulator.h"
 #include "simulator/SineSimulator.h"
+#include "simulator/SineEngine.h"
+#include "simulator/SineVehicle.h"
+#include "simulator/SineTransmission.h"
 #include "AudioTestConstants.h"
 #include "AudioTestHelpers.h"
 #include "simulator/EngineSimTypes.h"
@@ -48,7 +51,7 @@ struct TestSineEngine {
         sineSim->setSimulationFrequency(EngineSimDefaults::SIMULATION_FREQUENCY);
         sineSim->setFluidSimulationSteps(EngineSimDefaults::FLUID_SIMULATION_STEPS);
         sineSim->setTargetSynthesizerLatency(EngineSimDefaults::TARGET_SYNTH_LATENCY);
-        sineSim->loadSimulation(nullptr, nullptr, nullptr);
+        sineSim->loadSimulation(new SineEngine(), new SineVehicle(), new SineTransmission());
         simulator = std::make_unique<BridgeSimulator>(std::move(sineSim));
 
         ISimulatorConfig config{};

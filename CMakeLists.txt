@@ -71,6 +71,15 @@ add_executable(engine-sim-cli
     # Input layer
     src/input/KeyboardInput.cpp
     src/input/KeyboardInputProvider.cpp
+    src/input/DemoKeyboardInputProvider.cpp
+    # Bridge sources for connect-demo mode
+    engine-sim-bridge/src/input/DemoInputProvider.cpp
+    engine-sim-bridge/src/input/DemoThrottleSource.cpp
+    engine-sim-bridge/src/input/GearSelectorInput.cpp
+    engine-sim-bridge/src/input/IgnitionInput.cpp
+    engine-sim-bridge/src/twin/VirtualIceTwin.cpp
+    engine-sim-bridge/src/twin/ThrottleSmoother.cpp
+    engine-sim-bridge/src/twin/AutomaticGearbox.cpp
 )
 
 target_link_libraries(engine-sim-cli
@@ -80,6 +89,9 @@ target_link_libraries(engine-sim-cli
     Threads::Threads
     CLI11::CLI11
 )
+
+# Define BUILDING_FROM_PARENT_REPO when building bridge sources for CLI
+target_compile_definitions(engine-sim-cli PRIVATE BUILDING_FROM_PARENT_REPO)
 
 target_include_directories(engine-sim-cli
     PRIVATE

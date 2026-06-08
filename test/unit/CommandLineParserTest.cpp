@@ -28,3 +28,35 @@ TEST(CommandLineParserTest, ParsesOptionsAndTranslatesLoad) {
     EXPECT_TRUE(args.playAudio);
     EXPECT_FALSE(args.syncPull);
 }
+
+TEST(CommandLineParserTest, ParsesConnectDemoFlag) {
+    const char* argv[] = {"engine-sim-cli", "--connect-demo"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.connectDemo);
+}
+
+TEST(CommandLineParserTest, ConnectDemoSetsImplicitPlayAudio) {
+    const char* argv[] = {"engine-sim-cli", "--connect-demo"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.playAudio);
+}
+
+TEST(CommandLineParserTest, ConnectDemoSetsImplicitInteractive) {
+    const char* argv[] = {"engine-sim-cli", "--connect-demo"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.interactive);
+}
+
+TEST(CommandLineParserTest, ConnectDemoDefaultFalse) {
+    const char* argv[] = {"engine-sim-cli", "--sine"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.connectDemo);
+}

@@ -22,9 +22,11 @@ struct CommandLineArgs {
     double targetLoad = -1.0;     // -1 = no dyno, 0.0-1.0 = load torque fraction
     bool interactive = false;
     bool playAudio = false;
+    bool connectDemo = false;      // Run VirtualICE twin demo with automatic gearbox
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
     bool silent = false;         // Run full audio pipeline but with zero volume
+    std::string gearboxLogPath;  // Empty = no gearbox logging, path = enable CSV logging
     float crankingVolume = 0.0f; // 0-sentinel, resolved by bridge/SimulationConfig
     int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
     double synthLatency = 0.0;   // Synth latency seconds — 0 means use EngineSimDefaults

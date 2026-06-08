@@ -10,13 +10,26 @@
 
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
+BUILD_PHASE0_SPIKES ?= OFF
 CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 BUILD_PARALLEL_LEVEL ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CTEST_VERBOSE ?= 0
 CTEST_UI_FLAGS := $(if $(filter 1,$(CTEST_VERBOSE)),-V,--progress)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
 
-CMAKE_BUILD_PARALLEL_FLAG := $(if $(strip $(BUILD_PARALLEL_LEVEL)),--parallel $(BUILD_PARALLEL_LEVEL),)
+# Build system: Ninja (recommended) or Make (fallback)
+# Ninja handles parallel dependency ordering correctly; Make has a known race
+# condition where .o recompilation doesn't always trigger re-link with --parallel.
+NINJA_BIN := $(shell command -v ninja 2>/dev/null)
+ifdef NINJA_BIN
+CMAKE_GENERATOR := -G Ninja
+CMAKE_BUILD_PARALLEL_FLAG := $(if $(strip $(BUILD_PARALLEL_LEVEL)),-j $(BUILD_PARALLEL_LEVEL),)
+$(info [build] Ninja detected — parallel builds enabled)
+else
+CMAKE_GENERATOR :=
+CMAKE_BUILD_PARALLEL_FLAG :=
+$(warning [build] Ninja not found — parallel builds disabled to avoid re-link race condition. Install ninja to enable.)
+endif
 
 ESP32_DIR ?= engine-sim-esp32
 ESP32_PORT ?= $(shell ls /dev/cu.usbserial-* 2>/dev/null | head -1)
@@ -51,6 +64,10 @@ check-platform: check-cmake bridge-build $(BUILD_DIR)/CMakeCache.txt
 	@if [ "$$(uname)" != "Darwin" ]; then \
 		echo ""; \
 		echo "ERROR: engine-sim-cli only supports macOS (CoreAudio/AudioUnit)."; \
+		echo "       Linux and Windows are not supported — no audio hardware provider exists."; \
+		echo "       Planned next platforms: ESP32, Android."; \
+		echo "       See README.md for the platform support roadmap."; \
+		echo ""; \
 		exit 1; \
 	fi
 	+@cmake --build $(BUILD_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
@@ -120,7 +137,8 @@ submodules:
 
 $(BUILD_DIR)/CMakeCache.txt: check-submodule
 	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
+	@cd $(BUILD_DIR) && cmake $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
+		-DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) \
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
 		..
@@ -267,8 +285,6 @@ test-deep: build
 	fi
 
 testdeep: test-deep
-	@cd $(BUILD_DIR) && $(MAKE) engine-sim-cli smoke_tests bridge_unit_tests preset_engine_tests preset_isomorphism_tests
-	@cd $(BUILD_DIR) && ctest -V --output-on-failure -j$(CTEST_JOBS) 2>&1 | tee ../test.log
 
 # ---------------------------------------------------------------------------
 # Convenience targets

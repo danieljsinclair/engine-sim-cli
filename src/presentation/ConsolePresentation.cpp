@@ -3,12 +3,35 @@
 // SRP: Single responsibility - formats and outputs EngineState to console
 
 #include "ConsolePresentation.h"
+#include "simulator/GearConventions.h"
 
+#include <cmath>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 
+#include "../engine-sim-bridge/include/simulator/EngineSimTypes.h"
+
 namespace presentation {
+
+namespace {
+// Gear selector character lookup table
+char gearSelectorChar(int selector) {
+    using GS = bridge::GearSelector;
+    switch (static_cast<GS>(selector)) {
+        case GS::PARK:    return 'P';
+        case GS::REVERSE: return 'R';
+        case GS::NEUTRAL: return 'N';
+        case GS::DRIVE:   return 'D';
+        default:
+            // Values 2-8 = manual gear select (DRIVE=1, so manual starts at 2)
+            if (selector >= 2 && selector <= 8) {
+                return '0' + selector;
+            }
+            return '?';
+    }
+}
+}
 
 ConsolePresentation::ConsolePresentation()
     : initialized_(false)
@@ -43,7 +66,7 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
 
     // RPM
     int rpm = static_cast<int>(state.rpm);
-    if (rpm < 10 && state.rpm > 0) rpm = 0;
+    if (rpm < EngineSimDefaults::RPM_DISPLAY_FLOOR && state.rpm > 0) rpm = 0;
     out << "[" << std::setw(5) << rpm << " RPM] ";
 
     // Starter & Ignition — labels plain, digits colored
@@ -55,12 +78,45 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     // Preset short name (empty is fine — just a double space)
     out << state.presetShortName << " ";
 
-    // Engine state and Throttle
-    out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%] ";
+    // Engine state and Throttle + Brake
+    out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%";
 
-    // Gear & Speed
-    out << "[Gear: " << state.gear << "] ";
-    out << "[" << std::setw(3) << static_cast<int>(state.speed) << " mph] ";
+    auto brakeColor = ANSIColors::getDispositionColour(state.brakeLevel <= 0.0, false, state.brakeLevel > 0.0);
+    out << brakeColor << " B:" << std::fixed << std::setprecision(1) << state.brakeLevel << ANSIColors::RESET;
+    
+    out << "] ";
+
+    // Gear: [Gear:XMG] format where X=selector, M/A=mode, G=gear number
+    {
+        char selectorChar = gearSelectorChar(state.gearSelector);
+        char modeChar = state.gearAutoMode ? 'A' : 'M';
+        int gearNum = state.gear; // BridgeGear: 0=neutral, 1-8=gears
+
+        out << "[Gear:" << selectorChar << modeChar << gearNum << "] ";
+    }
+
+    // Road speed — displayed as whole-number mph (right-aligned 3-char field)
+    {
+        int mph = static_cast<int>(std::round(state.vehicleSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
+        out << "[" << std::setw(3) << mph << " mph] ";
+    }
+
+    // Engine torque and drivetrain torque: green=positive (power), red=negative (braking)
+    {
+        int engTorque = static_cast<int>(state.engineTorqueNm);
+        int drvTorque = static_cast<int>(state.drivetrainTorqueNm);
+
+        const std::string& engColor = (engTorque >= 0) ? ANSIColors::GREEN : ANSIColors::RED;
+        const std::string& drvColor = (drvTorque >= 0) ? ANSIColors::GREEN : ANSIColors::RED;
+
+        out << engColor << "[Eng: "
+            << std::setw(3) << std::showpos << engTorque << "nm"
+            << " <--> "
+            << drvColor
+            << std::setw(3) << drvTorque << "nm"
+            << ": Drive]"
+            << std::noshowpos << ANSIColors::RESET << " ";
+    }
 
     // Dyno load (shown when torque is being applied)
     if (state.dynoTorque > 0) {
@@ -106,7 +162,6 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         std::string genColor = ANSIColors::getDispositionColour(
             generatingKfps >= neededKfps, generatingKfps >= neededKfps * 0.9);
 
-        // Trend: green if >= 0, yellow if < 0, red if < -1.0
         std::string trendColor = ANSIColors::getDispositionColour(
             state.trendPct >= 0.0, state.trendPct >= -1.0);
 

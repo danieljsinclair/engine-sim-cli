@@ -10,13 +10,20 @@ add_executable(unit_tests
     IntegrationAudioPlayerTest.cpp
     ThreadedStrategyIntegrationTest.cpp
     CommandLineParserTest.cpp
+    ConsolePresentationTest.cpp
     AudioTestConstants.cpp
+    DemoKeyboardInputProviderTest.cpp
+    KeyboardInputProviderTest.cpp
     StrategyPipelineTest.cpp
     BufferContextEradicationTest.cpp
     ISimulatorTest.cpp
     # Required support code
     ../../src/config/CLIconfig.cpp
-    ../../src/config/ANSIColors.cpp # Required for display
+    ../../src/config/ANSIColors.cpp
+    ../../src/presentation/ConsolePresentation.cpp
+    ../../src/input/DemoKeyboardInputProvider.cpp
+    ../../src/input/KeyboardInputProvider.cpp
+    ../../src/input/KeyboardInput.cpp
     ../../test/mocks/MockDataSimulator.cpp
     ../../test/mocks/MockAudioUnit.cpp
 )

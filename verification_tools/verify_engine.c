@@ -29,6 +29,18 @@
 #define RPM_STABILIZATION_TIME 5.0
 #define RPM_TOLERANCE 50.0
 #define CRASH_DETECTION_INTERVAL 1.0
+#define MAX_TEST_RPM 10000.0
+#define DEFAULT_TEST_RPM 2000.0
+#define SIMULATED_TARGET_RPM 2000.0
+#define SIMULATED_RPM_RAMP_INCREMENT 10.0
+#define SIMULATED_RPM_JITTER 250.0
+#define STARTUP_DETECTED_RPM 300.0
+#define SAMPLE_INTERVAL_MS 100.0
+#define MIN_SAMPLES_FOR_STABILIZATION 10
+#define STABLE_SAMPLES_FOR_LOCKED 30
+#define MAX_SAMPLES 1000
+#define MIN_SAMPLES_FOR_HEALTHY 50
+#define POLL_INTERVAL_US 10000
 
 typedef struct {
     double rpm;
@@ -97,7 +109,7 @@ int main(int argc, char* argv[]) {
     CommandLineArgs args = {
         .cliPath = NULL,
         .engineConfig = "engine-sim-bridge/engine-sim/assets/main.mr",
-        .testRPM = 2000.0,
+        .testRPM = DEFAULT_TEST_RPM,
         .testDuration = 10.0,
         .verbose = false,
         .measureStartup = true,
@@ -241,8 +253,8 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs* args) {
         return false;
     }
 
-    if (args->testRPM <= 0 || args->testRPM > 10000) {
-        fprintf(stderr, "ERROR: Test RPM must be between 0 and 10000\n");
+    if (args->testRPM <= 0 || args->testRPM > MAX_TEST_RPM) {
+        fprintf(stderr, "ERROR: Test RPM must be between 0 and %.0f\n", MAX_TEST_RPM);
         return false;
     }
 
@@ -291,7 +303,7 @@ bool startEngine(const CommandLineArgs* args, double* startTime) {
 // Monitor engine process
 bool monitorEngine(pid_t pid, const CommandLineArgs* args, EngineTestResult* result) {
     double lastCheckTime = 0.0;
-    EngineStats* stats = malloc(sizeof(EngineStats) * 1000); // Max 1000 samples
+    EngineStats* stats = malloc(sizeof(EngineStats) * MAX_SAMPLES);
     int sampleCount = 0;
     bool startupComplete = false;
 
@@ -303,7 +315,7 @@ bool monitorEngine(pid_t pid, const CommandLineArgs* args, EngineTestResult* res
     printf("Monitoring engine...\n");
 
     // Main monitoring loop
-    while (sampleCount < 1000) {
+    while (sampleCount < MAX_SAMPLES) {
         struct timeval currentTime;
         gettimeofday(&currentTime, NULL);
         double currentMs = currentTime.tv_sec * 1000.0 + currentTime.tv_usec / 1000.0;
@@ -315,7 +327,7 @@ bool monitorEngine(pid_t pid, const CommandLineArgs* args, EngineTestResult* res
         }
 
         // Collect stats periodically
-        if (currentMs - lastCheckTime >= 100) { // Check every 100ms
+        if (currentMs - lastCheckTime >= SAMPLE_INTERVAL_MS) {
             if (collectEngineStats(pid, &stats[sampleCount])) {
                 // Update RPM statistics
                 if (sampleCount == 0) {
@@ -329,7 +341,7 @@ bool monitorEngine(pid_t pid, const CommandLineArgs* args, EngineTestResult* res
                 result->samplesCollected = sampleCount + 1;
 
                 // Check for startup completion
-                if (args->measureStartup && !startupComplete && stats[sampleCount].rpm > 300.0) {
+                if (args->measureStartup && !startupComplete && stats[sampleCount].rpm > STARTUP_DETECTED_RPM) {
                     result->startupTime = elapsedTime;
                     startupComplete = true;
                     printf("Engine started at %.1f seconds\n", result->startupTime);
@@ -364,7 +376,7 @@ bool monitorEngine(pid_t pid, const CommandLineArgs* args, EngineTestResult* res
             break;
         }
 
-        usleep(10000); // Sleep 10ms
+        usleep(POLL_INTERVAL_US);
     }
 
     // Record end time
@@ -383,7 +395,7 @@ bool monitorEngine(pid_t pid, const CommandLineArgs* args, EngineTestResult* res
 
     // Check for various failure conditions
     result->engineStarted = startupComplete;
-    result->engineHung = (sampleCount < 50); // Too few samples
+    result->engineHung = (sampleCount < MIN_SAMPLES_FOR_HEALTHY);
     result->timedOut = (result->endTime - result->startTime > args->testDuration + 5.0);
 
     free(stats);
@@ -420,7 +432,7 @@ bool waitForEngineStart(pid_t pid, double timeout) {
             return false;
         }
 
-        usleep(100000); // 100ms
+        usleep(SAMPLE_INTERVAL_MS * 1000); // SAMPLE_INTERVAL_MS in microseconds
     }
 }
 
@@ -437,10 +449,10 @@ bool collectEngineStats(pid_t pid, EngineStats* stats) {
 
     // Simulate engine startup progression
     static double simulatedRPM = 0.0;
-    if (simulatedRPM < 2000.0) {
-        simulatedRPM += (rand() % 100) * 10.0;
+    if (simulatedRPM < SIMULATED_TARGET_RPM) {
+        simulatedRPM += (rand() % 100) * SIMULATED_RPM_RAMP_INCREMENT;
     } else {
-        simulatedRPM = 2000.0 + (rand() % 500) - 250; // Stabilize around 2000
+        simulatedRPM = SIMULATED_TARGET_RPM + (rand() % 500) - SIMULATED_RPM_JITTER;
     }
 
     stats->rpm = simulatedRPM;
@@ -456,7 +468,7 @@ bool collectEngineStats(pid_t pid, EngineStats* stats) {
 // Calculate RPM stabilization
 bool calculateRPMStabilization(const EngineStats* stats, int count, double targetRPM,
                               double* stabilizationTime, double* finalError) {
-    if (count < 10) {
+    if (count < MIN_SAMPLES_FOR_STABILIZATION) {
         *stabilizationTime = 0.0;
         *finalError = 0.0;
         return false;
@@ -467,14 +479,14 @@ bool calculateRPMStabilization(const EngineStats* stats, int count, double targe
     int stableCount = 0;
     double tolerance = RPM_TOLERANCE;
 
-    for (int i = 10; i < count; i++) {
+    for (int i = MIN_SAMPLES_FOR_STABILIZATION; i < count; i++) {
         double error = fabs(stats[i].rpm - targetRPM);
 
         if (error <= tolerance) {
             stableCount++;
-            if (stableCount >= 30) { // 30 samples = 3 seconds at 10Hz
+            if (stableCount >= STABLE_SAMPLES_FOR_LOCKED) {
                 stabilized = true;
-                *stabilizationTime = i * 0.1; // 100ms per sample
+                *stabilizationTime = i * (SAMPLE_INTERVAL_MS / 1000.0);
                 *finalError = error;
                 break;
             }

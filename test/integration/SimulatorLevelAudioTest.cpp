@@ -12,6 +12,9 @@
 // Bridge includes
 #include "simulator/EngineSimTypes.h"
 #include "simulator/SineSimulator.h"
+#include "simulator/SineEngine.h"
+#include "simulator/SineVehicle.h"
+#include "simulator/SineTransmission.h"
 #include "common/ILogging.h"
 
 // Audio includes
@@ -124,7 +127,7 @@ namespace {
             simulator_->setSimulationFrequency(EngineSimDefaults::SIMULATION_FREQUENCY);
             simulator_->setFluidSimulationSteps(EngineSimDefaults::FLUID_SIMULATION_STEPS);
             simulator_->setTargetSynthesizerLatency(EngineSimDefaults::TARGET_SYNTH_LATENCY);
-            simulator_->loadSimulation(nullptr, nullptr, nullptr);
+            simulator_->loadSimulation(new SineEngine(), new SineVehicle(), new SineTransmission());
 
             sampleRate_ = sampleRate;
             return true;

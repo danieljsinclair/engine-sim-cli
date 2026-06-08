@@ -14,15 +14,32 @@
 #include "simulator/EngineSimTypes.h"
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
+#include "input/KeyboardInput.h"
+#include "input/IKeyboardInput.h"
+#include "input/DemoKeyboardInputProvider.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
 
+// Bridge headers for connect-demo mode
+#include "input/DemoInputProvider.h"
+#include "input/DemoThrottleSource.h"
+#include "input/IDemoControls.h"
+#include "input/GearSelectorInput.h"
+#include "input/IgnitionInput.h"
+#include "twin/IceVehicleProfile.h"
+#include "twin/GearboxCsvLogger.h"
+
+#include "engine-sim/include/simulator.h"
+#include "engine-sim/include/units.h"
+
+#include <iostream>
 #include <csignal>
 #include <memory>
 #include <stdexcept>
 #include <vector>
+#include <common/Verification.h>
 
 // ============================================================================
 // Signal Handler
@@ -45,7 +62,53 @@ namespace {
 
 constexpr const char* DEFAULT_PRESET_DIR = "engine-sim-bridge/preset/";
 
-input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger) {
+input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger, const CommandLineArgs& args) {
+    // Connect-demo mode: VirtualICE twin with automatic gearbox
+    if (args.connectDemo) {
+        // Create sub-components without keyboard dependency
+        auto throttle = std::make_unique<input::DemoThrottleSource>();
+        auto gearSelector = std::make_unique<input::GearSelectorInput>();
+        auto ignition = std::make_unique<input::IgnitionInput>();
+
+        // Create DemoInputProvider (implements both IInputProvider and IDemoControls)
+        auto provider = std::make_unique<input::DemoInputProvider>(
+            std::move(throttle),
+            std::move(gearSelector),
+            std::move(ignition),
+            twin::IceVehicleProfile::zf8hp45()
+        );
+
+        // Enable gearbox CSV logging if requested
+        if (!args.gearboxLogPath.empty()) {
+            static twin::GearboxCsvLogger gearboxLogger(args.gearboxLogPath);
+            if (gearboxLogger.isOpen()) {
+                provider->setGearboxLogger(&gearboxLogger);
+                std::cout << "  Gearbox log: " << args.gearboxLogPath << std::endl;
+            } else {
+                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearboxLogPath << std::endl;
+            }
+        }
+
+        // Get IDemoControls interface (same object as provider)
+        input::IDemoControls* controls = dynamic_cast<input::IDemoControls*>(provider.get());
+
+        // Create CLI keyboard (static for termios persistence)
+        std::unique_ptr<IKeyboardInput> keyboard = std::make_unique<::KeyboardInput>();
+
+        // Create wrapper that bridges keyboard to IDemoControls
+        auto wrapper = std::make_unique<input::DemoKeyboardInputProvider>(
+            std::move(keyboard),
+            std::move(provider),
+            controls
+        );
+
+        if (wrapper->Initialize()) {
+            return wrapper.release();
+        }
+        throw std::runtime_error("Failed to initialize demo keyboard input provider");
+    }
+
+    // Standard interactive mode
     if (config.interactive) {
         auto provider = std::make_unique<input::KeyboardInputProvider>(logger, config.targetLoad);
         if (provider->Initialize()) {
@@ -151,8 +214,11 @@ int main(int argc, char* argv[]) {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
 
-        auto inputProvider = createInputProvider(config, cliLogger.get());
+        auto inputProvider = createInputProvider(config, cliLogger.get(), args);
         auto presentation = createPresentation(config);
+
+        ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
+        ASSERT(presentation, "A presentation provider must be created successfully");
 
         try {
             // Determine paths to run
@@ -192,7 +258,7 @@ int main(int argc, char* argv[]) {
             result = 1;
         }
 
-        delete inputProvider;
+        if (inputProvider) delete inputProvider;
         delete presentation;
     }
     return result;

@@ -3,8 +3,11 @@
 
 #include "CLIconfig.h"
 #include "simulation/SimulationLoop.h"
+#include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
+#include <chrono>
+#include <ctime>
 #include <iostream>
 #include <string>
 
@@ -29,6 +32,7 @@ void printUsage(const char* progName) {
     std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
+    std::cout << "  --connect-demo       Run VirtualICE twin demo with automatic gearbox\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
@@ -81,11 +85,14 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--cranking-volume", args.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
+    auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
     // Mutual exclusions
     scriptOpt->excludes(engineConfigOpt);
+    connectDemoOpt->excludes(scriptOpt);
+    connectDemoOpt->excludes(engineConfigOpt);
 
     bool threadedFlag = false;
     bool silentFlag = false;
@@ -93,6 +100,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
     app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
+    app.add_option("--gearbox-log", args.gearboxLogPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
 
     try {
@@ -107,6 +115,22 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) args.silent = args.playAudio = true;
     if (args.interactive) g_interactiveMode.store(true);
+
+    // Implicit settings when connectDemo is true
+    if (args.connectDemo) {
+        args.playAudio = true;
+        args.interactive = true;
+        g_interactiveMode.store(true);
+    }
+
+    // Auto-generate gearbox log filename if flag given without value
+    if (args.gearboxLogPath == "true") {
+        auto now = std::chrono::system_clock::now();
+        auto time = std::chrono::system_clock::to_time_t(now);
+        char buf[64];
+        std::strftime(buf, sizeof(buf), "gearbox_%Y%m%d_%H%M%S.csv", std::localtime(&time));
+        args.gearboxLogPath = buf;
+    }
 
     args.engineConfig = scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath);
 
@@ -148,9 +172,9 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     if (config.volume == 0.0f) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
     }
-    std::cout << "  Sim Freq: \x1b[32m" << config.engineConfig.simulationFrequency << " Hz\x1b[0m\n";
+    std::cout << "  Sim Freq: " << ANSIColors::GREEN << config.engineConfig.simulationFrequency << " Hz" << ANSIColors::RESET << "\n";
     if (config.engineConfig.targetSynthesizerLatency > 0.0) {
-        std::cout << "  Synth Latency: \x1b[32m" << config.engineConfig.targetSynthesizerLatency << "s\x1b[0m\n";
+        std::cout << "  Synth Latency: " << ANSIColors::GREEN << config.engineConfig.targetSynthesizerLatency << "s" << ANSIColors::RESET << "\n";
     }
     std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
     std::cout << "\n";
