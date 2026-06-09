@@ -19,6 +19,7 @@
 #include "presentation/ConsolePresentation.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
+#include <Verification.h>
 
 // Bridge headers for connect-demo mode
 #include "input/DemoInputProvider.h"
@@ -230,6 +231,9 @@ int main(int argc, char* argv[]) {
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = static_cast<input::IInputProvider*>(inputCtx.provider.get());
         auto presentation = createPresentation(config);
+
+        ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
+        ASSERT(presentation, "A presentation provider must be created successfully");
 
         try {
             // Determine paths to run

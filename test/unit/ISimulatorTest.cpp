@@ -487,7 +487,7 @@ TEST_F(ISimulatorStrategyTest, SyncPullStrategy_Render_UsesISimulator) {
 // ============================================================================
 // GROUP 4: SimulationLoop uses ISimulator* instead of EngineSimHandle/API
 //
-// TARGET: runUnifiedAudioLoop and runSimulation take ISimulator*
+// TARGET: runSimulationLoop and runSimulation take ISimulator*
 // instead of EngineSimHandle + EngineSimAPI&. This is the final decoupling.
 // ============================================================================
 

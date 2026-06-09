@@ -78,8 +78,13 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     // Preset short name (empty is fine — just a double space)
     out << state.presetShortName << " ";
 
-    // Engine state and Throttle
-    out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%] ";
+    // Engine state and Throttle + Brake
+    out <<  EnginePhaseName(state.enginePhase) <<  " [Gas: " << std::setw(3) << static_cast<int>(state.throttle * 100) << "%";
+
+    auto brakeColor = ANSIColors::getDispositionColour(state.brakeLevel <= 0.0, false, state.brakeLevel > 0.0);
+    out << brakeColor << " B:" << std::fixed << std::setprecision(1) << state.brakeLevel << ANSIColors::RESET;
+    
+    out << "] ";
 
     // Gear: [Gear:XMG] format where X=selector, M/A=mode, G=gear number
     {
