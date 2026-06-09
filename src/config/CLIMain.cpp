@@ -25,8 +25,8 @@
 #include "input/DemoInputProvider.h"
 #include "input/DemoThrottleSource.h"
 #include "input/IDemoControls.h"
-#include "input/DemoControlsTarget.h"
 #include "input/EngineInputTarget.h"
+#include "input/IDemoSpeedEnhancer.h"
 #include "input/GearSelectorInput.h"
 #include "input/IgnitionInput.h"
 #include "input/IKeyboardInput.h"
@@ -65,16 +65,21 @@ constexpr const char* DEFAULT_PRESET_DIR = "engine-sim-bridge/preset/";
 
 // Owning context for input components — target and demoProvider must outlive
 // the KeyboardInputProvider (which holds non-owning pointers to them).
+// target is always EngineInputTarget; demoProvider is an optional speed enhancer.
 struct InputContext {
     std::unique_ptr<input::IKeyActionTarget> target;
-    std::unique_ptr<input::IInputProvider> demoProvider;  // demo mode only
+    std::unique_ptr<input::IInputProvider> demoProvider;  // demo mode only (speed enhancer)
     std::unique_ptr<input::KeyboardInputProvider> provider;
 };
 
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
     InputContext ctx;
 
-    // Connect-demo mode: VirtualICE twin with automatic gearbox
+    // Unified code path: always use EngineInputTarget as the keyboard target
+    auto keyboard = std::make_unique<::KeyboardInput>();
+    auto target = std::make_unique<input::EngineInputTarget>();
+
+    // For connect-demo mode, create DemoInputProvider as a speed enhancer
     if (args.connectDemo) {
         auto throttle = std::make_unique<input::DemoThrottleSource>();
         auto gearSelector = std::make_unique<input::GearSelectorInput>();
@@ -97,39 +102,25 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             }
         }
 
-        input::IDemoControls* controls = dynamic_cast<input::IDemoControls*>(demoProvider.get());
-        auto target = std::make_unique<input::DemoControlsTarget>(controls);
-        target->setDemoProvider(demoProvider.get());
+        // Wire demoProvider as speed enhancer to EngineInputTarget
+        target->setSpeedEnhancer(demoProvider.get());
 
-        auto keyboard = std::make_unique<::KeyboardInput>();
-        auto provider = std::make_unique<input::KeyboardInputProvider>(
-            std::move(keyboard), target.get());
-
-        if (!provider->Initialize()) {
-            throw std::runtime_error("Failed to initialize demo keyboard input provider");
+        if (!demoProvider->Initialize()) {
+            throw std::runtime_error("Failed to initialize demo input provider");
         }
 
         ctx.demoProvider = std::move(demoProvider);
-        ctx.target = std::move(target);
-        ctx.provider = std::move(provider);
-        return ctx;
     }
 
-    // Standard interactive mode
-    if (config.interactive) {
-        auto keyboard = std::make_unique<::KeyboardInput>();
-        auto target = std::make_unique<input::EngineInputTarget>();
-        auto provider = std::make_unique<input::KeyboardInputProvider>(
-            std::move(keyboard), target.get());
+    auto provider = std::make_unique<input::KeyboardInputProvider>(
+        std::move(keyboard), target.get());
 
-        if (!provider->Initialize()) {
-            throw std::runtime_error("Failed to initialize input provider");
-        }
-
-        ctx.target = std::move(target);
-        ctx.provider = std::move(provider);
-        return ctx;
+    if (!provider->Initialize()) {
+        throw std::runtime_error("Failed to initialize keyboard input provider");
     }
+
+    ctx.target = std::move(target);
+    ctx.provider = std::move(provider);
     return ctx;
 }
 
@@ -199,6 +190,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
         config.engineConfig.simulationFrequency = args.simulationFrequency;
     }
     config.engineConfig.targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : config.engineConfig.targetSynthesizerLatency;
+
+    // Gearbox mode: --auto enables automatic gearbox, default is manual
+    config.autoGearbox = args.autoGearbox;
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;

@@ -26,6 +26,8 @@ struct CommandLineArgs {
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
     bool silent = false;         // Run full audio pipeline but with zero volume
+    bool autoGearbox = false;    // Automatic gearbox (--auto flag), default is manual
+    bool manualGearbox = false;  // Explicit --manual flag (manual is already the default)
     std::string gearboxLogPath;  // Empty = no gearbox logging, path = enable CSV logging
     float crankingVolume = 0.0f; // 0-sentinel, resolved by bridge/SimulationConfig
     int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
