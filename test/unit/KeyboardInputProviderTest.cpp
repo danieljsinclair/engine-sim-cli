@@ -1,8 +1,9 @@
-// KeyboardInputProviderTest.cpp - Tests for KeyboardInputProvider
+// KeyboardInputProviderTest.cpp - Tests for consolidated KeyboardInputProvider
 // Proves: KeyHoldBridge correctly separates edge-triggered vs level-triggered keys
 
 #include <gtest/gtest.h>
 #include "input/KeyboardInputProvider.h"
+#include "input/EngineInputTarget.h"
 #include "MockKeyboardInput.h"
 
 using namespace input;
@@ -10,13 +11,18 @@ using namespace input;
 class KeyboardInputProviderTest : public ::testing::Test {
 protected:
     MockKeyboardInput* rawMock_{nullptr};
+    EngineInputTarget* rawTarget_{nullptr};
     std::unique_ptr<KeyboardInputProvider> provider_;
+    std::unique_ptr<EngineInputTarget> target_;
 
     void SetUp() override {
         auto mock = std::make_unique<MockKeyboardInput>();
         rawMock_ = mock.get();
-        provider_ = std::make_unique<KeyboardInputProvider>(std::move(mock));
+        auto target = std::make_unique<EngineInputTarget>();
+        rawTarget_ = target.get();
+        provider_ = std::make_unique<KeyboardInputProvider>(std::move(mock), target.get());
         ASSERT_TRUE(provider_->Initialize());
+        target_.reset(target.release());
     }
 
     EngineInput tick() {
