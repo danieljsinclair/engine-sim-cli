@@ -4,6 +4,8 @@
 #ifndef KEYBOARD_INPUT_H
 #define KEYBOARD_INPUT_H
 
+#include "input/IKeyboardInput.h"
+
 #ifdef _WIN32
 #include <conio.h>
 #include <windows.h>
@@ -17,13 +19,13 @@
 // Terminal Keyboard Input (Non-blocking)
 // ============================================================================
 
-class KeyboardInput {
+class KeyboardInput : public IKeyboardInput {
 public:
     KeyboardInput();
-    ~KeyboardInput();
+    ~KeyboardInput() override;
 
     // Get key press, returns -1 if no key pressed
-    int getKey();
+    int getKey() override;
 
 private:
 #ifndef _WIN32

@@ -15,7 +15,6 @@
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "input/KeyboardInput.h"
-#include "input/DemoKeyboardInputProvider.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
 #include "common/ILogging.h"
@@ -25,8 +24,11 @@
 #include "input/DemoInputProvider.h"
 #include "input/DemoThrottleSource.h"
 #include "input/IDemoControls.h"
+#include "input/DemoControlsTarget.h"
+#include "input/EngineInputTarget.h"
 #include "input/GearSelectorInput.h"
 #include "input/IgnitionInput.h"
+#include "input/IKeyboardInput.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/GearboxCsvLogger.h"
 
@@ -60,61 +62,74 @@ namespace {
 
 constexpr const char* DEFAULT_PRESET_DIR = "engine-sim-bridge/preset/";
 
-input::IInputProvider* createInputProvider(const SimulationConfig& config, ILogging* logger, const CommandLineArgs& args) {
+// Owning context for input components — target and demoProvider must outlive
+// the KeyboardInputProvider (which holds non-owning pointers to them).
+struct InputContext {
+    std::unique_ptr<input::IKeyActionTarget> target;
+    std::unique_ptr<input::IInputProvider> demoProvider;  // demo mode only
+    std::unique_ptr<input::KeyboardInputProvider> provider;
+};
+
+InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
+    InputContext ctx;
+
     // Connect-demo mode: VirtualICE twin with automatic gearbox
     if (args.connectDemo) {
-        // Create sub-components without keyboard dependency
         auto throttle = std::make_unique<input::DemoThrottleSource>();
         auto gearSelector = std::make_unique<input::GearSelectorInput>();
         auto ignition = std::make_unique<input::IgnitionInput>();
 
-        // Create DemoInputProvider (implements both IInputProvider and IDemoControls)
-        auto provider = std::make_unique<input::DemoInputProvider>(
+        auto demoProvider = std::make_unique<input::DemoInputProvider>(
             std::move(throttle),
             std::move(gearSelector),
             std::move(ignition),
             twin::IceVehicleProfile::zf8hp45()
         );
 
-        // Enable gearbox CSV logging if requested
         if (!args.gearboxLogPath.empty()) {
             static twin::GearboxCsvLogger gearboxLogger(args.gearboxLogPath);
             if (gearboxLogger.isOpen()) {
-                provider->setGearboxLogger(&gearboxLogger);
+                demoProvider->setGearboxLogger(&gearboxLogger);
                 std::cout << "  Gearbox log: " << args.gearboxLogPath << std::endl;
             } else {
                 std::cerr << "  WARNING: Could not open gearbox log: " << args.gearboxLogPath << std::endl;
             }
         }
 
-        // Get IDemoControls interface (same object as provider)
-        input::IDemoControls* controls = dynamic_cast<input::IDemoControls*>(provider.get());
+        input::IDemoControls* controls = dynamic_cast<input::IDemoControls*>(demoProvider.get());
+        auto target = std::make_unique<input::DemoControlsTarget>(controls);
+        target->setDemoProvider(demoProvider.get());
 
-        // Create CLI keyboard (static for termios persistence)
         auto keyboard = std::make_unique<::KeyboardInput>();
+        auto provider = std::make_unique<input::KeyboardInputProvider>(
+            std::move(keyboard), target.get());
 
-        // Create wrapper that bridges keyboard to IDemoControls
-        auto wrapper = std::make_unique<input::DemoKeyboardInputProvider>(
-            std::move(keyboard),
-            std::move(provider),
-            controls
-        );
-
-        if (wrapper->Initialize()) {
-            return wrapper.release();
+        if (!provider->Initialize()) {
+            throw std::runtime_error("Failed to initialize demo keyboard input provider");
         }
-        throw std::runtime_error("Failed to initialize demo keyboard input provider");
+
+        ctx.demoProvider = std::move(demoProvider);
+        ctx.target = std::move(target);
+        ctx.provider = std::move(provider);
+        return ctx;
     }
 
     // Standard interactive mode
     if (config.interactive) {
-        auto provider = std::make_unique<input::KeyboardInputProvider>(logger, config.targetLoad);
-        if (provider->Initialize()) {
-            return provider.release();
+        auto keyboard = std::make_unique<::KeyboardInput>();
+        auto target = std::make_unique<input::EngineInputTarget>();
+        auto provider = std::make_unique<input::KeyboardInputProvider>(
+            std::move(keyboard), target.get());
+
+        if (!provider->Initialize()) {
+            throw std::runtime_error("Failed to initialize input provider");
         }
-        throw std::runtime_error("Failed to initialize input provider");
+
+        ctx.target = std::move(target);
+        ctx.provider = std::move(provider);
+        return ctx;
     }
-    return nullptr;
+    return ctx;
 }
 
 presentation::IPresentation* createPresentation(const SimulationConfig& config) {
@@ -212,7 +227,8 @@ int main(int argc, char* argv[]) {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
 
-        auto inputProvider = createInputProvider(config, cliLogger.get(), args);
+        auto inputCtx = createInputProvider(config, cliLogger.get(), args);
+        auto* inputProvider = static_cast<input::IInputProvider*>(inputCtx.provider.get());
         auto presentation = createPresentation(config);
 
         try {
@@ -222,9 +238,6 @@ int main(int argc, char* argv[]) {
             // Create audio buffer once (client owns for session lifetime)
             AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
             auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
-
-            // Wire keyboard provider to session for Q/Esc stop signalling
-            auto* keyboardProvider = dynamic_cast<input::KeyboardInputProvider*>(inputProvider);
 
             // cycle through the available engine presets unless a specific one is configured
             // Each initSimulation() creates a new session, subsequent uses runs hot-swap on the same session
@@ -237,7 +250,7 @@ int main(int argc, char* argv[]) {
 
                 // Expose session to signal handler and keyboard provider
                 g_sessionForSignal = session.get();
-                if (keyboardProvider) keyboardProvider->setSession(session.get());
+                if (inputCtx.provider) inputCtx.provider->setSession(session.get());
 
                 result = session->run();
             }//for
@@ -253,7 +266,6 @@ int main(int argc, char* argv[]) {
             result = 1;
         }
 
-        delete inputProvider;
         delete presentation;
     }
     return result;
