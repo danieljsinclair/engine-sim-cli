@@ -65,10 +65,6 @@ public:
         starterMotor_ = on;
     }
 
-    void setEnginePhase(EnginePhase phase) override {
-        enginePhase_ = phase;
-    }
-
     // Audio frame production -- produces silence
     bool renderOnDemand(float* buffer, int32_t frames, int32_t* written) override {
         if (buffer && frames > 0) {
@@ -96,6 +92,13 @@ public:
     }
 
     int getSimulationFrequency() const override { return config_.simulationFrequency; }
+
+    EnginePhase getEnginePhase() const override { return enginePhase_; }
+    void applyTransition(const TransitionDecision& decision) override {
+        if (!decision.isTransition) return;
+        enginePhase_ = decision.targetPhase;
+        starterMotor_ = decision.starterMotor;
+    }
 
 private:
     ISimulatorConfig config_{};
