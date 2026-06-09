@@ -32,7 +32,9 @@ void printUsage(const char* progName) {
     std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
-    std::cout << "  --connect-demo       Run VirtualICE twin demo with automatic gearbox\n";
+    std::cout << "  --connect-demo       Run VirtualICE twin demo (gearbox mode per --auto/--manual)\n";
+    std::cout << "  --auto               Use automatic gearbox (default in --connect-demo is manual)\n";
+    std::cout << "  --manual             Use manual gearbox (default)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
@@ -102,6 +104,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
     app.add_option("--gearbox-log", args.gearboxLogPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
+    auto autoFlag = app.add_flag("--auto", args.autoGearbox, "Use automatic gearbox");
+    auto manualFlag = app.add_flag("--manual", args.manualGearbox, "Use manual gearbox (default)");
+    autoFlag->excludes(manualFlag);
 
     try {
         app.parse(argc, argv);
@@ -177,5 +182,6 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
         std::cout << "  Synth Latency: " << ANSIColors::GREEN << config.engineConfig.targetSynthesizerLatency << "s" << ANSIColors::RESET << "\n";
     }
     std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
+    std::cout << "  Gearbox: " << (config.autoGearbox ? "Auto" : "Manual") << "\n";
     std::cout << "\n";
 }

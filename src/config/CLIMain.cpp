@@ -200,6 +200,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     }
     config.engineConfig.targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : config.engineConfig.targetSynthesizerLatency;
 
+    // Gearbox mode: --auto enables automatic gearbox, default is manual
+    config.autoGearbox = args.autoGearbox;
+
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
     config.simulatorLabel = ANSIColors::CYAN + name + ANSIColors::RESET;
