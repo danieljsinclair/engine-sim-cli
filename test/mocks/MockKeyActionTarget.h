@@ -77,6 +77,10 @@ public:
         lastBrakeLevel = level;
         calls.push_back("setBrake(" + std::to_string(level) + ")");
     }
+
+    void setThrottleMomentary(double level) override {
+        calls.push_back("setThrottleMomentary(" + std::to_string(level) + ")");
+    }
 };
 
 #endif // MOCK_KEY_ACTION_TARGET_H
