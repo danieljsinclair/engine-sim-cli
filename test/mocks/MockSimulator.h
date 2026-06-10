@@ -95,7 +95,6 @@ public:
 
     EnginePhase getEnginePhase() const override { return enginePhase_; }
     void applyTransition(const TransitionDecision& decision) override {
-        if (!decision.isTransition) return;
         enginePhase_ = decision.targetPhase;
         starterMotor_ = decision.starterMotor;
     }
