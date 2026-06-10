@@ -10,14 +10,14 @@ using GS = bridge::GearSelector;
 // Helper to create a minimal EngineState for testing specific fields
 static EngineState makeState() {
     EngineState s{};
-    s.rpm = 3000.0;
-    s.throttle = 0.5;
-    s.gear = 1;
-    s.gearSelector = static_cast<int>(GS::DRIVE);
-    s.gearAutoMode = true;
-    s.vehicleSpeedKmh = 60.0;
-    s.engineTorqueNm = 200.0;
-    s.drivetrainTorqueNm = 1000.0;
+    s.engine.rpm = 3000.0;
+    s.controls.throttle = 0.5;
+    s.drivetrain.gear = 1;
+    s.controls.gearSelector = static_cast<int>(GS::DRIVE);
+    s.controls.gearAutoMode = true;
+    s.drivetrain.vehicleSpeedKmh = 60.0;
+    s.engine.engineTorqueNm = 200.0;
+    s.engine.drivetrainTorqueNm = 1000.0;
     return s;
 }
 
@@ -60,8 +60,8 @@ TEST(ConsolePresentationTest, GearDisplay_Park) {
     // but we can test gearSelectorChar logic directly since it's a pure function.
     // Replicate the mapping logic for verification:
     auto state = makeState();
-    state.gearSelector = static_cast<int>(GS::PARK);
-    state.gear = 0;
+    state.controls.gearSelector = static_cast<int>(GS::PARK);
+    state.drivetrain.gear = 0;
 
     // The gear selector char for PARK should be 'P'
     // Testing the switch logic directly:
