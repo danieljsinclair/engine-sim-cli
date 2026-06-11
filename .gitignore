@@ -49,3 +49,13 @@ escli-ios/EngineSimApp/EngineSimApp.xcodeproj/xcuserdata/
 es/
 assets/
 _escli_preset_wrapper.mr
+
+# Sonar scanner working directory
+.scannerwork/
+codeql-db/
+
+# Coverage artifacts
+*.gcno
+*.gcda
+*.gcov
+coverage-report.xml

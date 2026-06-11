@@ -6,6 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
 
+option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+if(ENABLE_COVERAGE)
+    add_compile_options(--coverage -g)
+    add_link_options(--coverage)
+endif()
+
 # Find required packages
 find_package(Threads REQUIRED)
 include(FetchContent)
@@ -27,26 +33,45 @@ if(BRIDGE_USE_PREBUILT)
         set(BRIDGE_BUILD_DIR "${CMAKE_SOURCE_DIR}/engine-sim-bridge/build")
     endif()
 
-    set(BRIDGE_DYLIB "${BRIDGE_BUILD_DIR}/libenginesim.dylib")
+    # When coverage is enabled, expect static library; otherwise shared library
+    if(ENABLE_COVERAGE)
+        set(BRIDGE_LIB "${BRIDGE_BUILD_DIR}/libenginesim.a")
+        set(BRIDGE_LIB_TYPE STATIC)
+    else()
+        set(BRIDGE_LIB "${BRIDGE_BUILD_DIR}/libenginesim.dylib")
+        set(BRIDGE_LIB_TYPE SHARED)
+    endif()
 
-    if(NOT EXISTS "${BRIDGE_DYLIB}")
+    if(NOT EXISTS "${BRIDGE_LIB}")
         message(FATAL_ERROR
-            "engine-sim-bridge dylib not found at ${BRIDGE_DYLIB}\n"
+            "engine-sim-bridge library not found at ${BRIDGE_LIB}\n"
             "The bridge must be built first. Run 'make build' from the CLI root."
         )
     endif()
 
-    add_library(engine-sim-bridge SHARED IMPORTED)
-    set_target_properties(engine-sim-bridge PROPERTIES
-        IMPORTED_LOCATION "${BRIDGE_DYLIB}"
-        IMPORTED_SONAME "${BRIDGE_BUILD_DIR}/libenginesim.1.dylib"
-        INTERFACE_INCLUDE_DIRECTORIES
-            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/include"
-            "${CMAKE_SOURCE_DIR}/engine-sim-bridge"
-            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/dependencies/dr_libs"
-            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include"
-            "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include"
-    )
+    add_library(engine-sim-bridge ${BRIDGE_LIB_TYPE} IMPORTED)
+    if(ENABLE_COVERAGE)
+        set_target_properties(engine-sim-bridge PROPERTIES
+            IMPORTED_LOCATION "${BRIDGE_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/include"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/dependencies/dr_libs"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include"
+        )
+    else()
+        set_target_properties(engine-sim-bridge PROPERTIES
+            IMPORTED_LOCATION "${BRIDGE_LIB}"
+            IMPORTED_SONAME "${BRIDGE_BUILD_DIR}/libenginesim.1.dylib"
+            INTERFACE_INCLUDE_DIRECTORIES
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/include"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/dependencies/dr_libs"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include"
+                "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include"
+        )
+    endif()
 else()
     # iOS: build bridge from source with the active toolchain.
     add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge)
