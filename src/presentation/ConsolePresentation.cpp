@@ -136,20 +136,24 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
         << std::setprecision(3) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
 
-    // Audio timing diagnostics
-    if (state.audio.renderMs > 0.0) {
-        std::string budgetColor = ANSIColors::getDispositionColour(state.audio.budgetPct < 80, state.audio.budgetPct < 100);
-        out << "[" << state.audio.audioMode << "]"
-            << " req=" << std::setw(3) << state.audio.framesRequested
+    // Audio mode label (e.g. [SYNC-PULL]) - always shown
+    out << "[" << state.audio.audioMode << "]";
+
+    // Detailed frame timing - only with --diagnostic-frames
+    if (config_.diagnostics.frames && state.audio.renderMs > 0.0) {
+        out << " req=" << std::setw(3) << state.audio.framesRequested
             << " got=" << std::setw(3) << state.audio.framesRendered
             << " took=" << std::setw(5) << std::fixed << std::setprecision(1) << state.audio.renderMs << "ms"
             << " room=" << std::setw(5) << std::showpos << std::setprecision(1) << state.audio.headroomMs
-            << std::noshowpos << "ms"
-            << budgetColor << "budget: "  << std::setw(3) << std::setprecision(0) << state.audio.budgetPct << "%" << ANSIColors::RESET << " ";
+            << std::noshowpos << "ms";
     }
 
-    // Callback throughput metrics
-    if (state.audio.callbackRateHz > 0.0) {
+    // Budget - always shown
+    out << " " << ANSIColors::getDispositionColour(state.audio.budgetPct < 80, state.audio.budgetPct < 100)
+        << "budget: " << std::fixed << std::setw(3) << std::setprecision(0) << state.audio.budgetPct << "%" << ANSIColors::RESET << " ";
+
+    // Throughput summary - only with --diagnostic-freq
+    if (config_.diagnostics.freq) {
         double neededKfps = state.audio.sampleRate / 1000.0;
         double generatingKfps = state.audio.generatingRateFps / 1000.0;
 
@@ -158,7 +162,7 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
                               : state.audio.simulationFrequency <= 15000 ? ANSIColors::YELLOW
                               : ANSIColors::WARNING;
 
-        // Colour coding: green if generating >= needed, yellow if >= 90%, red otherwise
+        // Generating rate: green if >= needed, yellow if >= 90%, red otherwise
         std::string genColor = ANSIColors::getDispositionColour(
             generatingKfps >= neededKfps, generatingKfps >= neededKfps * 0.9);
 
@@ -166,9 +170,7 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
             state.audio.trendPct >= 0.0, state.audio.trendPct >= -1.0);
 
         out << "[Freq=" << freqColor << state.audio.simulationFrequency << ANSIColors::RESET
-            << " calls=" << std::setw(4) << std::fixed << std::setprecision(0) << state.audio.callbackRateHz << "Hz "
-            << "need" << std::setw(5) << std::setprecision(1) << neededKfps << "kfps "
-            << "actual=" << genColor << std::setw(5) << generatingKfps << "kfps" << ANSIColors::RESET << " "
+            << " actual=" << genColor << std::fixed << std::setw(5) << std::setprecision(1) << generatingKfps << "kfps" << ANSIColors::RESET << " "
             << "trend=" << trendColor << std::setw(5) << std::showpos << std::setprecision(1) << state.audio.trendPct
             << std::noshowpos << "%" << ANSIColors::RESET << "]";
     }

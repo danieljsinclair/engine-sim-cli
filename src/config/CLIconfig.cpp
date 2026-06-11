@@ -42,7 +42,9 @@ void printUsage(const char* progName) {
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
-    std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n\n";
+    std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n";
+    std::cout << "  --diagnostic-frames  Show per-frame audio buffer timing line (req=/got=/took=/room=)\n";
+    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
     std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
@@ -107,6 +109,11 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     auto autoFlag = app.add_flag("--auto", args.autoGearbox, "Use automatic gearbox");
     auto manualFlag = app.add_flag("--manual", args.manualGearbox, "Use manual gearbox (default)");
     autoFlag->excludes(manualFlag);
+
+    app.add_flag("--diagnostic-frames", args.diagnostics.frames,
+                 "Show per-frame audio buffer timing line (req=/got=/took=/room=)");
+    app.add_flag("--diagnostic-freq", args.diagnostics.freq,
+                 "Show per-frame update-call frequency line (calls=/need/kfps)");
 
     try {
         app.parse(argc, argv);
