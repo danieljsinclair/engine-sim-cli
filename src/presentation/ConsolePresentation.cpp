@@ -53,30 +53,56 @@ void ConsolePresentation::Shutdown() {
     initialized_ = false;
 }
 
-void ConsolePresentation::ShowEngineState(const EngineState& state) {
+void ConsolePresentation::ShowSimulatorStates(const EngineState& state) {
     if (!config_.showDiagnostics) {
         return;
     }
 
-    std::cout << formatEngineState(state) << "\n" << std::flush;
+    std::cout << formatSimulatorState(state) << "\n" << std::flush;
 }
 
-std::string ConsolePresentation::formatEngineState(const EngineState& state) const {
+std::string ConsolePresentation::formatSimulatorState(const EngineState& state) const {
     std::ostringstream out;
 
+    formatRPM(state, out);
+    formatStarterState(state, out);
+    formatNameState(state, out);
+    formatPedalState(state, out);
+    formatGearState(state, out);
+    formatSpeedState(state, out);
+    formatTargetSpeedState(state, out);
+    formatTorqueState(state, out);
+    formatDynoState(state, out);
+    formatFlowState(state, out);
+    formatAudioState(state, out);
+    return out.str();
+}
+
+std::string ConsolePresentation::formatRPM(const EngineState& state, std::ostringstream& out) const {
     // RPM
     int rpm = static_cast<int>(state.engine.rpm);
     if (rpm < EngineSimDefaults::RPM_DISPLAY_FLOOR && state.engine.rpm > 0) rpm = 0;
     out << "[" << std::setw(5) << rpm << " RPM] ";
+    return out.str();
+}
 
+std::string ConsolePresentation::formatStarterState(const EngineState& state, std::ostringstream& out) const {
     // Starter & Ignition — labels plain, digits colored
     auto boolColor = [](bool on) { return on ? ANSIColors::GREEN : ANSIColors::RED; };
     out << "[S:" << boolColor(state.engine.starterEngaged) << (state.engine.starterEngaged ? 1 : 0)
         << ANSIColors::RESET << " I:" << boolColor(state.controls.ignition) << (state.controls.ignition ? 1 : 0)
         << ANSIColors::RESET << "] ";
+    return out.str();
+}
+
+std::string ConsolePresentation::formatNameState(const EngineState& state, std::ostringstream& out) const {
 
     // Preset short name (empty is fine — just a double space)
     out << state.presetShortName << " ";
+    return out.str();
+}
+
+std::string ConsolePresentation::formatPedalState(const EngineState& state, std::ostringstream& out) const {
 
     // Engine phase and Throttle + Brake
     out << EnginePhaseName(state.engine.phase) << " [Gas: " << std::setw(3) << static_cast<int>(state.controls.throttle * 100) << "%";
@@ -85,7 +111,11 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
     out << brakeColor << " B:" << std::fixed << std::setprecision(1) << state.controls.brakeLevel << ANSIColors::RESET;
     
     out << "] ";
+    return out.str();
+}
 
+
+std::string ConsolePresentation::formatGearState(const EngineState& state, std::ostringstream& out) const {
     // Gear: [Gear:XMG] format where X=selector, M/A=mode, G=gear number
     {
         char selectorChar = gearSelectorChar(state.controls.gearSelector);
@@ -94,12 +124,32 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
 
         out << "[Gear:" << selectorChar << modeChar << gearNum << "] ";
     }
+    return out.str();
+}
+
+std::string ConsolePresentation::formatSpeedState(const EngineState& state, std::ostringstream& out) const {
 
     // Road speed — displayed as whole-number mph (right-aligned 3-char field)
     {
         int mph = static_cast<int>(std::round(state.drivetrain.vehicleSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
         out << "[" << std::setw(3) << mph << " mph] ";
     }
+    return out.str();
+}
+
+std::string ConsolePresentation::formatTargetSpeedState(const EngineState& state, std::ostringstream& out) const {
+
+    // Commanded road-speed target (','/'.' keys). Visible even in neutral where
+    // the engine isn't driven by road speed. Negative sentinel = not commanded.
+    if (state.controls.commandedSpeedKmh >= 0.0) {
+        int tgtMph = static_cast<int>(std::round(state.controls.commandedSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
+        out << ANSIColors::INFO << "[Tgt: " << std::setw(3) << tgtMph << " mph]"
+            << ANSIColors::RESET << " ";
+    }
+    return out.str();
+}
+
+std::string ConsolePresentation::formatTorqueState(const EngineState& state, std::ostringstream& out) const {
 
     // Engine torque and drivetrain torque: green=positive (power), red=negative (braking)
     {
@@ -117,6 +167,10 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
             << ": Drive]"
             << std::noshowpos << ANSIColors::RESET << " ";
     }
+    return out.str();
+}
+
+std::string ConsolePresentation::formatDynoState(const EngineState& state, std::ostringstream& out) const {
 
     // Dyno load (shown when torque is being applied)
     if (state.engine.engineTorqueNm > 0) {
@@ -127,14 +181,23 @@ std::string ConsolePresentation::formatEngineState(const EngineState& state) con
             out << "[Load: " << static_cast<int>(state.drivetrain.dynoTorque) << " ft*lbs] ";
         }
     }
+    return out.str();
+}
 
-    // Underruns
-    out << "[UR: " << state.audio.underrunCount << "] ";
+std::string ConsolePresentation::formatFlowState(const EngineState& state, std::ostringstream& out) const {
 
     // Exhaust flow (cm³/s)
     out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8)
         << std::setprecision(3) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
+
+    return out.str();
+}
+
+std::string ConsolePresentation::formatAudioState(const EngineState& state, std::ostringstream& out) const {
+
+    // Underruns
+    out << "[UR: " << state.audio.underrunCount << "] ";
 
     // Audio mode label (e.g. [SYNC-PULL]) - always shown
     out << "[" << state.audio.audioMode << "]";
