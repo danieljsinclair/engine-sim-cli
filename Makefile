@@ -18,6 +18,9 @@ BUILD_PARALLEL_LEVEL ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CTEST_VERBOSE ?= 0
 CTEST_UI_FLAGS := $(if $(filter 1,$(CTEST_VERBOSE)),-V,--progress)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
+SONAR_STAMP := $(BUILD_DIR)/.sonar-scan.stamp
+SONAR_PROJECT_PROPERTIES := sonar-project.properties
+COMPILE_DB := $(BUILD_DIR)/compile_commands.json
 
 # Build system: Ninja (recommended) or Make (fallback)
 # Ninja handles parallel dependency ordering correctly; Make has a known race
@@ -42,7 +45,7 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .DEFAULT_GOAL := all
 .PHONY: all build clean scrub test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
-        run run-json help build-cross clean-cross
+        run run-json help build-cross clean-cross sonar-clean
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 
 # ============================================================================
@@ -161,18 +164,20 @@ remove-orphans:
 	@find . -path ./$(BUILD_DIR) -prune -o -name "*.a" -type f -print -delete 2>/dev/null || true
 	@find . -path ./$(BUILD_DIR) -prune -o -name "_deps" -type d -print -exec rm -rf {} + 2>/dev/null || true
 
-clean: remove-orphans clean_esp32
+clean: remove-orphans clean_esp32 sonar-clean
 	+@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
 	@if [ -d $(BUILD_DIR) ]; then \
 		cmake --build $(BUILD_DIR) --target clean >/dev/null 2>&1 || true; \
 	fi
 	@rm -rf $(CLI_ES)
+	@rm -rf .scannerwork
 
 scrub: clean
 	@echo "Scrubbing all build artifacts..."
 	+@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
 	@rm -rf $(BUILD_DIR) $(CLI_ES)
 	@$(MAKE) remove-orphans
+	@rm -rf .scannerwork
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
 
 # ---------------------------------------------------------------------------
@@ -303,6 +308,7 @@ help:
 	@echo "Targets:"
 	@echo "  make          - Build + test (complete pipeline)"
 	@echo "  make build    - Compile everything (no tests)"
+	@echo "  make sonar-scan - Run SonarQube scan (only re-runs when build/inputs change)"
 	@echo "  make test     - Build then run all tests (full)"
 	@echo "  make test-deep - Run bridge preset golden-audio regressions"
 	@echo "  make test-fast - Build then run fast tests (skips 6 heavy groups)"
@@ -316,6 +322,22 @@ help:
 	@echo "  make deploy_esp32 - Flash ESP32 firmware"
 	@echo "  make run_esp32    - Build, flash, and monitor ESP32"
 	@echo "  make help     - Show this help"
+
+# ============================================================================
+# SonarQube scan - standalone quality gate for CLI code
+# ============================================================================
+
+sonar-scan: $(SONAR_STAMP)
+
+$(SONAR_STAMP): $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES)
+	@echo "=== [engine-sim-cli] Running Sonar scan ==="
+	-SONAR_TOKEN="$(or $(SONAR_TOKEN_ES),$(SONAR_TOKEN))" sonar-scanner; touch $@
+
+$(COMPILE_DB): $(BUILD_DIR)/CMakeCache.txt
+
+sonar-clean:
+	@rm -f $(SONAR_STAMP)
+	@rm -rf .scannerwork
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
