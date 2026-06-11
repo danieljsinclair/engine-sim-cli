@@ -130,6 +130,7 @@ presentation::IPresentation* createPresentation(const SimulationConfig& config) 
     // Note: interactive conceptually belongs to IInputProvider but is surfaced here for presentation
     presConfig.interactive = config.interactive;
     presConfig.duration = config.duration;
+    presConfig.diagnostics = config.diagnostics;
 
     auto pres = std::make_unique<presentation::ConsolePresentation>();
     if (pres->Initialize(presConfig)) {
@@ -200,6 +201,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 
     // Factory instruction
     config.simulatorType = args.sineMode ? SimulatorType::SineWave : SimulatorType::PistonEngine;
+
+    // Forward selective debug categories to the presentation layer
+    config.diagnostics = args.diagnostics;
 
     return config;
 }

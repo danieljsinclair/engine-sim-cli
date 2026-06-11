@@ -7,6 +7,7 @@
 #include <atomic>
 #include <string>
 #include "simulator/EngineSimTypes.h"
+#include "io/IPresentation.h"  // DiagnosticOutputFilter
 
 // Forward declarations
 class SimulationConfig;
@@ -33,6 +34,10 @@ struct CommandLineArgs {
     int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
     double synthLatency = 0.0;   // Synth latency seconds — 0 means use EngineSimDefaults
     int preFillMs = 0;           // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
+
+    // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
+    // unmutes one optional diagnostic line; all default off.
+    presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
 };
 
 // ============================================================================
