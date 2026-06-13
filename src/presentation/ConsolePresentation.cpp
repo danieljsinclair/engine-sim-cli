@@ -14,8 +14,8 @@
 
 namespace presentation {
 
-namespace {
-// Gear selector character lookup table
+// Gear selector character lookup. Exposed via the header so tests verify the
+// real production mapping rather than a duplicated copy.
 char gearSelectorChar(int selector) {
     using GS = bridge::GearSelector;
     switch (static_cast<GS>(selector)) {
@@ -24,13 +24,38 @@ char gearSelectorChar(int selector) {
         case GS::NEUTRAL: return 'N';
         case GS::DRIVE:   return 'D';
         default:
-            // Values 2-8 = manual gear select (DRIVE=1, so manual starts at 2)
-            if (selector >= 2 && selector <= 8) {
+            // Manual gear-selection positions share the BridgeGear numbering
+            // (FIRST=1 .. EIGHTH=8). DRIVE is 99, so these never collide.
+            // All of 1-8 render as their digit; previously '1' fell through to '?'.
+            if (selector >= 1 && selector <= 8) {
                 return '0' + selector;
             }
             return '?';
     }
 }
+
+// Third field: what the transmission is actually doing (P/R/N/1-8).
+// PARK/REVERSE come from the selector (the physics has no reverse/park gear);
+// NEUTRAL/DRIVE/forward reflect the physical gear number.
+char gearChar(int selector, int physicalGear) {
+    using GS = bridge::GearSelector;
+    switch (static_cast<GS>(selector)) {
+        case GS::PARK:    return 'P';   // transmission parked/locked
+        case GS::REVERSE: return 'R';
+        default: break;                 // NEUTRAL/DRIVE/manual -> physical gear
+    }
+    if (physicalGear == 0) return 'N';
+    if (physicalGear >= 1 && physicalGear <= 8) return static_cast<char>('0' + physicalGear);
+    return '?';
+}
+
+// "[selector][mode][gear]". Manual mirrors the selector for the gear field
+// (selector == gear); auto derives it from the physical gear via gearChar.
+std::string gearTriple(int selector, bool autoMode, int physicalGear) {
+    const char field1 = gearSelectorChar(selector);
+    const char field2 = autoMode ? 'A' : 'M';
+    const char field3 = autoMode ? gearChar(selector, physicalGear) : gearSelectorChar(selector);
+    return std::string(1, field1) + field2 + field3;
 }
 
 ConsolePresentation::ConsolePresentation()
@@ -116,14 +141,10 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
 
 
 std::string ConsolePresentation::formatGearState(const EngineState& state, std::ostringstream& out) const {
-    // Gear: [Gear:XMG] format where X=selector, M/A=mode, G=gear number
-    {
-        char selectorChar = gearSelectorChar(state.controls.gearSelector);
-        char modeChar = state.controls.gearAutoMode ? 'A' : 'M';
-        int gearNum = state.drivetrain.gear; // BridgeGear: 0=neutral, 1-8=gears
-
-        out << "[Gear:" << selectorChar << modeChar << gearNum << "] ";
-    }
+    // [Gear:XMG] where X=selector, M/A=mode, G=actual gear (transmission state).
+    out << "[Gear:"
+        << gearTriple(state.controls.gearSelector, state.controls.gearAutoMode, state.drivetrain.gear)
+        << "] ";
     return out.str();
 }
 
