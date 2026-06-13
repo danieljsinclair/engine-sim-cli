@@ -47,89 +47,102 @@ protected:
 // Gear selector character mapping
 // ============================================================================
 
-// gearSelectorChar is in an anonymous namespace, so we test it indirectly
-// through the output string. We verify the character appears in the output.
+// gearSelectorChar is a public free function in the presentation namespace
+// (declared in ConsolePresentation.h), so these tests exercise the REAL
+// production mapping rather than a duplicated copy.
 
-TEST(ConsolePresentationTest, GearDisplay_Park) {
-    ConsolePresentation p;
-    PresentationConfig cfg;
-    cfg.showDiagnostics = true;
-    p.Initialize(cfg);
+// ============================================================================
+// gearChar: the third field — actual engaged gear / transmission state
+// ============================================================================
 
-    // We can't directly access formatEngineState (private),
-    // but we can test gearSelectorChar logic directly since it's a pure function.
-    // Replicate the mapping logic for verification:
-    auto state = makeState();
-    state.controls.gearSelector = static_cast<int>(GS::PARK);
-    state.drivetrain.gear = 0;
-
-    // The gear selector char for PARK should be 'P'
-    // Testing the switch logic directly:
-    int selector = static_cast<int>(GS::PARK);
-    char expected = 'P';
-    switch (static_cast<GS>(selector)) {
-        case GS::PARK:    expected = 'P'; break;
-        case GS::REVERSE: expected = 'R'; break;
-        case GS::NEUTRAL: expected = 'N'; break;
-        case GS::DRIVE:   expected = 'D'; break;
-        default: expected = '?'; break;
-    }
-    EXPECT_EQ(expected, 'P');
+TEST(GearCharTest, ParkSelector_ReturnsP) {
+    EXPECT_EQ(presentation::gearChar(static_cast<int>(GS::PARK), 0), 'P');
 }
 
-// Since gearSelectorChar is in an anonymous namespace, we test it
-// by replicating the exact switch statement from ConsolePresentation.cpp
-// and verifying each case. This mirrors the production code exactly.
+TEST(GearCharTest, ReverseSelector_ReturnsR) {
+    EXPECT_EQ(presentation::gearChar(static_cast<int>(GS::REVERSE), 0), 'R');
+}
 
-namespace {
-char gearSelectorChar(int selector) {
-    using GS = bridge::GearSelector;
-    switch (static_cast<GS>(selector)) {
-        case GS::PARK:    return 'P';
-        case GS::REVERSE: return 'R';
-        case GS::NEUTRAL: return 'N';
-        case GS::DRIVE:   return 'D';
-        default:
-            if (selector >= static_cast<int>(GS::NEUTRAL) + 1 &&
-                selector <= static_cast<int>(GS::NEUTRAL) + 8) {
-                return '0' + selector;
-            }
-            return '?';
+TEST(GearCharTest, NeutralPhysical0_ReturnsN) {
+    EXPECT_EQ(presentation::gearChar(static_cast<int>(GS::NEUTRAL), 0), 'N');
+}
+
+TEST(GearCharTest, DrivePhysical1through8_ReturnsDigits) {
+    for (int g = 1; g <= 8; ++g) {
+        EXPECT_EQ(presentation::gearChar(static_cast<int>(GS::DRIVE), g),
+                  static_cast<char>('0' + g));
     }
 }
+
+TEST(GearCharTest, DrivePhysical0_ReturnsN) {
+    // Drive but no ratio engaged (transient) -> neutral glyph.
+    EXPECT_EQ(presentation::gearChar(static_cast<int>(GS::DRIVE), 0), 'N');
 }
+
+TEST(GearCharTest, PhysicalOutOfRange_ReturnsQuestion) {
+    EXPECT_EQ(presentation::gearChar(static_cast<int>(GS::DRIVE), 9), '?');
+}
+
+// ============================================================================
+// gearTriple: the composite [selector][mode][gear] readout
+// ============================================================================
+
+TEST(GearTripleTest, Manual_MirrorsSelectorForGear) {
+    // Manual: selector == gear, so field-3 mirrors field-1.
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::REVERSE), false, 0), "RMR");
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::NEUTRAL), false, 0), "NMN");
+    EXPECT_EQ(presentation::gearTriple(1, false, 1), "1M1");
+    EXPECT_EQ(presentation::gearTriple(2, false, 2), "2M2");
+    EXPECT_EQ(presentation::gearTriple(3, false, 3), "3M3");
+    EXPECT_EQ(presentation::gearTriple(8, false, 8), "8M8");
+}
+
+TEST(GearTripleTest, Auto_DerivesGearFromPhysics) {
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::PARK), true, 0), "PAP");
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::REVERSE), true, 0), "RAR");
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::NEUTRAL), true, 0), "NAN");
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::DRIVE), true, 1), "DA1");
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::DRIVE), true, 2), "DA2");
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::DRIVE), true, 3), "DA3");
+}
+
+// gearSelectorChar is now a public free function in the presentation namespace
+// (declared in ConsolePresentation.h), so these tests exercise the REAL
+// production mapping rather than a duplicated copy.
 
 TEST(GearSelectorCharTest, Park_ReturnsP) {
-    EXPECT_EQ(gearSelectorChar(static_cast<int>(GS::PARK)), 'P');
+    EXPECT_EQ(presentation::gearSelectorChar(static_cast<int>(GS::PARK)), 'P');
 }
 
 TEST(GearSelectorCharTest, Reverse_ReturnsR) {
-    EXPECT_EQ(gearSelectorChar(static_cast<int>(GS::REVERSE)), 'R');
+    EXPECT_EQ(presentation::gearSelectorChar(static_cast<int>(GS::REVERSE)), 'R');
 }
 
 TEST(GearSelectorCharTest, Neutral_ReturnsN) {
-    EXPECT_EQ(gearSelectorChar(static_cast<int>(GS::NEUTRAL)), 'N');
+    EXPECT_EQ(presentation::gearSelectorChar(static_cast<int>(GS::NEUTRAL)), 'N');
 }
 
 TEST(GearSelectorCharTest, Drive_ReturnsD) {
-    EXPECT_EQ(gearSelectorChar(static_cast<int>(GS::DRIVE)), 'D');
+    EXPECT_EQ(presentation::gearSelectorChar(static_cast<int>(GS::DRIVE)), 'D');
 }
 
 TEST(GearSelectorCharTest, ManualGears_1through8) {
-    EXPECT_EQ(gearSelectorChar(1), '1');
-    EXPECT_EQ(gearSelectorChar(2), '2');
-    EXPECT_EQ(gearSelectorChar(3), '3');
-    EXPECT_EQ(gearSelectorChar(4), '4');
-    EXPECT_EQ(gearSelectorChar(5), '5');
-    EXPECT_EQ(gearSelectorChar(6), '6');
-    EXPECT_EQ(gearSelectorChar(7), '7');
-    EXPECT_EQ(gearSelectorChar(8), '8');
+    // Gear NUMBER 1 (FIRST) must render as '1', never '?' (regression: the old
+    // 2-8 range excluded 1, producing the '?M1' status line).
+    EXPECT_EQ(presentation::gearSelectorChar(1), '1');
+    EXPECT_EQ(presentation::gearSelectorChar(2), '2');
+    EXPECT_EQ(presentation::gearSelectorChar(3), '3');
+    EXPECT_EQ(presentation::gearSelectorChar(4), '4');
+    EXPECT_EQ(presentation::gearSelectorChar(5), '5');
+    EXPECT_EQ(presentation::gearSelectorChar(6), '6');
+    EXPECT_EQ(presentation::gearSelectorChar(7), '7');
+    EXPECT_EQ(presentation::gearSelectorChar(8), '8');
 }
 
 TEST(GearSelectorCharTest, UnknownValue_ReturnsQuestionMark) {
-    EXPECT_EQ(gearSelectorChar(-99), '?');
-    EXPECT_EQ(gearSelectorChar(50), '?');
-    EXPECT_EQ(gearSelectorChar(9), '?');
+    EXPECT_EQ(presentation::gearSelectorChar(-99), '?');
+    EXPECT_EQ(presentation::gearSelectorChar(50), '?');
+    EXPECT_EQ(presentation::gearSelectorChar(9), '?');
 }
 
 // ============================================================================
@@ -243,22 +256,6 @@ TEST(ANSIColorTest, ColorsAreDistinct) {
     EXPECT_NE(ANSIColors::GREEN, ANSIColors::RED);
     EXPECT_NE(ANSIColors::GREEN, ANSIColors::RESET);
     EXPECT_NE(ANSIColors::RED, ANSIColors::RESET);
-}
-
-// ============================================================================
-// Gear display mode: A for auto, M for manual
-// ============================================================================
-
-TEST(GearModeTest, AutoMode_DisplaysA) {
-    bool gearAutoMode = true;
-    char modeChar = gearAutoMode ? 'A' : 'M';
-    EXPECT_EQ(modeChar, 'A');
-}
-
-TEST(GearModeTest, ManualMode_DisplaysM) {
-    bool gearAutoMode = false;
-    char modeChar = gearAutoMode ? 'A' : 'M';
-    EXPECT_EQ(modeChar, 'M');
 }
 
 // ============================================================================

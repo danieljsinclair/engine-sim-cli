@@ -9,6 +9,25 @@
 
 namespace presentation {
 
+// Maps a gear-selector value to its single-character display glyph (field 1).
+// PARK/REVERSE/NEUTRAL/DRIVE -> P/R/N/D; manual gear-selection digits 1-8
+// render as that digit; any other value renders '?'.
+// Exposed (free function) so tests verify the production mapping, not a copy.
+char gearSelectorChar(int selector);
+
+// Maps the actual engaged gear — the third display field — to its glyph.
+// PARK selector -> 'P' (transmission locked); REVERSE selector -> 'R';
+// otherwise the physical gear: 0 -> 'N', 1..8 -> digit, else '?'.
+// The third field reads "what the transmission is doing": P/R/N/1-8.
+char gearChar(int selector, int physicalGear);
+
+// Composes the 3-character gear readout "[selector][mode][gear]" (no framing).
+// field1 = selectorChar(selector); field2 = autoMode ? 'A' : 'M';
+// field3 = autoMode ? gearChar(selector, physical) : selectorChar(selector)
+//   (manual: selector == gear, so field-3 mirrors field-1).
+// Pure and public so the composite is testable without friend hacks.
+std::string gearTriple(int selector, bool autoMode, int physicalGear);
+
 class ConsolePresentation : public IPresentation {
 public:
     ConsolePresentation();

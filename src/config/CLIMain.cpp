@@ -78,9 +78,16 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     // Unified code path: always use EngineInputTarget as the keyboard target
     auto keyboard = std::make_unique<::KeyboardInput>();
     auto target = std::make_unique<input::EngineInputTarget>();
+    // Engage the automatic gearbox for --auto or --connect-demo. Both wire the
+    // vehicle-twin provider (owns AutomaticGearbox + PRND selector + longitudinal
+    // dynamics) so the keyboard can select P/R/N/D and the box auto-shifts.
+    // (--auto and --connect-demo currently share one speed source; splitting
+    //  that for real-vehicle integration is the deferred interface refactor.)
+    target->setGearAutoMode(config.autoGearbox || args.connectDemo);
 
-    // For connect-demo mode, create DemoInputProvider as a speed enhancer
-    if (args.connectDemo) {
+    // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
+    // and route the shift keys to its PRND selector (P/R/N/D).
+    if (args.connectDemo || args.autoGearbox) {
         auto throttle = std::make_unique<input::DemoThrottleSource>();
         auto gearSelector = std::make_unique<input::GearSelectorInput>();
         auto ignition = std::make_unique<input::IgnitionInput>();
@@ -104,6 +111,9 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
 
         // Wire demoProvider as speed enhancer to EngineInputTarget
         target->setSpeedEnhancer(demoProvider.get());
+        // Route shift keys to the demo provider's PRNDL selector so the keyboard
+        // can drive it into DRIVE (P/R/N/D) for the automatic gearbox.
+        target->setDemoControls(demoProvider.get());
 
         if (!demoProvider->Initialize()) {
             throw std::runtime_error("Failed to initialize demo input provider");
