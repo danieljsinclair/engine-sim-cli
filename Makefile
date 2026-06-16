@@ -304,9 +304,9 @@ test-quick: build
 
 testquick: test-quick
 
-# Explicit long-running tier: bridge golden-audio regressions.
+# Explicit long-running tier: bridge isomorphism + engine-sim physics tests.
 test-deep: build
-	@echo "=== [engine-sim-cli] Deep mode: bridge preset golden-audio regressions ==="
+	@echo "=== [engine-sim-cli] Deep mode: bridge isomorphism + engine-sim physics tests ==="
 	+@if $(MAKE) -C engine-sim-bridge test-deep; then \
 		echo "=== [engine-sim-cli] SUMMARY: PASS (deep) ==="; \
 		printf '\033[0;32m=== [engine-sim-cli] RESULT: DEEP TESTS PASSED ===\033[0m\n'; \
@@ -338,7 +338,7 @@ help:
 	@echo "  make coverage-summary - Show local coverage % from lcov.info"
 	@echo "  make sonar-summary - Show SonarCloud issues summary"
 	@echo "  make test     - Build then run all tests (full)"
-	@echo "  make test-deep - Run bridge preset golden-audio regressions"
+	@echo "  make test-deep - Run bridge isomorphism + engine-sim physics tests"
 	@echo "  make test-fast - Build then run fast tests (skips 6 heavy groups)"
 	@echo "  make test-quick/testquick - Build then run quick tests only"
 	@echo "  make presets  - Compile .mr wrappers to JSON presets"
