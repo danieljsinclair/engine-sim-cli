@@ -48,7 +48,6 @@ escli-ios/EngineSimApp/EngineSimApp.xcodeproj/xcuserdata/
 # Canonical source: engine-sim-bridge/es/
 es/
 assets/
-_escli_preset_wrapper.mr
 
 # Sonar scanner working directory
 .scannerwork/
