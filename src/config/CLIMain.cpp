@@ -31,6 +31,7 @@
 #include "input/IgnitionInput.h"
 #include "input/IKeyboardInput.h"
 #include "input/ReplayTelemetryProvider.h"
+#include "simulator/BridgeSimulator.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/GearboxCsvLogger.h"
 
@@ -297,7 +298,26 @@ int main(int argc, char* argv[]) {
                 // Expose session to signal handler and keyboard provider
                 g_sessionForSignal = session.get();
                 if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
-                if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
+                if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+                    replay->setSession(session.get());
+                    // Reconfigure the replay gearbox to match the ACTUAL engine preset's
+                    // transmission (the default zf8hp45 has different ratios/gears than
+                    // a C63 7-speed or a GM LS 6-speed — the shift table must match).
+                    auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator.get());
+                    if (bridgeSim) {
+                        auto* rawSim = bridgeSim->getInternalSimulator();
+                        auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
+                        auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
+                        if (trans && vehicle && trans->getGearCount() > 0) {
+                            std::vector<double> ratios;
+                            for (int g = 0; g < trans->getGearCount(); ++g) {
+                                ratios.push_back(trans->getGearRatio(g));
+                            }
+                            replay->reconfigureProfile(ratios, vehicle->getDiffRatio(),
+                                                        vehicle->getTireRadius());
+                        }
+                    }
+                }
 
                 result = session->run();
             }//for
