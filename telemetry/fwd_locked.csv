@@ -1,0 +1,4 @@
+time_s,throttle_pct,road_speed_kmh,gear,clutch_pct
+0.0,0,,-1,
+2.5,50,,1,
+8.0,50,,1,

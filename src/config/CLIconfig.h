@@ -31,6 +31,9 @@ struct CommandLineArgs {
     bool manualGearbox = false;  // Explicit --manual flag (manual is already the default)
     std::string gearboxLogPath;  // Empty = no gearbox logging, path = enable CSV logging
     float crankingVolume = 0.0f; // 0-sentinel, resolved by bridge/SimulationConfig
+    float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
+    bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
+    std::string replayTelemetryPath;  // --replay-telemetry <csv>: scripted driving from a telemetry CSV
     int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
     double synthLatency = 0.0;   // Synth latency seconds — 0 means use EngineSimDefaults
     int preFillMs = 0;           // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
