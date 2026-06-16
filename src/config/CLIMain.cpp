@@ -302,6 +302,16 @@ int main(int argc, char* argv[]) {
                 result = session->run();
             }//for
 
+            // Tell the user why playback stopped
+            if (config.interactive) {
+                std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
+            } else if (config.duration > 0.0) {
+                std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
+                          << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
+            } else {
+                std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
+            }
+
             g_sessionForSignal = nullptr;
             
             if (session) {
