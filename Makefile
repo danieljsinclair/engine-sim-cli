@@ -9,7 +9,7 @@
 # Full pipeline: make all -> build + test
 
 BUILD_DIR ?= build
-BUILD_TYPE ?= Release
+BUILD_TYPE ?= RelWithDebInfo
 BUILD_PHASE0_SPIKES ?= OFF
 # Set to 1 to allow Debug builds (needed for coverage instrumentation).
 ALLOW_DEBUG_BUILD ?= 0
@@ -18,9 +18,31 @@ BUILD_PARALLEL_LEVEL ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CTEST_VERBOSE ?= 0
 CTEST_UI_FLAGS := $(if $(filter 1,$(CTEST_VERBOSE)),-V,--progress)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
-SONAR_STAMP := $(BUILD_DIR)/.sonar-scan.stamp
+
+# Separate build-cov directory for coverage/sonar. RelWithDebInfo + llvm-cov
+# instrumentation. Has its own CMakeCache so coverage reconfigure does NOT
+# invalidate the test build in $(BUILD_DIR). Mirrors the bridge's model.
+BUILD_COV_DIR ?= build-cov
+BUILD_TYPE_COV ?= RelWithDebInfo
 SONAR_PROJECT_PROPERTIES := sonar-project.properties
-COMPILE_DB := $(BUILD_DIR)/compile_commands.json
+COMPILE_DB := $(BUILD_COV_DIR)/compile_commands.json
+COVERAGE_REPORT := $(BUILD_COV_DIR)/coverage.txt
+SONAR_REPORT := $(BUILD_COV_DIR)/sonar-report.json
+BUILD_STAMP := $(BUILD_DIR)/.build-ready.stamp
+BUILD_COV_STAMP := $(BUILD_COV_DIR)/.build-cov-ready.stamp
+
+# Bridge's instrumented coverage archive. The CLI build-cov configures with
+# -DBRIDGE_BUILD_DIR pointing here, so the CLI links the bridge's INSTRUMENTED
+# build-cov libenginesim.a — coverage then attributes bridge source lines.
+BRIDGE_DIR := engine-sim-bridge
+BRIDGE_BUILD_COV_LIB := $(BRIDGE_DIR)/build-cov/libenginesim.a
+
+# LLVM coverage tools: Xcode toolchain first, plain which() fallback.
+LLVM_COV := $(shell xcrun --find llvm-cov 2>/dev/null || which llvm-cov 2>/dev/null)
+LLVM_PROFDATA := $(shell xcrun --find llvm-profdata 2>/dev/null || which llvm-profdata 2>/dev/null)
+
+# Source inputs that affect the coverage build. Invalidation on change.
+BUILD_INPUTS := $(shell find Makefile CMakeLists.txt src include test tools engine-sim -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.cmake' \) 2>/dev/null | sort)
 
 # Build system: Ninja (recommended) or Make (fallback)
 # Ninja handles parallel dependency ordering correctly; Make has a known race
@@ -45,7 +67,8 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .DEFAULT_GOAL := all
 .PHONY: all build clean scrub test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
-        run run-json help build-cross clean-cross sonar-clean
+        run run-json help build-cross clean-cross sonar-scan sonar-clean sonar-summary \
+        coverage-run coverage-clean coverage-summary
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 
 # ============================================================================
@@ -122,13 +145,13 @@ check-submodule: submodules
 	if [ "$$CURRENT_SUBMODULE" != "$$STAMPED_SUBMODULE" ]; then \
 		echo "Submodule changed, forcing rebuild..."; \
 		rm -f $(BUILD_DIR)/CMakeCache.txt; \
-		+$(MAKE) -C engine-sim-bridge scrub; \
+		$(MAKE) -C engine-sim-bridge scrub; \
 		mkdir -p $(BUILD_DIR); \
 		echo "$$CURRENT_SUBMODULE" > $(SUBMODULE_STAMP); \
 	fi
 
 check-cmake:
-	@if [ -f CMakeCache.txt ] && ! grep -q "CMAKE_BUILD_TYPE:STRING=Release" CMakeCache.txt; then \
+	@if [ -f CMakeCache.txt ] && ! grep -qE "CMAKE_BUILD_TYPE:STRING=(Release|RelWithDebInfo)" CMakeCache.txt; then \
 		echo "ERROR: Root CMakeCache.txt exists with wrong BUILD_TYPE. This happens when running 'cmake -S . -B .' directly."; \
 		echo "Please run 'git checkout Makefile' and then use 'make' instead."; \
 		exit 1; \
@@ -164,7 +187,7 @@ remove-orphans:
 	@find . -path ./$(BUILD_DIR) -prune -o -name "*.a" -type f -print -delete 2>/dev/null || true
 	@find . -path ./$(BUILD_DIR) -prune -o -name "_deps" -type d -print -exec rm -rf {} + 2>/dev/null || true
 
-clean: remove-orphans clean_esp32 sonar-clean
+clean: remove-orphans clean_esp32 sonar-clean coverage-clean
 	+@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
 	@if [ -d $(BUILD_DIR) ]; then \
 		cmake --build $(BUILD_DIR) --target clean >/dev/null 2>&1 || true; \
@@ -175,7 +198,7 @@ clean: remove-orphans clean_esp32 sonar-clean
 scrub: clean
 	@echo "Scrubbing all build artifacts..."
 	+@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
-	@rm -rf $(BUILD_DIR) $(CLI_ES)
+	@rm -rf $(BUILD_DIR) $(BUILD_COV_DIR) $(CLI_ES)
 	@$(MAKE) remove-orphans
 	@rm -rf .scannerwork
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
@@ -213,6 +236,8 @@ test: build
 		echo "=== [engine-sim-cli] TIME: bridge=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
 		echo "=== [engine-sim-cli] SUMMARY: PASS (full) ==="; \
 		printf '\033[0;32m=== [engine-sim-cli] RESULT: ALL TESTS PASSED ===\033[0m\n'; \
+		$(MAKE) sonar-scan coverage-summary sonar-summary || \
+			echo "=== [engine-sim-cli] sonar/coverage summary skipped (non-fatal) ==="; \
 	else \
 		cli_end=$$(date +%s); \
 		cli_elapsed=$$((cli_end - cli_start)); \
@@ -308,7 +333,10 @@ help:
 	@echo "Targets:"
 	@echo "  make          - Build + test (complete pipeline)"
 	@echo "  make build    - Compile everything (no tests)"
-	@echo "  make sonar-scan - Run SonarQube scan (only re-runs when build/inputs change)"
+	@echo "  make sonar-scan - Run SonarQube scan with coverage (only re-runs when build/inputs change)"
+	@echo "  make coverage-run - Run CLI tests with coverage instrumentation"
+	@echo "  make coverage-summary - Show local coverage % from lcov.info"
+	@echo "  make sonar-summary - Show SonarCloud issues summary"
 	@echo "  make test     - Build then run all tests (full)"
 	@echo "  make test-deep - Run bridge preset golden-audio regressions"
 	@echo "  make test-fast - Build then run fast tests (skips 6 heavy groups)"
@@ -324,20 +352,108 @@ help:
 	@echo "  make help     - Show this help"
 
 # ============================================================================
-# SonarQube scan - standalone quality gate for CLI code
+# SonarQube scan + LLVM coverage -- mirrors the bridge's honed model.
+#
+#   build      : RelWithDebInfo, tests run via `make test` (separate dir).
+#   build-cov  : RelWithDebInfo + llvm-cov instrumentation, for coverage/sonar.
+#
+# Coverage runs BEFORE sonar (fresh coverage report). Tests run BEFORE sonar
+# (fail-fast). coverage.txt and sonar-report.json are the make targets
+# (artefacts, not stamps) -- re-run only on input changes (second make: nothing
+# to do). Drops the `|| true` that swallowed test failures. The CLI build-cov
+# links the bridge's INSTRUMENTED build-cov archive
+# (-DBRIDGE_BUILD_DIR=engine-sim-bridge/build-cov) so coverage attributes bridge
+# source lines. DRY: reuses the bridge's run_coverage_tests.sh (recursive glob
+# finds CLI build-cov/test/* binaries), sonar_summary.py, coverage_summary.py.
 # ============================================================================
 
-sonar-scan: $(SONAR_STAMP)
+# Bridge build-cov must exist before the CLI configures against it. The bridge
+# Makefile exposes build-cov via its coverage-run target (which builds build-cov
+# as a prereq). This rule ensures the instrumented archive exists; it is cheap
+# when build-cov is already current.
+$(BRIDGE_BUILD_COV_LIB):
+	+@$(MAKE) -C $(BRIDGE_DIR) coverage-run
 
-$(SONAR_STAMP): $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES)
+# Coverage build: separate build-cov dir with llvm-cov instrumentation.
+# RelWithDebInfo (NOT Debug) + -fprofile-instr-generate/-fcoverage-mapping/-g.
+# Points at the bridge's instrumented build-cov archive so coverage attributes
+# bridge source. Depends on the bridge build-cov existing first (ordering).
+$(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
+	@mkdir -p $(BUILD_COV_DIR)
+	@cd $(BUILD_COV_DIR) && cmake \
+		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE_COV) \
+		-DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping -g" \
+		-DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate" \
+		-DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) \
+		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
+		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
+		-DBRIDGE_BUILD_DIR=$(CURDIR)/$(BRIDGE_DIR)/build-cov \
+		..
+
+$(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt
+	@echo "=== [engine-sim-cli] Building coverage (build-cov, RelWithDebInfo+instr) ==="
+	@cmake --build $(BUILD_COV_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
+	@touch $@
+
+# coverage-run: run CLI tests on the coverage-instrumented build, merge profdata,
+# export coverage.txt (llvm-cov text) + lcov.info. File-artefact target: re-runs
+# only when build-cov, source inputs, or the coverage script change. The bridge's
+# run_coverage_tests.sh uses a recursive glob that finds CLI build-cov/test/*
+# binaries (Ninja layout) and writes coverage.txt + lcov.info itself. No `|| true`
+# -- the script collects profraw from every binary then surfaces failures at the
+# end (honesty gate), so a failing test propagates non-zero.
+$(COVERAGE_REPORT): $(BUILD_COV_STAMP) $(BUILD_INPUTS) $(BRIDGE_DIR)/scripts/run_coverage_tests.sh
+	@LLVM_PROFDATA="$(LLVM_PROFDATA)" LLVM_COV="$(LLVM_COV)" \
+		bash $(BRIDGE_DIR)/scripts/run_coverage_tests.sh $(BUILD_COV_DIR)
+
+coverage-run: $(COVERAGE_REPORT)
+
+sonar-scan: $(SONAR_REPORT)
+
+# SONAR_REPORT depends on the coverage ARTEFACT (coverage.txt), so coverage is
+# regenerated (tests re-run) before the scan reads the fresh coverage report.
+# Re-scans only when coverage/compile-db/properties/sources change. The curl
+# writes SONAR_REPORT itself. NOTE: this sonar-scanner rejects -q, so log output
+# is redirected to a file and tailed on failure (the bridge's pattern).
+$(SONAR_REPORT): $(COVERAGE_REPORT) $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES) $(BUILD_INPUTS)
+	@if [ -z "$${SONAR_TOKEN_ES}" ] && [ -z "$${SONAR_TOKEN}" ]; then \
+		echo "ERROR: Neither SONAR_TOKEN_ES nor SONAR_TOKEN is set. Run: source ~/.zshrc"; \
+		exit 1; \
+	fi
 	@echo "=== [engine-sim-cli] Running Sonar scan ==="
-	-SONAR_TOKEN="$(or $(SONAR_TOKEN_ES),$(SONAR_TOKEN))" sonar-scanner; touch $@
+	@SONAR_TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}" sonar-scanner > $(BUILD_COV_DIR)/sonar-scanner.log 2>&1; \
+		rc=$$?; \
+		if [ $$rc -ne 0 ]; then \
+			echo "=== [engine-sim-cli] sonar-scanner failed (rc=$$rc); see $(BUILD_COV_DIR)/sonar-scanner.log ==="; \
+			tail -n 20 $(BUILD_COV_DIR)/sonar-scanner.log; \
+			exit $$rc; \
+		fi
+	@echo "=== [engine-sim-cli] Caching SonarCloud issue report ==="
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500" \
+		> $(SONAR_REPORT) 2>/dev/null || true
 
-$(COMPILE_DB): $(BUILD_DIR)/CMakeCache.txt
+$(COMPILE_DB): $(BUILD_COV_DIR)/CMakeCache.txt
+
+coverage-clean:
+	@rm -f $(COVERAGE_REPORT) $(SONAR_REPORT) $(BUILD_COV_STAMP) $(BUILD_COV_DIR)/coverage.profdata $(BUILD_COV_DIR)/lcov.info $(BUILD_COV_DIR)/profraw/*.profraw
+	@rm -rf $(BUILD_COV_DIR)/profraw
 
 sonar-clean:
-	@rm -f $(SONAR_STAMP)
+	@rm -f $(SONAR_REPORT)
 	@rm -rf .scannerwork
+
+# Sonar summary -- display issues from cached SonarCloud report (DRY: bridge script).
+# No prereq on $(SONAR_REPORT): this must NEVER trigger a scan. If the cached
+# report is absent (fresh tree / pre-scan), sonar_summary.py prints a hint.
+sonar-summary:
+	@python3 $(BRIDGE_DIR)/scripts/sonar_summary.py $(SONAR_REPORT)
+
+# Coverage summary -- display local coverage % from lcov.info (DRY: bridge script).
+# No prereq: this must NEVER trigger a scan. If lcov is absent, coverage_summary.py
+# prints a hint. Repo root passed so src-relative paths resolve.
+coverage-summary:
+	@python3 $(BRIDGE_DIR)/scripts/coverage_summary.py $(BUILD_COV_DIR)/lcov.info $(CURDIR)
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
