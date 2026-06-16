@@ -71,6 +71,7 @@ struct InputContext {
     std::unique_ptr<input::IKeyActionTarget> target;
     std::unique_ptr<input::IInputProvider> demoProvider;  // demo mode only (speed enhancer)
     std::unique_ptr<input::IInputProvider> provider;
+    std::unique_ptr<::KeyboardInput> keyboard;  // owned for replay Q/P
 };
 
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
@@ -84,6 +85,10 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         if (!replay->Initialize()) {
             throw std::runtime_error("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
+        // Wire Q/P keyboard for replay mode (same pattern as the keyboard path).
+        auto kb = std::make_unique<::KeyboardInput>();
+        replay->setKeyboardInput(kb.get());
+        ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
         return ctx;
     }
@@ -292,6 +297,7 @@ int main(int argc, char* argv[]) {
                 // Expose session to signal handler and keyboard provider
                 g_sessionForSignal = session.get();
                 if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
+                if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
 
                 result = session->run();
             }//for
