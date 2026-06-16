@@ -143,6 +143,12 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         // can drive it into DRIVE (P/R/N/D) for the automatic gearbox.
         target->setDemoControls(demoProvider.get());
 
+        // Auto-engage DRIVE so the user can just press throttle and drive.
+        input::IDemoControls* demoControls = demoProvider.get();
+        demoControls->shiftUp();  // P → R
+        demoControls->shiftUp();  // R → N
+        demoControls->shiftUp();  // N → D
+
         if (!demoProvider->Initialize()) {
             throw std::runtime_error("Failed to initialize demo input provider");
         }
