@@ -129,6 +129,11 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     args.syncPull = !threadedFlag;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) args.silent = args.playAudio = true;
+
+    // Default to interactive mode unless --duration is given.
+    if (args.duration <= 0.0) {
+        args.interactive = true;
+    }
     if (args.interactive) g_interactiveMode.store(true);
 
     // Implicit settings when connectDemo is true
