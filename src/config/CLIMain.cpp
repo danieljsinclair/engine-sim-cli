@@ -30,6 +30,7 @@
 #include "input/GearSelectorInput.h"
 #include "input/IgnitionInput.h"
 #include "input/IKeyboardInput.h"
+#include "input/ReplayTelemetryProvider.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/GearboxCsvLogger.h"
 
@@ -69,11 +70,23 @@ constexpr const char* DEFAULT_PRESET_DIR = "engine-sim-bridge/preset/";
 struct InputContext {
     std::unique_ptr<input::IKeyActionTarget> target;
     std::unique_ptr<input::IInputProvider> demoProvider;  // demo mode only (speed enhancer)
-    std::unique_ptr<input::KeyboardInputProvider> provider;
+    std::unique_ptr<input::IInputProvider> provider;
 };
 
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
     InputContext ctx;
+
+    // Replay mode: the telemetry CSV is the sole input source (no keyboard).
+    // --start is implicit — the provider fires the starter on frame 0.
+    if (!args.replayTelemetryPath.empty()) {
+        auto replay = std::make_unique<input::ReplayTelemetryProvider>(
+            args.replayTelemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.autoGearbox);
+        if (!replay->Initialize()) {
+            throw std::runtime_error("Failed to initialize replay telemetry: " + replay->GetLastError());
+        }
+        ctx.provider = std::move(replay);
+        return ctx;
+    }
 
     // Unified code path: always use EngineInputTarget as the keyboard target
     auto keyboard = std::make_unique<::KeyboardInput>();
@@ -84,6 +97,15 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     // (--auto and --connect-demo currently share one speed source; splitting
     //  that for real-vehicle integration is the deferred interface refactor.)
     target->setGearAutoMode(config.autoGearbox || args.connectDemo);
+    // --throttle <0..1>: latch a held throttle so non-interactive runs (--duration)
+    // actually drive the engine. Persists via EngineInputTarget's latch.
+    if (args.holdThrottle >= 0.0f) {
+        target->setThrottle(static_cast<double>(args.holdThrottle));
+    }
+    // --start: one-shot starter pulse so the CrankingController cranks the engine.
+    if (args.autoStart) {
+        target->setStarter();
+    }
 
     // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
     // and route the shift keys to its PRND selector (P/R/N/D).
@@ -237,7 +259,14 @@ int main(int argc, char* argv[]) {
         ShowConfigHeader(config, ISimulator::getVersion());
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
-        auto* inputProvider = static_cast<input::IInputProvider*>(inputCtx.provider.get());
+        auto* inputProvider = inputCtx.provider.get();
+        // --replay-telemetry: when --duration isn't given (and not interactive),
+        // default to the trace's full length so each capture just runs to its end.
+        if (!config.interactive && args.duration <= 0.0) {
+            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+                config.duration = replay->durationS();
+            }
+        }
         auto presentation = createPresentation(config);
 
         ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
@@ -262,7 +291,7 @@ int main(int argc, char* argv[]) {
 
                 // Expose session to signal handler and keyboard provider
                 g_sessionForSignal = session.get();
-                if (inputCtx.provider) inputCtx.provider->setSession(session.get());
+                if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
 
                 result = session->run();
             }//for
