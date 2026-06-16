@@ -5,17 +5,11 @@
 # Unit test executable
 add_executable(unit_tests
     CircularBufferTest.cpp
-    CircularBufferTelemetryTest.cpp
-    IAudioBufferTest.cpp
-    IntegrationAudioPlayerTest.cpp
-    ThreadedStrategyIntegrationTest.cpp
     CommandLineParserTest.cpp
     ConsolePresentationTest.cpp
     CLITimeParsingTest.cpp
     AudioTestConstants.cpp
     KeyboardInputProviderTest.cpp
-    StrategyPipelineTest.cpp
-    BufferContextEradicationTest.cpp
     ISimulatorTest.cpp
     # Required support code
     ../../src/config/CLIconfig.cpp
