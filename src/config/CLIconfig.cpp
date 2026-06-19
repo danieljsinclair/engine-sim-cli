@@ -89,17 +89,54 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--cranking-volume", args.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    app.add_option("--replay-telemetry", args.replayTelemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
+    auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replayTelemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
+    // Time format: plain seconds (30.5) or mm:ss (1:30.5) or hh:mm:ss (0:01:30.5)
+    auto parseTimeString = [](const std::string& s) -> double {
+        double seconds = 0.0;
+        int colonCount = 0;
+        for (char c : s) if (c == ':') colonCount++;
+        try {
+            if (colonCount == 0) {
+                seconds = std::stod(s);
+            } else if (colonCount == 1) {
+                size_t colon = s.find(':');
+                double minutes = std::stod(s.substr(0, colon));
+                double secs = std::stod(s.substr(colon + 1));
+                seconds = minutes * 60.0 + secs;
+            } else if (colonCount >= 2) {
+                size_t lastColon = s.rfind(':');
+                size_t firstColon = s.find(':');
+                double hours = std::stod(s.substr(0, firstColon));
+                double minutes = std::stod(s.substr(firstColon + 1, lastColon - firstColon - 1));
+                double secs = std::stod(s.substr(lastColon + 1));
+                seconds = hours * 3600.0 + minutes * 60.0 + secs;
+            }
+        } catch (...) {
+            throw CLI::ConversionError("Invalid time format: " + s);
+        }
+        return seconds;
+    };
+
+    app.add_option("--start-from", args.replayStartFrom, "Start replay at this time (seconds or mm:ss)")
+        ->needs("--replay-telemetry");
+    app.add_option("--end-at", args.replayEndAt, "Stop replay at this time (seconds or mm:ss)")
+        ->needs("--replay-telemetry");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
     auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
+    auto liveTelemetryOpt = app.add_option("--live-telemetry", args.liveTelemetryStream, "Read live telemetry CSV from stdin (use '-' or 'stdin') as the input source (implies --start)");
+
     // Mutual exclusions
     scriptOpt->excludes(engineConfigOpt);
     connectDemoOpt->excludes(scriptOpt);
     connectDemoOpt->excludes(engineConfigOpt);
+    liveTelemetryOpt->excludes(scriptOpt);
+    liveTelemetryOpt->excludes(engineConfigOpt);
+    liveTelemetryOpt->excludes(connectDemoOpt);
+    liveTelemetryOpt->excludes(replayTelemetryOpt);
 
     bool threadedFlag = false;
     bool silentFlag = false;
@@ -161,7 +198,55 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     if (args.targetLoad < -1.0 || args.targetLoad > 1.0) return fail("ERROR: Load must be between 0 and 100\n");
 
+    // Parse time strings (plain seconds or mm:ss or hh:mm:ss) into doubles.
+    if (!args.replayStartFrom.empty()) {
+        args.replayStartFromS = parseTimeStringToSeconds(args.replayStartFrom);
+        if (args.replayStartFromS < 0.0) {
+            std::cerr << "ERROR: Invalid --start-from time: " << args.replayStartFrom << "\n";
+            return false;
+        }
+    }
+    if (!args.replayEndAt.empty()) {
+        args.replayEndAtS = parseTimeStringToSeconds(args.replayEndAt);
+        if (args.replayEndAtS < 0.0) {
+            std::cerr << "ERROR: Invalid --end-at time: " << args.replayEndAt << "\n";
+            return false;
+        }
+    }
+
     return true;
+}
+
+// ============================================================================
+// Time string parsing
+// ============================================================================
+double parseTimeStringToSeconds(const std::string& s) {
+    if (s.empty()) return -1.0;
+    double seconds = 0.0;
+    int colonCount = 0;
+    for (char c : s) {
+        if (c == ':') colonCount++;
+    }
+    try {
+        if (colonCount == 0) {
+            seconds = std::stod(s);
+        } else if (colonCount == 1) {
+            size_t colon = s.find(':');
+            double minutes = std::stod(s.substr(0, colon));
+            double secs = std::stod(s.substr(colon + 1));
+            seconds = minutes * 60.0 + secs;
+        } else if (colonCount >= 2) {
+            size_t lastColon = s.rfind(':');
+            size_t firstColon = s.find(':');
+            double hours = std::stod(s.substr(0, firstColon));
+            double minutes = std::stod(s.substr(firstColon + 1, lastColon - firstColon - 1));
+            double secs = std::stod(s.substr(lastColon + 1));
+            seconds = hours * 3600.0 + minutes * 60.0 + secs;
+        }
+    } catch (...) {
+        return -1.0;
+    }
+    return seconds;
 }
 
 // ============================================================================

@@ -31,6 +31,7 @@
 #include "input/IgnitionInput.h"
 #include "input/IKeyboardInput.h"
 #include "input/ReplayTelemetryProvider.h"
+#include "input/LiveTelemetryProvider.h"
 #include "simulator/BridgeSimulator.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/GearboxCsvLogger.h"
@@ -77,6 +78,18 @@ struct InputContext {
 
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
     InputContext ctx;
+
+    // Live telemetry mode: reads decoded CSV from stdin, one row at a time.
+    // --start is implicit — the provider fires the starter on frame 0.
+    if (!args.liveTelemetryStream.empty()) {
+        auto live = std::make_unique<input::LiveTelemetryProvider>(
+            args.liveTelemetryStream, /*autoStart=*/true);
+        if (!live->Initialize()) {
+            throw std::runtime_error("Failed to initialize live telemetry: " + live->GetLastError());
+        }
+        ctx.provider = std::move(live);
+        return ctx;
+    }
 
     // Replay mode: the telemetry CSV is the sole input source (no keyboard).
     // --start is implicit — the provider fires the starter on frame 0.

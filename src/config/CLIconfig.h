@@ -34,6 +34,11 @@ struct CommandLineArgs {
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
     bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
     std::string replayTelemetryPath;  // --replay-telemetry <csv>: scripted driving from a telemetry CSV
+    std::string liveTelemetryStream;  // --live-telemetry <->: live CSV from stdin ("-" or "stdin")
+    std::string replayStartFrom;      // --start-from <time>: raw string, parsed after CLI
+    std::string replayEndAt;          // --end-at <time>: raw string, parsed after CLI
+    double replayStartFromS = -1.0;   // parsed seconds
+    double replayEndAtS = -1.0;       // parsed seconds
     int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
     double synthLatency = 0.0;   // Synth latency seconds — 0 means use EngineSimDefaults
     int preFillMs = 0;           // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
@@ -56,5 +61,9 @@ extern std::atomic<bool> g_interactiveMode;
 void printUsage(const char* progName);
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
 void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion);
+
+// Parse a time string (plain seconds "30.5", mm:ss "1:30.5", or hh:mm:ss "0:01:30.5") into seconds.
+// Returns -1.0 on invalid input.
+double parseTimeStringToSeconds(const std::string& s);
 
 #endif // CLI_CONFIG_H
