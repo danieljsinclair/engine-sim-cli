@@ -27,6 +27,9 @@ BUILD_TYPE_COV ?= RelWithDebInfo
 SONAR_PROJECT_PROPERTIES := sonar-project.properties
 COMPILE_DB := $(BUILD_COV_DIR)/compile_commands.json
 COVERAGE_REPORT := $(BUILD_COV_DIR)/coverage.txt
+# SonarCloud generic coverage XML (lcov -> XML via the bridge's
+# scripts/lcov_to_xml.py). Read by the scanner via sonar.coverageReportPaths.
+COVERAGE_XML := $(BUILD_COV_DIR)/coverage-sonar.xml
 SONAR_REPORT := $(BUILD_COV_DIR)/sonar-report.json
 BUILD_STAMP := $(BUILD_DIR)/.build-ready.stamp
 BUILD_COV_STAMP := $(BUILD_COV_DIR)/.build-cov-ready.stamp
@@ -367,17 +370,24 @@ help:
 # finds CLI build-cov/test/* binaries), sonar_summary.py, coverage_summary.py.
 # ============================================================================
 
-# Bridge build-cov must exist before the CLI configures against it. The bridge
-# Makefile exposes build-cov via its coverage-run target (which builds build-cov
-# as a prereq). This rule ensures the instrumented archive exists; it is cheap
-# when build-cov is already current.
-$(BRIDGE_BUILD_COV_LIB):
+# Bridge instrumented lib. The bridge instruments its ``build/`` directory
+# (Debug + llvm-cov), not a separate build-cov. The CLI therefore points
+# -DBRIDGE_BUILD_DIR at the bridge's instrumented ``build/`` directly. This
+# rule ensures the instrumented lib is current by re-running the bridge's
+# coverage-run (cheap when build/ is already instrumented).
+BRIDGE_COV_DIR := $(BRIDGE_DIR)/build
+$(BRIDGE_BUILD_COV_LIB): $(BRIDGE_COV_DIR)/libenginesim.a
+	@:
+
+$(BRIDGE_COV_DIR)/libenginesim.a:
 	+@$(MAKE) -C $(BRIDGE_DIR) coverage-run
+	@test -e $@ || { echo "ERROR: bridge instrumented lib missing at $@"; exit 1; }
 
 # Coverage build: separate build-cov dir with llvm-cov instrumentation.
 # RelWithDebInfo (NOT Debug) + -fprofile-instr-generate/-fcoverage-mapping/-g.
-# Points at the bridge's instrumented build-cov archive so coverage attributes
-# bridge source. Depends on the bridge build-cov existing first (ordering).
+# Points at the bridge's instrumented build/ (the bridge instruments build/,
+# not build-cov) so coverage attributes bridge source. Depends on the bridge
+# instrumented lib existing first (ordering).
 $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 	@mkdir -p $(BUILD_COV_DIR)
 	@cd $(BUILD_COV_DIR) && cmake \
@@ -387,7 +397,7 @@ $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 		-DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) \
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
-		-DBRIDGE_BUILD_DIR=$(CURDIR)/$(BRIDGE_DIR)/build-cov \
+		-DBRIDGE_BUILD_DIR=$(CURDIR)/$(BRIDGE_COV_DIR) \
 		..
 
 $(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt
@@ -430,30 +440,51 @@ $(SONAR_REPORT): $(COVERAGE_REPORT) $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES) $(
 		fi
 	@echo "=== [engine-sim-cli] Caching SonarCloud issue report ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
-	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500" \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN" \
 		> $(SONAR_REPORT) 2>/dev/null || true
+	@echo "=== [engine-sim-cli] Caching SonarCloud measures (lines_to_cover) ==="
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=lines_to_cover,uncovered_lines" \
+		> $(BUILD_COV_DIR)/sonar-measures.json 2>/dev/null || true
 
 $(COMPILE_DB): $(BUILD_COV_DIR)/CMakeCache.txt
 
 coverage-clean:
-	@rm -f $(COVERAGE_REPORT) $(SONAR_REPORT) $(BUILD_COV_STAMP) $(BUILD_COV_DIR)/coverage.profdata $(BUILD_COV_DIR)/lcov.info $(BUILD_COV_DIR)/profraw/*.profraw
+	@rm -f $(COVERAGE_REPORT) $(COVERAGE_XML) $(SONAR_REPORT) $(BUILD_COV_STAMP) $(BUILD_COV_DIR)/coverage.profdata $(BUILD_COV_DIR)/lcov.info $(BUILD_COV_DIR)/profraw/*.profraw
 	@rm -rf $(BUILD_COV_DIR)/profraw
 
 sonar-clean:
 	@rm -f $(SONAR_REPORT)
 	@rm -rf .scannerwork
 
-# Sonar summary -- display issues from cached SonarCloud report (DRY: bridge script).
-# No prereq on $(SONAR_REPORT): this must NEVER trigger a scan. If the cached
-# report is absent (fresh tree / pre-scan), sonar_summary.py prints a hint.
+# Sonar summary -- display issues from a LIVE SonarCloud report (DRY: bridge script).
+# No prereq on $(SONAR_REPORT): this must NEVER trigger a scan. Curls the API
+# live at display time (refreshing the cached file) so local counts always
+# match the dashboard. If no token, prints a hint.
+# SHOW_TYPE_SEVERITY=1 also shows the legacy severity (CRITICAL/MAJOR/MINOR/INFO).
+SHOW_TYPE_SEVERITY ?= 0
 sonar-summary:
-	@python3 $(BRIDGE_DIR)/scripts/sonar_summary.py $(SONAR_REPORT)
+	@echo ""
+	@echo "=== [engine-sim-cli] BEGIN: SonarCloud issues summary ==="
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+	if [ -z "$$TOKEN" ]; then echo "  No token"; exit 0; fi; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN" > $(SONAR_REPORT) 2>/dev/null || true; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=coverage,lines_to_cover,uncovered_lines" > $(BUILD_COV_DIR)/sonar-measures.json 2>/dev/null || true; \
+	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_REPORT) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli
+	@echo "=== [engine-sim-cli] END: SonarCloud issues summary ==="
 
-# Coverage summary -- display local coverage % from lcov.info (DRY: bridge script).
-# No prereq: this must NEVER trigger a scan. If lcov is absent, coverage_summary.py
-# prints a hint. Repo root passed so src-relative paths resolve.
+# Coverage summary -- display LIVE SonarCloud coverage (matches the dashboard
+# exactly, no local/drift). No prereq: this must NEVER trigger a scan. If no
+# token or no data yet, prints a hint. A local lcov parse is avoided because it
+# drifts from SonarCloud's own denominator; the dashboard is the source of truth.
 coverage-summary:
-	@python3 $(BRIDGE_DIR)/scripts/coverage_summary.py $(BUILD_COV_DIR)/lcov.info $(CURDIR)
+	@echo ""
+	@echo "=== [engine-sim-cli] BEGIN: coverage summary ==="
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+	if [ -z "$$TOKEN" ]; then echo "  No token"; echo "=== [engine-sim-cli] END: coverage summary ==="; exit 0; fi; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=coverage,lines_to_cover,uncovered_lines" > $(BUILD_COV_DIR)/sonar-measures.json 2>/dev/null || true; \
+	python3 -c "import json; m={x['metric']:x['value'] for x in json.load(open('$(BUILD_COV_DIR)/sonar-measures.json')).get('component',{}).get('measures',[])}; print('  Coverage: {}% ({} lines, {} uncovered)'.format(m.get('coverage','?'), m.get('lines_to_cover','?'), m.get('uncovered_lines','?')))" 2>/dev/null || echo "  No coverage data yet"; \
+	echo "=== [engine-sim-cli] END: coverage summary ==="
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
