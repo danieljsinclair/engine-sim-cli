@@ -47,6 +47,7 @@ private:
     void showDiagnostics(const EngineState& state);
     std::string formatSimulatorState(const EngineState& state) const;
 
+    std::string formatReplayTimestamp(const EngineState& state, std::ostringstream& out) const;
     std::string formatRPM(const EngineState& state, std::ostringstream& out) const;
     std::string formatStarterState(const EngineState& state, std::ostringstream& out) const;
     std::string formatNameState(const EngineState& state, std::ostringstream& out) const;

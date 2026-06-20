@@ -11,6 +11,7 @@ add_executable(unit_tests
     ThreadedStrategyIntegrationTest.cpp
     CommandLineParserTest.cpp
     ConsolePresentationTest.cpp
+    CLITimeParsingTest.cpp
     AudioTestConstants.cpp
     KeyboardInputProviderTest.cpp
     StrategyPipelineTest.cpp

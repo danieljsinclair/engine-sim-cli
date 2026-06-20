@@ -75,6 +75,36 @@ struct InputContext {
     std::unique_ptr<::KeyboardInput> keyboard;  // owned for replay Q/P
 };
 
+// Validate replay time-slicing args against the actual trace duration.
+// Throws std::runtime_error with a descriptive message if validation fails.
+void validateReplayTimeSlicing(const CommandLineArgs& args,
+                               input::ReplayTelemetryProvider* replay) {
+    if (!replay) return;
+    const double traceDur = replay->durationS();
+
+    if (args.replayStartFromS >= 0.0) {
+        if (traceDur > 0.0 && args.replayStartFromS >= traceDur) {
+            std::cerr << "ERROR: --start-from " << args.replayStartFromS
+                      << "s is past end of trace (" << traceDur << "s)\n";
+            throw std::runtime_error("start-from beyond trace duration");
+        }
+    }
+    if (args.replayEndAtS >= 0.0) {
+        if (traceDur > 0.0 && args.replayEndAtS > traceDur) {
+            std::cerr << "WARNING: --end-at " << args.replayEndAtS
+                      << "s is past end of trace (" << traceDur
+                      << "s); will play to end\n";
+            replay->setEndAtS(-1.0);
+        }
+    }
+    if (args.replayStartFromS >= 0.0 && args.replayEndAtS >= 0.0
+        && args.replayStartFromS >= args.replayEndAtS) {
+        std::cerr << "ERROR: --start-from (" << args.replayStartFromS
+                  << "s) must be before --end-at (" << args.replayEndAtS << "s)\n";
+        throw std::runtime_error("start-from >= end-at");
+    }
+}
+
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
     InputContext ctx;
 
@@ -89,6 +119,8 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         // Wire Q/P keyboard for replay mode (same pattern as the keyboard path).
         auto kb = std::make_unique<::KeyboardInput>();
         replay->setKeyboardInput(kb.get());
+        // Wire time slicing (--start-from / --end-at) and validate.
+        validateReplayTimeSlicing(args, replay.get());
         ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
         return ctx;

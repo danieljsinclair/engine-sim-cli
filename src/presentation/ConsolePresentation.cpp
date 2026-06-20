@@ -89,6 +89,7 @@ void ConsolePresentation::ShowSimulatorStates(const EngineState& state) {
 std::string ConsolePresentation::formatSimulatorState(const EngineState& state) const {
     std::ostringstream out;
 
+    formatReplayTimestamp(state, out);
     formatRPM(state, out);
     formatStarterState(state, out);
     formatNameState(state, out);
@@ -100,6 +101,29 @@ std::string ConsolePresentation::formatSimulatorState(const EngineState& state) 
     formatDynoState(state, out);
     formatFlowState(state, out);
     formatAudioState(state, out);
+    return out.str();
+}
+
+// Display absolute replay timestamp [mm:ss.ms] when replaying.
+std::string ConsolePresentation::formatReplayTimestamp(const EngineState& state, std::ostringstream& out) const {
+    if (state.drivetrain.replayTimestampS >= 0.0) {
+        int totalMs = static_cast<int>(state.drivetrain.replayTimestampS * 1000.0);
+        int hours = totalMs / 3600000;
+        int minutes = (totalMs % 3600000) / 60000;
+        int seconds = (totalMs % 60000) / 1000;
+        int ms = totalMs % 1000;
+        if (hours > 0) {
+            out << "[" << std::setw(2) << std::setfill('0') << hours << ":"
+                << std::setw(2) << minutes << ":"
+                << std::setw(2) << seconds << "."
+                << std::setw(3) << ms << "] ";
+        } else {
+            out << "[" << std::setw(2) << std::setfill('0') << minutes << ":"
+                << std::setw(2) << seconds << "."
+                << std::setw(3) << ms << "] ";
+        }
+        out << std::setfill(' ');
+    }
     return out.str();
 }
 

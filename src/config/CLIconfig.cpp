@@ -9,7 +9,9 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 // ============================================================================
 // Global State (required for signal handling)
@@ -71,6 +73,11 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " --load 75 --play                   # Default presets with load\n";
 }
 
+// Forward declaration — defined below parseArguments.
+bool processArgs(CommandLineArgs& args, const std::string& scriptPath,
+                 const std::string& positionalEngineConfig, double loadArg,
+                 bool threadedFlag, bool silentFlag);
+
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     CLI::App app{"Engine Simulator CLI v2.0"};
     app.set_help_flag("-h,--help", "Show help information");
@@ -90,6 +97,11 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
     app.add_option("--replay-telemetry", args.replayTelemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
+
+    app.add_option("--start-from", args.replayStartFrom, "Start replay at this time (seconds, mm:ss, or hh:mm:ss)")
+        ->needs("--replay-telemetry");
+    app.add_option("--end-at", args.replayEndAt, "Stop replay at this time (seconds or mm:ss)")
+        ->needs("--replay-telemetry");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
     auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
@@ -126,6 +138,10 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         return false;
     }
 
+    return processArgs(args, scriptPath, positionalEngineConfig, loadArg, threadedFlag, silentFlag);
+}
+
+bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag) {
     args.syncPull = !threadedFlag;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) args.silent = args.playAudio = true;
@@ -161,7 +177,59 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     if (args.targetLoad < -1.0 || args.targetLoad > 1.0) return fail("ERROR: Load must be between 0 and 100\n");
 
+    // Parse time strings (plain seconds or mm:ss or hh:mm:ss) into doubles.
+    if (!args.replayStartFrom.empty()) {
+        args.replayStartFromS = parseReplayTimeToSeconds(args.replayStartFrom);
+        if (args.replayStartFromS < 0.0) {
+            std::cerr << "ERROR: Invalid --start-from time: " << args.replayStartFrom << "\n";
+            return false;
+        }
+    }
+    if (!args.replayEndAt.empty()) {
+        args.replayEndAtS = parseReplayTimeToSeconds(args.replayEndAt);
+        if (args.replayEndAtS < 0.0) {
+            std::cerr << "ERROR: Invalid --end-at time: " << args.replayEndAt << "\n";
+            return false;
+        }
+    }
+
     return true;
+}
+
+// ============================================================================
+// Time string parsing
+// ============================================================================
+double parseReplayTimeToSeconds(const std::string& s) {
+    if (s.empty()) return -1.0;
+
+    // Reject trailing/leading colons (std::getline silently drops empty tokens
+    // at the ends, so "01:" would parse as ["01"] — treat as invalid).
+    if (s.front() == ':' || s.back() == ':') return -1.0;
+
+    std::vector<std::string> parts;
+    std::stringstream ss(s);
+    std::string part;
+    while (std::getline(ss, part, ':')) {
+        parts.push_back(part);
+    }
+
+    try {
+        if (parts.size() == 1) {
+            return std::stod(parts[0]);
+        }
+        if (parts.size() == 2) {
+            return std::stod(parts[0]) * 60.0 + std::stod(parts[1]);
+        }
+        if (parts.size() == 3) {
+            return std::stod(parts[0]) * 3600.0
+                 + std::stod(parts[1]) * 60.0
+                 + std::stod(parts[2]);
+        }
+    } catch (...) {
+        return -1.0;
+    }
+
+    return -1.0;
 }
 
 // ============================================================================
