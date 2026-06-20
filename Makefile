@@ -11,6 +11,8 @@
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
 BUILD_PHASE0_SPIKES ?= OFF
+# Set to 1 to allow Debug builds (needed for coverage instrumentation).
+ALLOW_DEBUG_BUILD ?= 0
 CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 BUILD_PARALLEL_LEVEL ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CTEST_VERBOSE ?= 0
@@ -74,7 +76,7 @@ check-platform: check-cmake bridge-build $(BUILD_DIR)/CMakeCache.txt
 
 # Bridge builds independently -- must complete before CLI cmake configure
 bridge-build: submodules check-submodule
-	+@$(MAKE) -C engine-sim-bridge build
+	+@$(MAKE) -C engine-sim-bridge build ALLOW_DEBUG_BUILD=$(ALLOW_DEBUG_BUILD)
 
 # Build presets in bridge (depends on check-platform so compiler exists)
 bridge-presets: check-platform

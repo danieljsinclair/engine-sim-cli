@@ -17,9 +17,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cli11)
 
-# engine-sim-bridge: consumed as pre-built shared library (macOS) or built from
-# source via add_subdirectory (iOS cross-compilation).
-set(BRIDGE_USE_PREBUILT ON CACHE BOOL "Link against pre-built bridge dylib (disable for iOS cross-build)" )
+# Platform-specific audio libraries. Defined early because the static bridge
+# archive (linked below) requires these frameworks to be satisfied by every
+# final link target that consumes it.
+if(APPLE)
+    set(AUDIO_LIBRARY "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")
+else()
+    message(FATAL_ERROR "engine-sim-cli only supports macOS with AudioQueue. Linux/Windows support has been removed.")
+endif()
+
+# engine-sim-bridge: consumed as a pre-built STATIC archive (macOS) or built
+# from source via add_subdirectory (iOS cross-compilation). The bridge builds
+# independently via its own Makefile BEFORE this cmake configure runs.
+set(BRIDGE_USE_PREBUILT ON CACHE BOOL "Link against the pre-built static bridge archive (disable for iOS cross-build)")
 
 if(BRIDGE_USE_PREBUILT)
     # macOS: bridge builds independently via its own Makefile BEFORE cmake configure.
@@ -27,36 +37,52 @@ if(BRIDGE_USE_PREBUILT)
         set(BRIDGE_BUILD_DIR "${CMAKE_SOURCE_DIR}/engine-sim-bridge/build")
     endif()
 
-    set(BRIDGE_DYLIB "${BRIDGE_BUILD_DIR}/libenginesim.dylib")
+    set(BRIDGE_STATIC_LIB "${BRIDGE_BUILD_DIR}/libenginesim.a")
 
-    if(NOT EXISTS "${BRIDGE_DYLIB}")
+    if(NOT EXISTS "${BRIDGE_STATIC_LIB}")
         message(FATAL_ERROR
-            "engine-sim-bridge dylib not found at ${BRIDGE_DYLIB}\n"
+            "engine-sim-bridge static archive not found at ${BRIDGE_STATIC_LIB}\n"
             "The bridge must be built first. Run 'make build' from the CLI root."
         )
     endif()
 
-    add_library(engine-sim-bridge SHARED IMPORTED)
+    # A static archive does not carry its dependencies the way a dylib does.
+    # The bridge privately links engine-sim (+ simple-2d-constraint-solver,
+    # csv-io) and, when Piranha scripting is enabled, engine-sim-script-
+    # interpreter (+ piranha). Each must be supplied at final link time, so we
+    # expose them via INTERFACE_LINK_LIBRARIES. Existence-guarded so an optional
+    # dependency (e.g. Piranha disabled) does not break the link.
+    set(BRIDGE_LINK_DEPS "")
+    foreach(_dep
+            "engine-sim/libengine-sim.a"
+            "engine-sim/libengine-sim-script-interpreter.a"
+            "engine-sim/dependencies/submodules/piranha/libpiranha.a"
+            "engine-sim/dependencies/submodules/simple-2d-constraint-solver/libsimple-2d-constraint-solver.a"
+            "engine-sim/dependencies/submodules/csv-io/libcsv-io.a")
+        if(EXISTS "${BRIDGE_BUILD_DIR}/${_dep}")
+            list(APPEND BRIDGE_LINK_DEPS "${BRIDGE_BUILD_DIR}/${_dep}")
+        endif()
+    endforeach()
+
+    # Assemble the bridge's transitive link closure as a single clean
+    # semicolon-joined list (mixing list-valued vars with spaces into
+    # INTERFACE_LINK_LIBRARIES corrupts the list and drops entries).
+    set(BRIDGE_INTERFACE_LIBS ${BRIDGE_LINK_DEPS} ${AUDIO_LIBRARY} Threads::Threads)
+
+    add_library(engine-sim-bridge STATIC IMPORTED)
     set_target_properties(engine-sim-bridge PROPERTIES
-        IMPORTED_LOCATION "${BRIDGE_DYLIB}"
-        IMPORTED_SONAME "${BRIDGE_BUILD_DIR}/libenginesim.1.dylib"
+        IMPORTED_LOCATION "${BRIDGE_STATIC_LIB}"
         INTERFACE_INCLUDE_DIRECTORIES
             "${CMAKE_SOURCE_DIR}/engine-sim-bridge/include"
             "${CMAKE_SOURCE_DIR}/engine-sim-bridge"
             "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/dependencies/dr_libs"
             "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/include"
             "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include"
+        INTERFACE_LINK_LIBRARIES "${BRIDGE_INTERFACE_LIBS}"
     )
 else()
     # iOS: build bridge from source with the active toolchain.
     add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge)
-endif()
-
-# Platform-specific audio libraries
-if(APPLE)
-    set(AUDIO_LIBRARY "-framework AudioToolbox -framework CoreAudio -framework CoreFoundation")
-else()
-    message(FATAL_ERROR "engine-sim-cli only supports macOS with AudioQueue. Linux/Windows support has been removed.")
 endif()
 
 # CLI executable - thin CLI layer only
@@ -103,25 +129,18 @@ target_include_directories(engine-sim-cli
 
 target_compile_options(engine-sim-cli PRIVATE -g)
 
-# Set rpath for CLI executable to find dylibs in build directory
-if(APPLE)
-    set_target_properties(engine-sim-cli PROPERTIES
-        BUILD_WITH_INSTALL_RPATH TRUE
-        INSTALL_RPATH "@executable_path"
-        BUILD_RPATH "@executable_path"
-    )
-endif()
-
-# Post-build: Copy engine-sim-bridge dylib from bridge's own build tree (macOS only)
+# Post-build: stage the bridge static archive and its dependency archives from
+# the bridge's own build tree into the CLI build tree (build/lib/) for packaging
+# and discovery. macOS only; the bridge must already be built.
 if(BRIDGE_USE_PREBUILT)
+    set(_stage_cmds COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib")
+    foreach(_archive "${BRIDGE_STATIC_LIB}" ${BRIDGE_LINK_DEPS})
+        list(APPEND _stage_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_archive}" "${CMAKE_BINARY_DIR}/lib/")
+    endforeach()
     add_custom_command(TARGET engine-sim-cli POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${BRIDGE_BUILD_DIR}/libenginesim.1.dylib"
-            "${CMAKE_BINARY_DIR}/libenginesim.1.dylib"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${BRIDGE_BUILD_DIR}/libenginesim.dylib"
-            "${CMAKE_BINARY_DIR}/libenginesim.dylib"
-        COMMENT "Copying engine-sim-bridge dylib from ${BRIDGE_BUILD_DIR}"
+        ${_stage_cmds}
+        COMMENT "Staging engine-sim-bridge static archives into ${CMAKE_BINARY_DIR}/lib"
     )
 endif()
 
