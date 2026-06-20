@@ -332,16 +332,15 @@ int main(int argc, char* argv[]) {
                         for (int g = 0; g < trans->getGearCount(); ++g) {
                             ratios.push_back(trans->getGearRatio(g));
                         }
-                        // Replay path
+                        // Replay path: reconfigure the automatic gearbox to match
+                        // the actual engine preset's transmission ratios.
                         if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
                             replay->reconfigureProfile(ratios, vehicle->getDiffRatio(),
                                                         vehicle->getTireRadius());
                         }
-                        // Keyboard --auto path (via DemoInputProvider)
-                        if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
-                            demo->reconfigureProfile(ratios, vehicle->getDiffRatio(),
-                                                     vehicle->getTireRadius());
-                        }
+                        // DemoInputProvider uses a fixed zf8hp45 profile — no
+                        // runtime reconfiguration needed. The demo gearbox is
+                        // independent of the engine preset's transmission.
                     }
                 }
 
