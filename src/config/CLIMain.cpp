@@ -119,7 +119,9 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         // Wire Q/P keyboard for replay mode (same pattern as the keyboard path).
         auto kb = std::make_unique<::KeyboardInput>();
         replay->setKeyboardInput(kb.get());
-        // Wire time slicing (--start-from / --end-at) and validate.
+        // Wire time slicing and validate against trace duration.
+        replay->setStartFromS(args.replayStartFromS);
+        replay->setEndAtS(args.replayEndAtS);
         validateReplayTimeSlicing(args, replay.get());
         ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
