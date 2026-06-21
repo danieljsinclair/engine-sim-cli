@@ -473,18 +473,23 @@ sonar-summary:
 	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_REPORT) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli
 	@echo "=== [engine-sim-cli] END: SonarCloud issues summary ==="
 
-# Coverage summary -- display LIVE SonarCloud coverage (matches the dashboard
-# exactly, no local/drift). No prereq: this must NEVER trigger a scan. If no
-# token or no data yet, prints a hint. A local lcov parse is avoided because it
-# drifts from SonarCloud's own denominator; the dashboard is the source of truth.
+# Coverage summary -- emit the shared multi-line coverage block (SonarCloud-live
+# headline + local lcov + exclusions). DRY: delegates to the bridge's
+# scripts/coverage_block.py (shared block-emission helper; contains NONE of the
+# bridge's top-5/dead-stripped/ESP32 extras). The local lcov is the honest
+# llvm-cov number over /src/ from build-cov/lcov.info. No prereq: this must
+# NEVER trigger a scan. Graceful fallback if no token / fetch fails / no local
+# file (shows what's available, never crashes).
 coverage-summary:
 	@echo ""
 	@echo "=== [engine-sim-cli] BEGIN: coverage summary ==="
-	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
-	if [ -z "$$TOKEN" ]; then echo "  No token"; echo "=== [engine-sim-cli] END: coverage summary ==="; exit 0; fi; \
-	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=coverage,lines_to_cover,uncovered_lines" > $(BUILD_COV_DIR)/sonar-measures.json 2>/dev/null || true; \
-	python3 -c "import json; m={x['metric']:x['value'] for x in json.load(open('$(BUILD_COV_DIR)/sonar-measures.json')).get('component',{}).get('measures',[])}; print('  Coverage: {}% ({} lines, {} uncovered)'.format(m.get('coverage','?'), m.get('lines_to_cover','?'), m.get('uncovered_lines','?')))" 2>/dev/null || echo "  No coverage data yet"; \
-	echo "=== [engine-sim-cli] END: coverage summary ==="
+	@python3 engine-sim-bridge/scripts/coverage_block.py \
+		--project-key danieljsinclair_engine-sim-cli \
+		--local-cov $(BUILD_COV_DIR)/lcov.info \
+		--local-type lcov \
+		--exclusions $(SONAR_PROJECT_PROPERTIES) \
+		--label "[engine-sim-cli]"
+	@echo "=== [engine-sim-cli] END: coverage summary ==="
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)

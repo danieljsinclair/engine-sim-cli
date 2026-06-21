@@ -3,6 +3,10 @@ build/
 build-*/
 cmake-build-*/
 
+# FetchContent cache (cli11) — kept outside build/ to survive `make scrub`.
+# See CMakeLists.txt FETCHCONTENT_BASE_DIR.
+.fetchcache/
+
 # Executables
 engine-sim-cli
 *.exe
