@@ -31,6 +31,12 @@ COVERAGE_REPORT := $(BUILD_COV_DIR)/coverage.txt
 # scripts/lcov_to_xml.py). Read by the scanner via sonar.coverageReportPaths.
 COVERAGE_XML := $(BUILD_COV_DIR)/coverage-sonar.xml
 SONAR_REPORT := $(BUILD_COV_DIR)/sonar-report.json
+# Cached SonarCloud measures (coverage headline) + REMOVED-facet (issues whose
+# source was deleted). Both curled by sonar-summary so build_summary.py reads
+# the SAME numbers sonar_summary.py shows -- total = open + removed (OPEN union
+# REMOVED, matching the dashboard severity widget). Mirrors the bridge.
+SONAR_MEASURES := $(BUILD_COV_DIR)/sonar-measures.json
+SONAR_REMOVED_FACET := $(BUILD_COV_DIR)/sonar-removed-facet.json
 BUILD_STAMP := $(BUILD_DIR)/.build-ready.stamp
 BUILD_COV_STAMP := $(BUILD_COV_DIR)/.build-cov-ready.stamp
 
@@ -71,13 +77,15 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .PHONY: all build clean scrub test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-scan sonar-clean sonar-summary \
-        coverage-run coverage-clean coverage-summary
+        coverage-run coverage-clean coverage-summary summary
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 
 # ============================================================================
-# all: Full pipeline -- build + test (default target)
+# all: Full pipeline -- build + test (default target). `summary` is the LAST
+# step so the end-of-make headline (russian doll: cli line, then bridge line)
+# is the final build output.
 # ============================================================================
-all: build test
+all: build test summary
 
 # ============================================================================
 # build: Compile everything -- configure, compile, build presets, sync es/
@@ -344,6 +352,7 @@ help:
 	@echo "  make test-deep - Run bridge isomorphism + engine-sim physics tests"
 	@echo "  make test-fast - Build then run fast tests (skips 6 heavy groups)"
 	@echo "  make test-quick/testquick - Build then run quick tests only"
+	@echo "  make summary  - Print the end-of-make headline (cli line, then bridge line)"
 	@echo "  make presets  - Compile .mr wrappers to JSON presets"
 	@echo "  make clean    - Clean build artifacts (fast rebuild)"
 	@echo "  make scrub    - Remove entire build directory (full clean)"
@@ -468,9 +477,10 @@ sonar-summary:
 	@echo "=== [engine-sim-cli] BEGIN: SonarCloud issues summary ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
 	if [ -z "$$TOKEN" ]; then echo "  No token"; exit 0; fi; \
-	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN" > $(SONAR_REPORT) 2>/dev/null || true; \
-	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=coverage,lines_to_cover,uncovered_lines" > $(BUILD_COV_DIR)/sonar-measures.json 2>/dev/null || true; \
-	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_REPORT) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN&facets=impactSeverities" > $(SONAR_REPORT) 2>/dev/null || true; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=1&resolutions=REMOVED&facets=impactSeverities" > $(SONAR_REMOVED_FACET) 2>/dev/null || true; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=coverage,lines_to_cover,uncovered_lines" > $(SONAR_MEASURES) 2>/dev/null || true; \
+	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_REPORT) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli --removed-facet $(SONAR_REMOVED_FACET)
 	@echo "=== [engine-sim-cli] END: SonarCloud issues summary ==="
 
 # Coverage summary -- emit the shared multi-line coverage block (SonarCloud-live
@@ -490,6 +500,24 @@ coverage-summary:
 		--exclusions $(SONAR_PROJECT_PROPERTIES) \
 		--label "[engine-sim-cli]"
 	@echo "=== [engine-sim-cli] END: coverage summary ==="
+
+# summary: the end-of-make HEADLINE (russian doll). Prints the CLI's OWN line
+# first (tests from the teed test.log, coverage from the cached sonar-measures
+# JSON -- the same headline coverage_block.py shows, sonar from the cached
+# sonar-report.json), then recurses into the bridge so its line follows. Order
+# is SELF-then-submodule so the nesting reads top-down (cli, then bridge).
+# Greps plain numbers + re-emits coloured -- no live re-query, never triggers a
+# scan/test, never crashes; missing fields are omitted gracefully.
+BUILD_SUMMARY_SCRIPT := engine-sim-bridge/scripts/build_summary.py
+summary:
+	@python3 $(BUILD_SUMMARY_SCRIPT) \
+		--label "[engine-sim-cli]" \
+		--test-log test.log \
+		--cov-measures $(SONAR_MEASURES) \
+		--local-cov $(BUILD_COV_DIR)/lcov.info --local-type lcov \
+		--sonar-report $(SONAR_REPORT) \
+		--removed-facet $(SONAR_REMOVED_FACET)
+	+@$(MAKE) -C engine-sim-bridge summary
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
