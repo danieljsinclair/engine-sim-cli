@@ -60,11 +60,19 @@ NINJA_BIN := $(shell command -v ninja 2>/dev/null)
 ifdef NINJA_BIN
 CMAKE_GENERATOR := -G Ninja
 CMAKE_BUILD_PARALLEL_FLAG := $(if $(strip $(BUILD_PARALLEL_LEVEL)),-j $(BUILD_PARALLEL_LEVEL),)
+# Ninja banner: shown only on real builds, NEVER during `summary` (which recurses
+# into this Makefile via $(MAKE) -C engine-sim-cli summary and would otherwise
+# interleave a "[build] Ninja detected" line into the end-of-make headline block).
+# SUMMARY_QUIET is exported by the summary targets so the recursion stays silent.
+ifndef SUMMARY_QUIET
 $(info [build] Ninja detected — parallel builds enabled)
+endif
 else
 CMAKE_GENERATOR :=
 CMAKE_BUILD_PARALLEL_FLAG :=
+ifndef SUMMARY_QUIET
 $(warning [build] Ninja not found — parallel builds disabled to avoid re-link race condition. Install ninja to enable.)
+endif
 endif
 
 ESP32_DIR ?= engine-sim-esp32
@@ -517,7 +525,7 @@ summary:
 		--local-cov $(BUILD_COV_DIR)/lcov.info --local-type lcov \
 		--sonar-report $(SONAR_REPORT) \
 		--removed-facet $(SONAR_REMOVED_FACET)
-	+@$(MAKE) -C engine-sim-bridge summary
+	+@$(MAKE) -C engine-sim-bridge summary SUMMARY_QUIET=1
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
