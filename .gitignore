@@ -56,3 +56,7 @@ assets/
 # Sonar scanner working directory
 .scannerwork/
 codeql-db/
+
+# Python
+__pycache__/
+*.pyc
