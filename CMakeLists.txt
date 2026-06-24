@@ -6,8 +6,45 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
 
+option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+if(ENABLE_COVERAGE)
+    add_compile_options(--coverage -g)
+    add_link_options(--coverage)
+endif()
+
 # Find required packages
 find_package(Threads REQUIRED)
+
+# Keep FetchContent's download cache OUTSIDE build/ so `make scrub` (which
+# removes build/) does NOT force a fresh network re-fetch of cli11 on the next
+# configure. A fresh configure that must hit the network can stall/hang
+# (DNS, captive portal, throttled github reachability, credential prompt),
+# which presents as the `check-platform` step getting SIGTERM'd when a
+# wrapper/IDE/user kills the hung configure — surfacing as
+# `make: *** [build/.presets-ready.stamp] Error 2`. This mirrors the fix
+# already applied to engine-sim-bridge for googletest. Pinning the cache to
+# .fetchcache means the tarball is downloaded once and reused across scrubs,
+# so configure is deterministic and offline-capable.
+#
+# The cache is partitioned PER BUILD DIRECTORY (build/, build-OS64/,
+# build-SIMULATOR64/, build-cov/) because the macOS build uses Ninja while
+# the iOS cross-builds use Unix Makefiles, and FetchContent's internal
+# "subbuild" step records the generator in its CMakeCache.txt — sharing one
+# cache across generators is a hard CMake error ("generator does not match").
+# Each partition still lives under top-level .fetchcache/ (outside build/),
+# so every build type survives its own scrub without a network re-fetch.
+#
+# NOTE: must be set BEFORE include(FetchContent). The FetchContent module
+# itself sets FETCHCONTENT_BASE_DIR to ${CMAKE_BINARY_DIR}/_deps as a cache
+# var on load; setting ours after include() (without FORCE) is a no-op.
+# FORCE covers any stale value left in CMakeCache.txt from older runs.
+get_filename_component(_cli_build_name "${CMAKE_BINARY_DIR}" NAME)
+set(FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.fetchcache/${_cli_build_name}"
+    CACHE PATH "FetchContent cache (per-build-dir, outside build/ to survive scrub)" FORCE)
+# Never let a git operation inside FetchContent block on an interactive
+# credential prompt — fail fast instead of hanging indefinitely.
+set(ENV{GIT_TERMINAL_PROMPT} "0")
+
 include(FetchContent)
 
 FetchContent_Declare(

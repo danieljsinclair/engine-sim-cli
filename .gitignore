@@ -3,6 +3,10 @@ build/
 build-*/
 cmake-build-*/
 
+# FetchContent cache (cli11) — kept outside build/ to survive `make scrub`.
+# See CMakeLists.txt FETCHCONTENT_BASE_DIR.
+.fetchcache/
+
 # Executables
 engine-sim-cli
 *.exe
@@ -48,4 +52,11 @@ escli-ios/EngineSimApp/EngineSimApp.xcodeproj/xcuserdata/
 # Canonical source: engine-sim-bridge/es/
 es/
 assets/
-_escli_preset_wrapper.mr
+
+# Sonar scanner working directory
+.scannerwork/
+codeql-db/
+
+# Python
+__pycache__/
+*.pyc
