@@ -6,6 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
 
+option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+if(ENABLE_COVERAGE)
+    add_compile_options(--coverage -g)
+    add_link_options(--coverage)
+endif()
+
 # Find required packages
 find_package(Threads REQUIRED)
 

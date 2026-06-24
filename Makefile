@@ -18,6 +18,9 @@ BUILD_PARALLEL_LEVEL ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CTEST_VERBOSE ?= 0
 CTEST_UI_FLAGS := $(if $(filter 1,$(CTEST_VERBOSE)),-V,--progress)
 SUBMODULE_STAMP = $(BUILD_DIR)/.submodule-stamp
+SONAR_STAMP := $(BUILD_DIR)/.sonar-scan.stamp
+SONAR_PROJECT_PROPERTIES := sonar-project.properties
+COMPILE_DB := $(BUILD_DIR)/compile_commands.json
 
 # Separate build-cov directory for coverage/sonar. RelWithDebInfo + llvm-cov
 # instrumentation. Has its own CMakeCache so coverage reconfigure does NOT
