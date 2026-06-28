@@ -58,11 +58,20 @@ public:
         std::string logFile = projectRoot + "/build/cli_test_" + std::to_string(getpid()) + ".log";
         std::string command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + args;
 
-        // Many tests already provide explicit shell redirection in args.
-        // Avoid appending a second redirection chain to keep command behavior deterministic.
-        if (args.find('>') == std::string::npos) {
-            command += " >> \"" + logFile + "\" 2>&1";
-        }
+        // Always capture the CLI's stdout + stderr to the log file. Tests that
+        // pass their own explicit file redirect (e.g. > /dev/null or 2>&1 merged
+        // into a file they manage) have their trailing redirect stripped so our
+        // append doesn't fight with theirs.
+        static const std::string kStderrMerge = "2>&1";
+        static const std::string kStdoutRedirect = ">";
+        bool endsWithStderrMerge = (args.size() >= kStderrMerge.size()) &&
+            (args.compare(args.size() - kStderrMerge.size(), kStderrMerge.size(), kStderrMerge) == 0);
+        std::string strippedArgs = endsWithStderrMerge
+            ? args.substr(0, args.size() - kStderrMerge.size())
+            : args;
+        // Rebuild the command without the trailing 2>&1 (if present).
+        command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + strippedArgs;
+        command += " >> \"" + logFile + "\" 2>&1";
 
         return system(command.c_str());
     }
