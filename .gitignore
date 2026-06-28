@@ -57,6 +57,12 @@ assets/
 .scannerwork/
 codeql-db/
 
+# Coverage files
+default.profraw
+
 # Python
 __pycache__/
 *.pyc
+
+# Other unclassified files
+
