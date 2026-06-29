@@ -163,9 +163,9 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     if (args.gearboxLogPath == "true") {
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
-        char buf[64];
-        std::strftime(buf, sizeof(buf), "gearbox_%Y%m%d_%H%M%S.csv", std::localtime(&time));
-        args.gearboxLogPath = buf;
+        std::string buf(64, '\0');
+        std::strftime(buf.data(), buf.size(), "gearbox_%Y%m%d_%H%M%S.csv", std::localtime(&time));
+        args.gearboxLogPath = buf.c_str();
     }
 
     args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;
