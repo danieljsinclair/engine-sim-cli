@@ -303,7 +303,7 @@ int main(int argc, char* argv[]) {
         // --replay-telemetry: when --duration isn't given (and not interactive),
         // default to the trace's full length so each capture just runs to its end.
         if (!config.interactive && args.duration <= 0.0) {
-            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+            if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
                 config.duration = replay->durationS();
             }
         }
@@ -349,9 +349,9 @@ int main(int argc, char* argv[]) {
                 // keyboard --auto (DemoInputProvider → VirtualIceInputProvider → VirtualIceTwin).
                 // The default zf8hp45 has different ratios than a C63 7-speed or GM LS 6-speed.
                 if (auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator.get())) {
-                    auto* rawSim = bridgeSim->getInternalSimulator();
-                    auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
-                    auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
+                    const auto* rawSim = bridgeSim->getInternalSimulator();
+                    const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
+                    const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
                     if (trans && vehicle && trans->getGearCount() > 0) {
                         std::vector<double> ratios;
                         for (int g = 0; g < trans->getGearCount(); ++g) {
