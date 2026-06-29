@@ -210,8 +210,7 @@ presentation::IPresentation* createPresentation(const SimulationConfig& config) 
     presConfig.duration = config.duration;
     presConfig.diagnostics = config.diagnostics;
 
-    auto pres = std::make_unique<presentation::ConsolePresentation>();
-    if (pres->Initialize(presConfig)) {
+    if (auto pres = std::make_unique<presentation::ConsolePresentation>(); pres->Initialize(presConfig)) {
         return pres.release();
     }
     throw std::runtime_error("Failed to initialize presentation");
@@ -227,8 +226,7 @@ std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILoggin
     }
 
     // No script specified: default to cycling all presets
-    auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir);
-    if (!presetDiscovery.presets.empty()) {
+    if (auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir); !presetDiscovery.presets.empty()) {
         std::vector<std::string> paths;
         for (const auto& preset : presetDiscovery.presets) {
             paths.push_back(preset.fullPath);
@@ -300,8 +298,7 @@ int main(int argc, char* argv[]) {
     auto cliLogger = std::make_unique<ConsoleLogger>();
     auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
 
-    CommandLineArgs args;
-    if (parseArguments(argc, argv, args)) {
+    if (CommandLineArgs args; parseArguments(argc, argv, args)) {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
 
