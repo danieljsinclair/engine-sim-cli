@@ -28,7 +28,7 @@ char gearSelectorChar(int selector) {
             // (FIRST=1 .. EIGHTH=8). DRIVE is 99, so these never collide.
             // All of 1-8 render as their digit; previously '1' fell through to '?'.
             if (selector >= 1 && selector <= 8) {
-                return '0' + selector;
+                return static_cast<char>('0' + selector);
             }
             return '?';
     }
