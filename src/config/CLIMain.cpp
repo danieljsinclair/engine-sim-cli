@@ -324,7 +324,8 @@ int main(int argc, char* argv[]) {
             // Each initSimulation() creates a new session, subsequent uses runs hot-swap on the same session
             std::unique_ptr<ISimulatorSession> session;
             result = EXIT_BUT_CONTINUE_NEXT;
-            for (size_t presetIndex = 0; result == EXIT_BUT_CONTINUE_NEXT; presetIndex = (presetIndex + 1) % paths.size()) {
+            size_t presetIndex = 0;
+            while (result == EXIT_BUT_CONTINUE_NEXT) {
                 const std::string& currentPath = paths[presetIndex];
                 auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
 
@@ -371,7 +372,8 @@ int main(int argc, char* argv[]) {
                 }
 
                 result = session->run();
-            }//for
+                presetIndex = (presetIndex + 1) % paths.size();
+            }//while
 
             // Tell the user why playback stopped
             if (config.interactive) {
