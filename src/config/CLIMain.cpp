@@ -233,7 +233,7 @@ std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILoggin
         for (const auto& preset : presetDiscovery.presets) {
             paths.push_back(preset.fullPath);
         }
-        logger->info(LogMask::BRIDGE, "Presets: %zu found (P to cycle)", paths.size());
+        logger->info(LogMask::BRIDGE, std::to_string(paths.size()) + " found (P to cycle)");
         return paths;
     }
 
@@ -333,7 +333,17 @@ int main(int argc, char* argv[]) {
             for (size_t presetIndex = 0; result == EXIT_BUT_CONTINUE_NEXT; presetIndex = (presetIndex + 1) % paths.size()) {
                 const std::string& currentPath = paths[presetIndex];
                 auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
-                session = createSession(config, currentPath, std::move(simulator), audioBuffer.get(), std::move(session), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+
+                // Build SessionDependencies from the available dependencies
+                SessionDependencies deps;
+                deps.audioBuffer = audioBuffer.get();
+                deps.inputProvider = inputProvider;
+                deps.presentation = presentation;
+                deps.telemetryWriter = telemetry.get();
+                deps.telemetryReader = telemetry.get();
+                deps.logger = cliLogger.get();
+
+                session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
 
                 // Expose session to signal handler and keyboard provider
                 g_sessionForSignal = session.get();
@@ -386,7 +396,7 @@ int main(int argc, char* argv[]) {
             }
         }
         catch (const std::exception& e) {
-            cliLogger->error(LogMask::BRIDGE, "%s", e.what());
+            cliLogger->error(LogMask::BRIDGE, std::string(e.what()));
             result = 1;
         }
 
