@@ -144,7 +144,10 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag) {
     args.syncPull = !threadedFlag;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
-    if (silentFlag) args.silent = args.playAudio = true;
+    if (silentFlag) {
+        args.playAudio = true;
+        args.silent = true;
+    }
 
     // Default to interactive mode unless --duration is given.
     if (args.duration <= 0.0) {
