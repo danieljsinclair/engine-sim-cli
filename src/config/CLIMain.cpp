@@ -82,20 +82,16 @@ void validateReplayTimeSlicing(const CommandLineArgs& args,
     if (!replay) return;
     const double traceDur = replay->durationS();
 
-    if (args.replayStartFromS >= 0.0) {
-        if (traceDur > 0.0 && args.replayStartFromS >= traceDur) {
-            std::cerr << "ERROR: --start-from " << args.replayStartFromS
-                      << "s is past end of trace (" << traceDur << "s)\n";
-            throw std::runtime_error("start-from beyond trace duration");
-        }
+    if (args.replayStartFromS >= 0.0 && traceDur > 0.0 && args.replayStartFromS >= traceDur) {
+        std::cerr << "ERROR: --start-from " << args.replayStartFromS
+                  << "s is past end of trace (" << traceDur << "s)\n";
+        throw std::runtime_error("start-from beyond trace duration");
     }
-    if (args.replayEndAtS >= 0.0) {
-        if (traceDur > 0.0 && args.replayEndAtS > traceDur) {
-            std::cerr << "WARNING: --end-at " << args.replayEndAtS
-                      << "s is past end of trace (" << traceDur
-                      << "s); will play to end\n";
-            replay->setEndAtS(-1.0);
-        }
+    if (args.replayEndAtS >= 0.0 && traceDur > 0.0 && args.replayEndAtS > traceDur) {
+        std::cerr << "WARNING: --end-at " << args.replayEndAtS
+                  << "s is past end of trace (" << traceDur
+                  << "s); will play to end\n";
+        replay->setEndAtS(-1.0);
     }
     if (args.replayStartFromS >= 0.0 && args.replayEndAtS >= 0.0
         && args.replayStartFromS >= args.replayEndAtS) {
