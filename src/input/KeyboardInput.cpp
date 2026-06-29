@@ -13,7 +13,7 @@
 // Terminal Keyboard Input Implementation
 // ============================================================================
 
-KeyboardInput::KeyboardInput() : oldSettings{}, initialized(false) {
+KeyboardInput::KeyboardInput() {
 #ifndef _WIN32
     tcgetattr(STDIN_FILENO, &oldSettings);
     termios newSettings = oldSettings;

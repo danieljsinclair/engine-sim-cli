@@ -29,8 +29,8 @@ public:
 
 private:
 #ifndef _WIN32
-    termios oldSettings;
-    bool initialized;
+    termios oldSettings{};
+    bool initialized{false};
 #endif
 };
 

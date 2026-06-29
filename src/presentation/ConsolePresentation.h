@@ -62,7 +62,7 @@ private:
 
     PresentationConfig config_;
     std::chrono::steady_clock::time_point lastDiagTime_;
-    bool initialized_;
+    bool initialized_{false};
 };
 
 } // namespace presentation

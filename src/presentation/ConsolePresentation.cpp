@@ -59,7 +59,6 @@ std::string gearTriple(int selector, bool autoMode, int physicalGear) {
 }
 
 ConsolePresentation::ConsolePresentation()
-    : initialized_(false)
 {
 }
 
