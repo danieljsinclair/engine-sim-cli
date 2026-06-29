@@ -168,7 +168,7 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         args.gearboxLogPath = buf;
     }
 
-    args.engineConfig = scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath);
+    args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;
 
     auto fail = [&](const char* message) {
         std::cerr << message;
