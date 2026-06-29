@@ -528,7 +528,7 @@ summary:
 		--local-cov $(BUILD_COV_DIR)/lcov.info --local-type lcov \
 		--sonar-report $(SONAR_REPORT) \
 		--removed-facet $(SONAR_REMOVED_FACET)
-	+@$(MAKE) -C engine-sim-bridge summary SUMMARY_QUIET=1
+	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary SUMMARY_QUIET=1
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
