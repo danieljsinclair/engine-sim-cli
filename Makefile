@@ -87,7 +87,7 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .DEFAULT_GOAL := all
 .PHONY: all build clean scrub test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
-        run run-json help build-cross clean-cross sonar-scan sonar-clean sonar-summary \
+        run run-json help build-cross clean-cross sonar-clean sonar-summary \
         coverage-run coverage-clean coverage-summary summary
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 
@@ -258,7 +258,7 @@ test: build
 		echo "=== [engine-sim-cli] TIME: bridge=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
 		echo "=== [engine-sim-cli] SUMMARY: PASS (full) ==="; \
 		printf '\033[0;32m=== [engine-sim-cli] RESULT: ALL TESTS PASSED ===\033[0m\n'; \
-		$(MAKE) sonar-scan coverage-summary sonar-summary || \
+		$(MAKE) $(SONAR_REPORT) coverage-summary sonar-summary || \
 			echo "=== [engine-sim-cli] sonar/coverage summary skipped (non-fatal) ==="; \
 	else \
 		cli_end=$$(date +%s); \
