@@ -106,11 +106,11 @@ std::string ConsolePresentation::formatSimulatorState(const EngineState& state) 
 // Display absolute replay timestamp [mm:ss.ms] when replaying.
 std::string ConsolePresentation::formatReplayTimestamp(const EngineState& state, std::ostringstream& out) const {
     if (state.drivetrain.replayTimestampS >= 0.0) {
-        int totalMs = static_cast<int>(state.drivetrain.replayTimestampS * 1000.0);
-        int hours = totalMs / 3600000;
-        int minutes = (totalMs % 3600000) / 60000;
-        int seconds = (totalMs % 60000) / 1000;
-        int ms = totalMs % 1000;
+        auto totalMs = static_cast<int>(state.drivetrain.replayTimestampS * 1000.0);
+        auto hours = totalMs / 3600000;
+        auto minutes = (totalMs % 3600000) / 60000;
+        auto seconds = (totalMs % 60000) / 1000;
+        auto ms = totalMs % 1000;
         if (hours > 0) {
             out << "[" << std::setw(2) << std::setfill('0') << hours << ":"
                 << std::setw(2) << minutes << ":"
@@ -128,7 +128,7 @@ std::string ConsolePresentation::formatReplayTimestamp(const EngineState& state,
 
 std::string ConsolePresentation::formatRPM(const EngineState& state, std::ostringstream& out) const {
     // RPM
-    int rpm = static_cast<int>(state.engine.rpm);
+    auto rpm = static_cast<int>(state.engine.rpm);
     if (rpm < EngineSimDefaults::RPM_DISPLAY_FLOOR && state.engine.rpm > 0) rpm = 0;
     out << "[" << std::setw(5) << rpm << " RPM] ";
     return out.str();
@@ -175,7 +175,7 @@ std::string ConsolePresentation::formatSpeedState(const EngineState& state, std:
 
     // Road speed — displayed as whole-number mph (right-aligned 3-char field)
     {
-        int mph = static_cast<int>(std::round(state.drivetrain.vehicleSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
+        auto mph = static_cast<int>(std::round(state.drivetrain.vehicleSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
         out << "[" << std::setw(3) << mph << " mph] ";
     }
     return out.str();
@@ -186,7 +186,7 @@ std::string ConsolePresentation::formatTargetSpeedState(const EngineState& state
     // Commanded road-speed target (','/'.' keys). Visible even in neutral where
     // the engine isn't driven by road speed. Negative sentinel = not commanded.
     if (state.controls.commandedSpeedKmh >= 0.0) {
-        int tgtMph = static_cast<int>(std::round(state.controls.commandedSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
+        auto tgtMph = static_cast<int>(std::round(state.controls.commandedSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
         out << ANSIColors::INFO << "[Tgt: " << std::setw(3) << tgtMph << " mph]"
             << ANSIColors::RESET << " ";
     }
@@ -197,8 +197,8 @@ std::string ConsolePresentation::formatTorqueState(const EngineState& state, std
 
     // Engine torque and drivetrain torque: green=positive (power), red=negative (braking)
     {
-        int engTorque = static_cast<int>(state.engine.engineTorqueNm);
-        int drvTorque = static_cast<int>(state.engine.drivetrainTorqueNm);
+        auto engTorque = static_cast<int>(state.engine.engineTorqueNm);
+        auto drvTorque = static_cast<int>(state.engine.drivetrainTorqueNm);
 
         const std::string& engColor = (engTorque >= 0) ? ANSIColors::GREEN : ANSIColors::RED;
         const std::string& drvColor = (drvTorque >= 0) ? ANSIColors::GREEN : ANSIColors::RED;
@@ -299,7 +299,7 @@ void ConsolePresentation::ShowProgress(double currentTime, double duration) {
     }
 
     if (duration > 0) {
-        int progress = static_cast<int>((currentTime / duration) * 50);
+        auto progress = static_cast<int>((currentTime / duration) * 50);
         std::cout << "\rProgress: [";
         for (int i = 0; i < 50; ++i) {
             std::cout << (i < progress ? '=' : ' ');
