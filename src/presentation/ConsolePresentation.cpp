@@ -265,9 +265,10 @@ std::string ConsolePresentation::formatAudioState(const EngineState& state, std:
         double generatingKfps = state.audio.generatingRateFps / 1000.0;
 
         // Simulation frequency: green <=10000, yellow <=15000, orange >15000
-        std::string freqColor = state.audio.simulationFrequency <= 10000 ? ANSIColors::GREEN
-                              : state.audio.simulationFrequency <= 15000 ? ANSIColors::YELLOW
-                              : ANSIColors::WARNING;
+        const std::string& freqColorHi = state.audio.simulationFrequency <= 15000 ? ANSIColors::YELLOW
+                                                                      : ANSIColors::WARNING;
+        const std::string& freqColor = state.audio.simulationFrequency <= 10000 ? ANSIColors::GREEN
+                                                                      : freqColorHi;
 
         // Generating rate: green if >= needed, yellow if >= 90%, red otherwise
         std::string genColor = ANSIColors::getDispositionColour(

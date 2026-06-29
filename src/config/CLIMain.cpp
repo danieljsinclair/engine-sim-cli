@@ -253,7 +253,8 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.interactive = args.interactive != config.interactive ? args.interactive : config.interactive;
     config.playAudio = args.playAudio != config.playAudio ? args.playAudio : config.playAudio;
     // Interactive mode runs until user quits (duration=0). Non-interactive defaults to 3s.
-    config.duration = args.duration > 0.0 ? args.duration : (config.interactive ? 0.0 : config.duration);
+    const double defaultDuration = config.interactive ? 0.0 : config.duration;
+    config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
