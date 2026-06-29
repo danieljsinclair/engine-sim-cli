@@ -228,7 +228,7 @@ double parseReplayTimeToSeconds(const std::string& s) {
                  + std::stod(parts[1]) * 60.0
                  + std::stod(parts[2]);
         }
-    } catch (...) {
+    } catch (const std::exception&) {
         return -1.0;
     }
 
