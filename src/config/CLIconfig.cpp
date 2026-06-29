@@ -17,7 +17,7 @@
 // Global State (required for signal handling)
 // ============================================================================
 
-std::atomic<bool> g_interactiveMode(false);
+std::atomic g_interactiveMode(false);
 
 // ============================================================================
 // Command Line Parsing
