@@ -1,10 +1,9 @@
-// CLIconfig.h - CLI argument parsing and global state
+// CLIconfig.h - CLI argument parsing
 // Audio/simulation constants moved to bridge (AudioLoopConfig.h)
 
 #ifndef CLI_CONFIG_H
 #define CLI_CONFIG_H
 
-#include <atomic>
 #include <string>
 #include "simulator/EngineSimTypes.h"
 #include "io/IPresentation.h"  // DiagnosticOutputFilter
@@ -62,12 +61,6 @@ struct CommandLineArgs {
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
 };
-
-// ============================================================================
-// Global State (required for signal handling)
-// ============================================================================
-
-extern std::atomic<bool> g_interactiveMode;
 
 // ============================================================================
 // Function Declarations

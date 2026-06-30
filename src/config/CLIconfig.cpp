@@ -14,12 +14,6 @@
 #include <vector>
 
 // ============================================================================
-// Global State (required for signal handling)
-// ============================================================================
-
-std::atomic g_interactiveMode(false);
-
-// ============================================================================
 // Command Line Parsing
 // ============================================================================
 
@@ -153,13 +147,11 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     if (args.duration <= 0.0) {
         args.interactive = true;
     }
-    if (args.interactive) g_interactiveMode.store(true);
 
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
         args.playAudio = true;
         args.interactive = true;
-        g_interactiveMode.store(true);
     }
 
     // Auto-generate gearbox log filename if flag given without value

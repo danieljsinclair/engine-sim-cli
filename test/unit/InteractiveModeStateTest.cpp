@@ -1,27 +1,17 @@
 // InteractiveModeStateTest.cpp - Behavior tests for the observable effects of
 // interactive mode during argument parsing.
 //
-// TARGETS REFACTOR COVERAGE FOR cpp:S5421 (g_interactiveMode global):
-//   The Tier-3 refactor eliminates the g_interactiveMode global (per the
-//   codebase's "no globals for thread signalling" rule). These tests pin the
-//   OBSERVABLE behavior that depends on it — namely, that interactive mode is
-//   correctly detected and signalled — so the refactor can preserve that
-//   behavior however it replaces the global.
+// COVERAGE FOR cpp:S5421: the g_interactiveMode global was removed (per the
+// codebase's "no globals for thread signalling" rule). These tests now pin the
+// sole observable contract — the parsed args.interactive flag — which is what
+// all production code consumes.
 //
 // WHAT WE ASSERT (intent, not mechanism):
 //   - Interactive mode is the DEFAULT when no --duration is given.
 //   - --interactive sets interactive mode.
 //   - --connect-demo forces interactive mode (implicit).
 //   - A positive --duration takes the CLI out of interactive mode.
-//   Each scenario is checked both on the parsed args.interactive flag (the
-//   public contract) AND on g_interactiveMode (the current signalling channel),
-//   so a refactor that removes the global but keeps args.interactive correct
-//   will still pass the args-level assertions; the global assertions document
-//   the current coupling and will be updated when the global is removed.
-//
-// NOTE: g_interactiveMode is process-global mutable state. Each test resets it
-// before parsing to avoid inter-test leakage (each test honors SRP and must not
-// depend on another test's outcome).
+//   - --connect-demo's implicit interactive=true overrides an explicit --duration.
 
 #include <gtest/gtest.h>
 #include "config/CLIconfig.h"
@@ -31,10 +21,8 @@
 
 namespace {
 
-// Reset the global to a known baseline, then parse the given args.
-// Returns the parsed CommandLineArgs.
+// Parse the given args. Returns the parsed CommandLineArgs.
 CommandLineArgs parseArgvFresh(std::vector<std::string> args) {
-    g_interactiveMode.store(false);  // isolate from prior tests
     CommandLineArgs parsed;
     args.insert(args.begin(), "engine-sim-cli");
     std::vector<char*> argv;
@@ -56,9 +44,11 @@ TEST(InteractiveModeState, DefaultNoDuration_IsInteractive) {
         << "Without --duration the CLI defaults to interactive mode";
 }
 
-TEST(InteractiveModeState, DefaultNoDuration_SignalsInteractiveGlobal) {
+// Same default-interactive scenario, asserted on the flag (the sole contract
+// now that the redundant signalling global is gone).
+TEST(InteractiveModeState, DefaultNoDuration_FlagIsTrue) {
     auto args = parseArgvFresh({"--silent"});
-    EXPECT_TRUE(g_interactiveMode.load());
+    EXPECT_TRUE(args.interactive);
 }
 
 // ============================================================================
@@ -68,7 +58,6 @@ TEST(InteractiveModeState, DefaultNoDuration_SignalsInteractiveGlobal) {
 TEST(InteractiveModeState, InteractiveFlag_SetsInteractive) {
     auto args = parseArgvFresh({"--interactive"});
     EXPECT_TRUE(args.interactive);
-    EXPECT_TRUE(g_interactiveMode.load());
 }
 
 // ============================================================================
@@ -81,9 +70,9 @@ TEST(InteractiveModeState, PositiveDuration_IsNotInteractive) {
         << "A positive --duration means a bounded (non-interactive) run";
 }
 
-TEST(InteractiveModeState, PositiveDuration_DoesNotSignalInteractiveGlobal) {
+TEST(InteractiveModeState, PositiveDuration_FlagIsFalse) {
     auto args = parseArgvFresh({"--duration", "2.5"});
-    EXPECT_FALSE(g_interactiveMode.load());
+    EXPECT_FALSE(args.interactive);
 }
 
 // ============================================================================
@@ -96,9 +85,9 @@ TEST(InteractiveModeState, ConnectDemo_ForcesInteractive) {
         << "--connect-demo implies interactive mode";
 }
 
-TEST(InteractiveModeState, ConnectDemo_SignalsInteractiveGlobal) {
+TEST(InteractiveModeState, ConnectDemo_FlagIsTrue) {
     auto args = parseArgvFresh({"--connect-demo"});
-    EXPECT_TRUE(g_interactiveMode.load());
+    EXPECT_TRUE(args.interactive);
 }
 
 TEST(InteractiveModeState, ConnectDemo_OverridesDuration) {
@@ -106,20 +95,4 @@ TEST(InteractiveModeState, ConnectDemo_OverridesDuration) {
     // present. This is the intent the refactor must preserve.
     auto args = parseArgvFresh({"--connect-demo", "--duration", "5"});
     EXPECT_TRUE(args.interactive);
-    EXPECT_TRUE(g_interactiveMode.load());
-}
-
-// ============================================================================
-// Consistency invariant: args.interactive and the global agree
-//   (documents the current coupling the refactor must replace coherently)
-// ============================================================================
-
-TEST(InteractiveModeState, GlobalAgreesWithArgsFlag_Interactive) {
-    auto args = parseArgvFresh({"--interactive"});
-    EXPECT_EQ(args.interactive, g_interactiveMode.load());
-}
-
-TEST(InteractiveModeState, GlobalAgreesWithArgsFlag_NonInteractive) {
-    auto args = parseArgvFresh({"--duration", "1.0"});
-    EXPECT_EQ(args.interactive, g_interactiveMode.load());
 }
