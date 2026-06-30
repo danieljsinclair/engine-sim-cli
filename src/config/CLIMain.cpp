@@ -199,7 +199,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     return ctx;
 }
 
-presentation::IPresentation* createPresentation(const SimulationConfig& config) {
+std::unique_ptr<presentation::IPresentation> createPresentation(const SimulationConfig& config) {
     presentation::PresentationConfig presConfig;
     // SimulationConfig is the source of truth; PresentationConfig receives copies for display purposes only
     // Note: interactive conceptually belongs to IInputProvider but is surfaced here for presentation
@@ -208,7 +208,7 @@ presentation::IPresentation* createPresentation(const SimulationConfig& config) 
     presConfig.diagnostics = config.diagnostics;
 
     if (auto pres = std::make_unique<presentation::ConsolePresentation>(); pres->Initialize(presConfig)) {
-        return pres.release();
+        return pres;
     }
     throw CliException("Failed to initialize presentation");
 }
@@ -334,7 +334,7 @@ int main(int argc, char* argv[]) {
                 SessionDependencies deps;
                 deps.audioBuffer = audioBuffer.get();
                 deps.inputProvider = inputProvider;
-                deps.presentation = presentation;
+                deps.presentation = presentation.get();
                 deps.telemetryWriter = telemetry.get();
                 deps.telemetryReader = telemetry.get();
                 deps.logger = cliLogger.get();
@@ -397,7 +397,7 @@ int main(int argc, char* argv[]) {
             result = 1;
         }
 
-        delete presentation;
+        // presentation (unique_ptr) destructs here, freeing the provider.
     }
     return result;
 }
