@@ -147,54 +147,54 @@ static CommandLineArgs parseArgv(std::vector<std::string> args) {
 // --start-from with plain seconds
 TEST(CLIWiring, StartFrom_PlainSeconds_99) {
     auto args = parseArgv({"--start-from", "99"});
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 99.0);
-    EXPECT_EQ(args.replayStartFrom, "99");
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 99.0);
+    EXPECT_EQ(args.replay.startFrom, "99");
 }
 
 TEST(CLIWiring, StartFrom_PlainSeconds_500) {
     auto args = parseArgv({"--start-from", "500"});
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 500.0);
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 500.0);
 }
 
 TEST(CLIWiring, StartFrom_PlainSeconds_1234) {
     auto args = parseArgv({"--start-from", "1234"});
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 1234.0);
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 1234.0);
 }
 
 TEST(CLIWiring, StartFrom_PlainSeconds_999) {
     auto args = parseArgv({"--start-from", "999"});
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 999.0);
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 999.0);
 }
 
 // --start-from with hh:mm:ss
 TEST(CLIWiring, StartFrom_hh_mm_ss_01_00_00) {
     auto args = parseArgv({"--start-from", "01:00:00"});
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 3600.0);
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 3600.0);
 }
 
 // --start-from with mm:ss
 TEST(CLIWiring, StartFrom_mm_ss_02_26) {
     auto args = parseArgv({"--start-from", "02:26"});
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 146.0);
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 146.0);
 }
 
 // --end-at with plain seconds
 TEST(CLIWiring, EndAt_PlainSeconds_200) {
     auto args = parseArgv({"--end-at", "200"});
-    EXPECT_DOUBLE_EQ(args.replayEndAtS, 200.0);
+    EXPECT_DOUBLE_EQ(args.replay.endAtS, 200.0);
 }
 
 // --end-at with hh:mm:ss
 TEST(CLIWiring, EndAt_hh_mm_ss_01_00_00) {
     auto args = parseArgv({"--end-at", "01:00:00"});
-    EXPECT_DOUBLE_EQ(args.replayEndAtS, 3600.0);
+    EXPECT_DOUBLE_EQ(args.replay.endAtS, 3600.0);
 }
 
 // Both --start-from and --end-at together
 TEST(CLIWiring, StartFrom_And_EndAt) {
     auto args = parseArgv({"--start-from", "99", "--end-at", "200"});
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 99.0);
-    EXPECT_DOUBLE_EQ(args.replayEndAtS, 200.0);
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 99.0);
+    EXPECT_DOUBLE_EQ(args.replay.endAtS, 200.0);
 }
 
 // Without --start-from: replayStartFromS should remain -1.0 (disabled)
@@ -202,8 +202,8 @@ TEST(CLIWiring, NoStartFrom_DefaultDisabled) {
     const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "dummy.csv"};
     CommandLineArgs args;
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, -1.0);
-    EXPECT_TRUE(args.replayStartFrom.empty());
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, -1.0);
+    EXPECT_TRUE(args.replay.startFrom.empty());
 }
 
 // --start-from without --replay-telemetry should fail (needs() constraint)
@@ -227,6 +227,6 @@ TEST(CLIWiring, ReplayTelemetryPath_WithStartFrom) {
                           "--start-from", "99"};
     CommandLineArgs args;
     EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
-    EXPECT_EQ(args.replayTelemetryPath, "my_capture.csv");
-    EXPECT_DOUBLE_EQ(args.replayStartFromS, 99.0);
+    EXPECT_EQ(args.replay.telemetryPath, "my_capture.csv");
+    EXPECT_DOUBLE_EQ(args.replay.startFromS, 99.0);
 }

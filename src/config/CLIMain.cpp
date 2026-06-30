@@ -83,21 +83,21 @@ void validateReplayTimeSlicing(const CommandLineArgs& args,
     if (!replay) return;
     const double traceDur = replay->durationS();
 
-    if (args.replayStartFromS >= 0.0 && traceDur > 0.0 && args.replayStartFromS >= traceDur) {
-        std::cerr << "ERROR: --start-from " << args.replayStartFromS
+    if (args.replay.startFromS >= 0.0 && traceDur > 0.0 && args.replay.startFromS >= traceDur) {
+        std::cerr << "ERROR: --start-from " << args.replay.startFromS
                   << "s is past end of trace (" << traceDur << "s)\n";
         throw CliException("start-from beyond trace duration");
     }
-    if (args.replayEndAtS >= 0.0 && traceDur > 0.0 && args.replayEndAtS > traceDur) {
-        std::cerr << "WARNING: --end-at " << args.replayEndAtS
+    if (args.replay.endAtS >= 0.0 && traceDur > 0.0 && args.replay.endAtS > traceDur) {
+        std::cerr << "WARNING: --end-at " << args.replay.endAtS
                   << "s is past end of trace (" << traceDur
                   << "s); will play to end\n";
         replay->setEndAtS(-1.0);
     }
-    if (args.replayStartFromS >= 0.0 && args.replayEndAtS >= 0.0
-        && args.replayStartFromS >= args.replayEndAtS) {
-        std::cerr << "ERROR: --start-from (" << args.replayStartFromS
-                  << "s) must be before --end-at (" << args.replayEndAtS << "s)\n";
+    if (args.replay.startFromS >= 0.0 && args.replay.endAtS >= 0.0
+        && args.replay.startFromS >= args.replay.endAtS) {
+        std::cerr << "ERROR: --start-from (" << args.replay.startFromS
+                  << "s) must be before --end-at (" << args.replay.endAtS << "s)\n";
         throw CliException("start-from >= end-at");
     }
 }
@@ -107,9 +107,9 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
 
     // Replay mode: the telemetry CSV is the sole input source (no keyboard).
     // --start is implicit — the provider fires the starter on frame 0.
-    if (!args.replayTelemetryPath.empty()) {
+    if (!args.replay.telemetryPath.empty()) {
         auto replay = std::make_unique<input::ReplayTelemetryProvider>(
-            args.replayTelemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.autoGearbox);
+            args.replay.telemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.gearbox.automatic);
         if (!replay->Initialize()) {
             throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
@@ -117,8 +117,8 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         auto kb = std::make_unique<::KeyboardInput>();
         replay->setKeyboardInput(kb.get());
         // Wire time slicing and validate against trace duration.
-        replay->setStartFromS(args.replayStartFromS);
-        replay->setEndAtS(args.replayEndAtS);
+        replay->setStartFromS(args.replay.startFromS);
+        replay->setEndAtS(args.replay.endAtS);
         validateReplayTimeSlicing(args, replay.get());
         ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
@@ -146,7 +146,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
 
     // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
     // and route the shift keys to its PRND selector (P/R/N/D).
-    if (args.connectDemo || args.autoGearbox) {
+    if (args.connectDemo || args.gearbox.automatic) {
         auto throttle = std::make_unique<input::DemoThrottleSource>();
         auto gearSelector = std::make_unique<input::GearSelectorInput>();
         auto ignition = std::make_unique<input::IgnitionInput>();
@@ -158,13 +158,13 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             twin::IceVehicleProfile::zf8hp45()
         );
 
-        if (!args.gearboxLogPath.empty()) {
-            static twin::GearboxCsvLogger gearboxLogger(args.gearboxLogPath);
+        if (!args.gearbox.logPath.empty()) {
+            static twin::GearboxCsvLogger gearboxLogger(args.gearbox.logPath);
             if (gearboxLogger.isOpen()) {
                 demoProvider->setGearboxLogger(&gearboxLogger);
-                std::cout << "  Gearbox log: " << args.gearboxLogPath << std::endl;
+                std::cout << "  Gearbox log: " << args.gearbox.logPath << std::endl;
             } else {
-                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearboxLogPath << std::endl;
+                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearbox.logPath << std::endl;
             }
         }
 
@@ -253,7 +253,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
-    config.preFillMs = (args.preFillMs > 0) ? args.preFillMs : config.preFillMs;
+    config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
 
@@ -261,13 +261,13 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // simulationFrequency: 0 means "use engine's built-in frequency" (piston engines get it from
     // their script). SineEngine has no built-in frequency, so the factory applies the default.
     // If the user provides an explicit value, use that; otherwise leave as 0 (engine decides).
-    if (args.simulationFrequency > 0) {
-        config.engineConfig.simulationFrequency = args.simulationFrequency;
+    if (args.audio.simulationFrequency > 0) {
+        config.engineConfig.simulationFrequency = args.audio.simulationFrequency;
     }
-    config.engineConfig.targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : config.engineConfig.targetSynthesizerLatency;
+    config.engineConfig.targetSynthesizerLatency = (args.audio.synthLatency > 0.0) ? args.audio.synthLatency : config.engineConfig.targetSynthesizerLatency;
 
     // Gearbox mode: --auto enables automatic gearbox, default is manual
-    config.autoGearbox = args.autoGearbox;
+    config.autoGearbox = args.gearbox.automatic;
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
