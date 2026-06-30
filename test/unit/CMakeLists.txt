@@ -8,6 +8,8 @@ add_executable(unit_tests
     CommandLineParserTest.cpp
     ConsolePresentationTest.cpp
     CLITimeParsingTest.cpp
+    GearboxLogFilenameTest.cpp
+    InteractiveModeStateTest.cpp
     AudioTestConstants.cpp
     KeyboardInputProviderTest.cpp
     ISimulatorTest.cpp
