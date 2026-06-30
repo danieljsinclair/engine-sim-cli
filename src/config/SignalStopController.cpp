@@ -86,7 +86,7 @@ void SignalStopController::detach() {
     session_.store(nullptr);
 }
 
-void SignalStopController::readerLoop() {
+void SignalStopController::readerLoop() const {
     if (pipeReadFd_ < 0) return;
 
     std::array<char, 64> buf{};

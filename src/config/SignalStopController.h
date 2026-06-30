@@ -41,7 +41,7 @@ private:
     // Reader-thread loop: blocks on read(pipeReadFd_), on each byte snapshots
     // the current session pointer and, if non-null, calls stop(). Loops until
     // the pipe is closed (shutdown_ set + write end closed in the destructor).
-    void readerLoop();
+    void readerLoop() const;
 
     int pipeReadFd_{};   // drained by the reader thread
     int pipeWriteFd_{};  // written by requestStop() (signal-handler safe)
