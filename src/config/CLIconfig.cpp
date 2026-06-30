@@ -166,8 +166,10 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     if (args.gearbox.logPath == "true") {
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
+        struct tm tm_local;
+        localtime_r(&time, &tm_local);
         std::string buf(64, '\0');
-        std::strftime(buf.data(), buf.size(), "gearbox_%Y%m%d_%H%M%S.csv", std::localtime(&time));
+        std::strftime(buf.data(), buf.size(), "gearbox_%Y%m%d_%H%M%S.csv", &tm_local);
         args.gearbox.logPath = buf.c_str();
     }
 
