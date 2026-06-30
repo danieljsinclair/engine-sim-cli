@@ -228,7 +228,11 @@ double parseReplayTimeToSeconds(const std::string& s) {
                  + std::stod(parts[1]) * 60.0
                  + std::stod(parts[2]);
         }
-    } catch (const std::exception&) {
+    } catch (const std::invalid_argument&) {
+        // std::stod: token isn't a number.
+        return -1.0;
+    } catch (const std::out_of_range&) {
+        // std::stod: token parses but the value is out of double range.
         return -1.0;
     }
 
