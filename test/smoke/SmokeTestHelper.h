@@ -24,15 +24,16 @@ public:
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             std::string currentDir(cwd);
 
-            // If we're in build/test/, go up two levels
-            size_t pos = currentDir.find("/build/test");
+            // If we're in a build directory's test/, go up two levels.
+            // Handles build/, build-cov/, build-coverage/, etc.
+            size_t pos = currentDir.find("/build");
             if (pos != std::string::npos) {
-                return currentDir.substr(0, pos);
-            }
-
-            // If we're in build/, go up one level
-            pos = currentDir.find("/build");
-            if (pos != std::string::npos) {
+                // Check for /build-X/test/ pattern (two levels up)
+                size_t testPos = currentDir.find("/test", pos);
+                if (testPos != std::string::npos) {
+                    return currentDir.substr(0, pos);
+                }
+                // Just /build-X/ (one level up)
                 return currentDir.substr(0, pos);
             }
 
@@ -44,10 +45,26 @@ public:
         return "../..";
     }
 
-    // Get the absolute path to the CLI executable
+    // Get the absolute path to the CLI executable. Uses the SAME build
+    // directory the tests are running from (build/ for normal, build-cov/
+    // for coverage) so instrumented binaries are exercised when present.
     static std::string getCLIPath() {
-        std::string projectRoot = getProjectRoot();
-        return projectRoot + "/build/engine-sim-cli";
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+            std::string currentDir(cwd);
+            std::string projectRoot = getProjectRoot();
+            // Derive the build dir from cwd (e.g. build-cov, build, build-coverage)
+            size_t pos = currentDir.find("/build");
+            if (pos != std::string::npos) {
+                size_t buildEnd = currentDir.find('/', pos + 1);
+                std::string buildDir = (buildEnd != std::string::npos)
+                    ? currentDir.substr(pos + 1, buildEnd - pos - 1)
+                    : currentDir.substr(pos + 1);
+                // If we're in buildDir/test/, the binary is in buildDir/
+                return projectRoot + "/" + buildDir + "/engine-sim-cli";
+            }
+        }
+        return getProjectRoot() + "/build/engine-sim-cli";
     }
 
     // Run the CLI with the given arguments from the project root directory
