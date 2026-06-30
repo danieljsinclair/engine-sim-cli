@@ -16,7 +16,7 @@ add_executable(unit_tests
     ISimulatorTest.cpp
     # Required support code
     ../../src/config/CLIconfig.cpp
-    ../../src/config/SignalStopController.cpp
+    ../../src/config/KqueueSignalStopController.cpp
     ../../src/config/ANSIColors.cpp
     ../../src/presentation/ConsolePresentation.cpp
     ../../src/input/KeyboardInput.cpp

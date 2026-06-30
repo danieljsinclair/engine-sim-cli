@@ -40,29 +40,21 @@
 #include "engine-sim/include/units.h"
 
 #include <iostream>
-#include <csignal>
 #include <memory>
 #include <stdexcept>
 #include <vector>
 
-#include "config/SignalStopController.h"
+#include "config/KqueueSignalStopController.h"
 
 // ============================================================================
-// Signal Handler
+// Signal handling: no handler, no global.
 // ============================================================================
-// The handler performs exactly ONE async-signal-safe action: a pipe write via
-// the controller's requestStop(). It NEVER dereferences the session. The
-// controller pointer below is init-once immutable: assigned in main() before
-// the signals are installed and never mutated thereafter, so the handler path
-// touches no per-run mutable global (the anti-pattern g_sessionForSignal had).
-namespace {
-ISignalStopController* g_stopController = nullptr;
-}
-
-void signalHandler(int signal) {
-    (void)signal;
-    if (g_stopController) g_stopController->requestStop();
-}
+// On macOS, SIGINT/SIGTERM are watched by the injected ISignalStopController
+// provider (kqueue EVFILT_SIGNAL): the provider blocks the signals and a reader
+// thread stops the attached session when one arrives. There is no signal-handler
+// function here and no file-scope pointer -- the provider is created via the
+// factory below in main() and held as a local. See KqueueSignalStopController.h
+// for the Open/Closed provider structure (other platforms add their own class).
 
 // ============================================================================
 // Dependency Constructors - Create injectable providers
@@ -341,14 +333,11 @@ void reportStopReason(const SimulationConfig& config) {
 int main(int argc, char* argv[]) {
     int result = 1;
 
-    // Signal-stop controller owns the self-pipe + reader thread. Lives for the
-    // whole process; its reader thread is joined in its destructor at return.
+    // Signal-stop controller: the macOS provider (kqueue) blocks SIGINT/SIGTERM
+    // and a reader thread stops the attached session when one arrives. Held as a
+    // local; its reader thread is joined in its destructor at return. No handler,
+    // no file-scope pointer.
     auto stopController = createSignalStopController();
-    // Init-once immutable: assigned before signal install, never mutated again,
-    // so the handler path touches no per-run mutable global.
-    g_stopController = stopController.get();
-    std::signal(SIGINT, signalHandler);
-    std::signal(SIGTERM, signalHandler);
 
     auto cliLogger = std::make_unique<ConsoleLogger>();
     auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
