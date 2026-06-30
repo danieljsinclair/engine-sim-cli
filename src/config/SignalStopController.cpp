@@ -10,6 +10,7 @@
 
 #include <unistd.h>
 
+#include <array>
 #include <cerrno>
 #include <cstring>
 #include <utility>
@@ -36,10 +37,10 @@ void asyncSafeWrite(int fd, const void* buf, size_t n) {
 }  // namespace
 
 SignalStopController::SignalStopController() {
-    int fds[2] = {-1, -1};
+    std::array<int, 2> fds{-1, -1};
     // pipe2 would let us set CLOEXEC atomically, but pipe() + the consumer
     // (a single long-lived CLI process) is portable and sufficient here.
-    if (::pipe(fds) != 0) {
+    if (::pipe(fds.data()) != 0) {
         // Pipe creation failure is an anticipated, recoverable init error -- the
         // controller simply has no signal-stop capability. Leave both fds == -1;
         // requestStop()/readerLoop() handle the "no pipe" state safely.
@@ -78,8 +79,8 @@ void SignalStopController::attachSession(ISimulatorSession* session) {
 
 void SignalStopController::requestStop() {
     if (pipeWriteFd_ < 0) return;  // no pipe (init failed): inert, safe
-    const char byte = 'x';
-    asyncSafeWrite(pipeWriteFd_, &byte, 1);
+    const std::array<char, 1> byte{'x'};
+    asyncSafeWrite(pipeWriteFd_, byte.data(), byte.size());
 }
 
 void SignalStopController::detach() {
@@ -89,9 +90,9 @@ void SignalStopController::detach() {
 void SignalStopController::readerLoop() {
     if (pipeReadFd_ < 0) return;
 
-    char buf[64];
+    std::array<char, 64> buf{};
     while (!shutdown_.load()) {
-        ssize_t r = ::read(pipeReadFd_, buf, sizeof(buf));
+        ssize_t r = ::read(pipeReadFd_, buf.data(), buf.size());
         if (r <= 0) {
             if (r < 0 && errno == EINTR) continue;
             break;  // 0 == EOF (write end closed), other errors: stop draining
