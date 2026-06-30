@@ -58,9 +58,7 @@ std::string gearTriple(int selector, bool autoMode, int physicalGear) {
     return std::string(1, field1) + field2 + field3;
 }
 
-ConsolePresentation::ConsolePresentation()
-{
-}
+ConsolePresentation::ConsolePresentation() = default;
 
 ConsolePresentation::~ConsolePresentation() {
     Shutdown();
