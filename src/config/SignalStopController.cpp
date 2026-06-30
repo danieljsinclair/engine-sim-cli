@@ -55,7 +55,7 @@ SignalStopController::SignalStopController() {
 }
 
 SignalStopController::~SignalStopController() {
-    shutdown_.store(true, std::memory_order_release);
+    shutdown_.store(true);
 
     // Closing the write end makes the reader's blocking read() return 0 (EOF),
     // which exits readerLoop() so the join below completes in bounded time.
@@ -73,7 +73,7 @@ SignalStopController::~SignalStopController() {
 }
 
 void SignalStopController::attachSession(ISimulatorSession* session) {
-    session_.store(session, std::memory_order_release);
+    session_.store(session);
 }
 
 void SignalStopController::requestStop() {
@@ -83,14 +83,14 @@ void SignalStopController::requestStop() {
 }
 
 void SignalStopController::detach() {
-    session_.store(nullptr, std::memory_order_release);
+    session_.store(nullptr);
 }
 
 void SignalStopController::readerLoop() {
     if (pipeReadFd_ < 0) return;
 
     char buf[64];
-    while (!shutdown_.load(std::memory_order_acquire)) {
+    while (!shutdown_.load()) {
         ssize_t r = ::read(pipeReadFd_, buf, sizeof(buf));
         if (r <= 0) {
             if (r < 0 && errno == EINTR) continue;
@@ -102,10 +102,10 @@ void SignalStopController::readerLoop() {
         // request and maps to one stop() on the currently-attached session.
         for (ssize_t i = 0; i < r; ++i) {
             // Snapshot the session AFTER the byte is observed so a concurrent
-            // attach/detach can't hand us a stale pointer; atomic load gives
+            // attach/detach can't hand us a stale pointer; the atomic load gives
             // safe publication. If null (no session / detached), this request
             // is inert -- the core "no session in the stop path" safety.
-            ISimulatorSession* s = session_.load(std::memory_order_acquire);
+            ISimulatorSession* s = session_.load();
             if (s != nullptr) s->stop();
         }
     }
