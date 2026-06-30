@@ -28,7 +28,7 @@ char gearChar(int selector, int physicalGear);
 // Pure and public so the composite is testable without friend hacks.
 std::string gearTriple(int selector, bool autoMode, int physicalGear);
 
-class ConsolePresentation : public IPresentation {
+class ConsolePresentation final : public IPresentation {
 public:
     ConsolePresentation();
     ~ConsolePresentation() override;
