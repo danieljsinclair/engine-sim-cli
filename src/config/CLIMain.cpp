@@ -276,15 +276,61 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // Factory instruction
     config.simulatorType = args.sineMode ? SimulatorType::SineWave : SimulatorType::PistonEngine;
 
-    // Forward selective debug categories to the presentation layer
+// Forward selective debug categories to the presentation layer
     config.diagnostics = args.diagnostics;
 
     return config;
 }
 
+// Reconfigure gearbox-bearing input providers to match the simulator's actual
+// transmission ratios. Localizes the BridgeSimulator/provider casts into one
+// cohesive unit (SRP) so the run loop stays flat. Open/Closed note: the cast
+// here is the seam — providers expose reconfigureProfile() but it is not yet on
+// the shared IInputProvider interface (that lives in engine-sim-bridge). When it
+// is promoted there, this helper collapses to a single polymorphic call.
+void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inputCtx) {
+    auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator);
+    if (!bridgeSim) return;
+
+    const auto* rawSim = bridgeSim->getInternalSimulator();
+    const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
+    const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
+    // Anticipated bad/empty-preset state (no transmission or vehicle, or a
+    // preset with no gears) — silently leave the provider's default profile.
+    if (!trans || !vehicle || trans->getGearCount() <= 0) return;
+
+    std::vector<double> ratios;
+    ratios.reserve(static_cast<size_t>(trans->getGearCount()));
+    for (int g = 0; g < trans->getGearCount(); ++g) {
+        ratios.push_back(trans->getGearRatio(g));
+    }
+
+    // Replay path
+    if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+        replay->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
+    }
+    // Keyboard --auto path (via DemoInputProvider)
+    if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
+        demo->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
+    }
+}
+
+// Print why playback stopped, based on how the session ended. Single exit point.
+void reportStopReason(const SimulationConfig& config) {
+    if (config.interactive) {
+        std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
+    } else if (config.duration > 0.0) {
+        std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
+                  << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
+    } else {
+        std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
+    }
+}
+
 // ============================================================================
 // Main Entry Point
 // ============================================================================
+
 
 int main(int argc, char* argv[]) {
     int result = 1;
@@ -339,33 +385,9 @@ int main(int argc, char* argv[]) {
             deps.telemetryReader = telemetry.get();
             deps.logger = cliLogger.get();
 
-            // DRY: reconfigure ANY gearbox-bearing provider to match the ACTUAL engine
-            // preset's transmission BEFORE the simulator moves into the session. Works for
-            // both replay (ReplayTelemetryProvider) and keyboard --auto (DemoInputProvider →
-            // VirtualIceInputProvider → VirtualIceTwin). The default zf8hp45 has different
-            // ratios than a C63 7-speed or GM LS 6-speed. Done while we still own `simulator`
-            // (createSession below takes it by move).
-            if (auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator.get())) {
-                const auto* rawSim = bridgeSim->getInternalSimulator();
-                const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
-                const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
-                if (trans && vehicle && trans->getGearCount() > 0) {
-                    std::vector<double> ratios;
-                    for (int g = 0; g < trans->getGearCount(); ++g) {
-                        ratios.push_back(trans->getGearRatio(g));
-                    }
-                    // Replay path
-                    if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
-                        replay->reconfigureProfile(ratios, vehicle->getDiffRatio(),
-                                                    vehicle->getTireRadius());
-                    }
-                    // Keyboard --auto path (via DemoInputProvider)
-                    if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
-                        demo->reconfigureProfile(ratios, vehicle->getDiffRatio(),
-                                                 vehicle->getTireRadius());
-                    }
-                }
-            }
+            // Match gearbox-bearing providers to the preset's transmission while we
+            // still own the simulator (createSession takes it by move below).
+            reconfigureGearboxProviders(simulator.get(), inputCtx);
 
             session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
 
@@ -379,20 +401,16 @@ int main(int argc, char* argv[]) {
         }//while
 
         // Tell the user why playback stopped
-        if (config.interactive) {
-            std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
-        } else if (config.duration > 0.0) {
-            std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
-                      << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
-        } else {
-            std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
-        }
+        reportStopReason(config);
 
         g_sessionForSignal = nullptr;
 
-        if (session) {
-            session->close();
-        }
+        // The loop body always assigns a non-null session (createSession returns
+        // a SimulatorSession and the loop runs at least once since result starts
+        // as EXIT_BUT_CONTINUE_NEXT). A null session here is a can't-happen
+        // invariant violation — fail-fast rather than silently skip close().
+        ASSERT(session, "session must exist after the run loop");
+        session->close();
         }
         // Expected CLI errors: clean exit with the message. Unexpected exceptions
         // are NOT caught here — they propagate to std::terminate (fail-fast) so
