@@ -21,11 +21,10 @@ namespace {
 // retry condition). Any other error is intentionally ignored -- a stop request
 // is best-effort; if the pipe is full or closed there is nothing useful to do
 // from the handler, and the reader thread keeps running regardless.
-void asyncSafeWrite(int fd, const void* buf, size_t n) {
-    const auto* p = static_cast<const char*>(buf);
+void asyncSafeWrite(int fd, const char* buf, size_t n) {
     size_t written = 0;
     while (written < n) {
-        ssize_t r = ::write(fd, p + written, n - written);
+        ssize_t r = ::write(fd, buf + written, n - written);
         if (r < 0) {
             if (errno == EINTR) continue;
             return;  // best-effort; ignore all other errors
