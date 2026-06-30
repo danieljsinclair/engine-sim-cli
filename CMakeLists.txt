@@ -128,6 +128,7 @@ add_executable(engine-sim-cli
     # Config layer
     src/config/CLIconfig.cpp
     src/config/CLIMain.cpp
+    src/config/SignalStopController.cpp
     src/config/ANSIColors.cpp
     # Presentation layer
     src/presentation/ConsolePresentation.cpp

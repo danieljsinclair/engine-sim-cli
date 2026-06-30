@@ -45,17 +45,23 @@
 #include <stdexcept>
 #include <vector>
 
+#include "config/SignalStopController.h"
+
 // ============================================================================
 // Signal Handler
 // ============================================================================
-
+// The handler performs exactly ONE async-signal-safe action: a pipe write via
+// the controller's requestStop(). It NEVER dereferences the session. The
+// controller pointer below is init-once immutable: assigned in main() before
+// the signals are installed and never mutated thereafter, so the handler path
+// touches no per-run mutable global (the anti-pattern g_sessionForSignal had).
 namespace {
-ISimulatorSession* g_sessionForSignal = nullptr;
+ISignalStopController* g_stopController = nullptr;
 }
 
 void signalHandler(int signal) {
     (void)signal;
-    if (g_sessionForSignal) g_sessionForSignal->stop();
+    if (g_stopController) g_stopController->requestStop();
 }
 
 // ============================================================================
@@ -335,6 +341,12 @@ void reportStopReason(const SimulationConfig& config) {
 int main(int argc, char* argv[]) {
     int result = 1;
 
+    // Signal-stop controller owns the self-pipe + reader thread. Lives for the
+    // whole process; its reader thread is joined in its destructor at return.
+    auto stopController = createSignalStopController();
+    // Init-once immutable: assigned before signal install, never mutated again,
+    // so the handler path touches no per-run mutable global.
+    g_stopController = stopController.get();
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
@@ -391,19 +403,25 @@ int main(int argc, char* argv[]) {
 
             session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
 
-            // Expose session to signal handler and keyboard provider
-            g_sessionForSignal = session.get();
+            // Expose session to the signal-stop controller and keyboard provider.
+            // The controller never dereferences the session from a signal handler;
+            // it stores the pointer for its reader thread to call stop() on.
+            stopController->attachSession(session.get());
             if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
             if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
 
             result = session->run();
+            // Detach before the session may be hot-swapped/recreated next loop
+            // iteration, so a late stop request can't touch a stale session.
+            stopController->detach();
             presetIndex = (presetIndex + 1) % paths.size();
         }//while
 
         // Tell the user why playback stopped
         reportStopReason(config);
 
-        g_sessionForSignal = nullptr;
+        // No session remains; detach so any stray signal is inert.
+        stopController->detach();
 
         // The loop body always assigns a non-null session (createSession returns
         // a SimulatorSession and the loop runs at least once since result starts

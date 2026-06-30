@@ -10,11 +10,13 @@ add_executable(unit_tests
     CLITimeParsingTest.cpp
     GearboxLogFilenameTest.cpp
     InteractiveModeStateTest.cpp
+    SignalStopControllerTest.cpp
     AudioTestConstants.cpp
     KeyboardInputProviderTest.cpp
     ISimulatorTest.cpp
     # Required support code
     ../../src/config/CLIconfig.cpp
+    ../../src/config/SignalStopController.cpp
     ../../src/config/ANSIColors.cpp
     ../../src/presentation/ConsolePresentation.cpp
     ../../src/input/KeyboardInput.cpp
