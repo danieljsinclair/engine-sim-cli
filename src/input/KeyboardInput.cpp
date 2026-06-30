@@ -13,20 +13,28 @@
 // Terminal Keyboard Input Implementation
 // ============================================================================
 
-KeyboardInput::KeyboardInput() {
 #ifndef _WIN32
-    tcgetattr(STDIN_FILENO, &oldSettings);
+bool KeyboardInput::setupTerminal() {
+    if (tcgetattr(STDIN_FILENO, &oldSettings) != 0) return false;
     termios newSettings = oldSettings;
     newSettings.c_lflag &= ~(ICANON | ECHO);
     newSettings.c_cc[VMIN] = 0;
     newSettings.c_cc[VTIME] = 0;
-    tcsetattr(STDIN_FILENO, TCSANOW, &newSettings);
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &newSettings) != 0) return false;
 
     // Set non-blocking
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-    initialized = true;
+    if (flags == -1) return false;
+    if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) != 0) return false;
+    return true;
+}
 #endif
+
+KeyboardInput::KeyboardInput()
+#ifndef _WIN32
+    : initialized{setupTerminal()}
+#endif
+{
 }
 
 KeyboardInput::~KeyboardInput() {

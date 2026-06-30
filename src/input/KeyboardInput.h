@@ -35,6 +35,13 @@ public:
 
 private:
 #ifndef _WIN32
+    // Configures the terminal for non-blocking canonical-off input and captures
+    // the original settings for restoration in the destructor. Returns true only
+    // when every step (read current attrs, apply raw mode, set non-blocking)
+    // succeeds -- so 'initialized' (and thus the destructor's termios restore)
+    // reflects actual setup success rather than being set unconditionally.
+    bool setupTerminal();
+
     termios oldSettings{};
     bool initialized{false};
 #endif
