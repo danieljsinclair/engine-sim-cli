@@ -24,6 +24,12 @@ public:
     KeyboardInput();
     ~KeyboardInput() override;
 
+    // Owns process-global terminal state (termios). Copying would restore the
+    // saved settings twice (double-cleanup), so copy is disabled. The class is
+    // never copied or moved in practice (held via std::unique_ptr).
+    KeyboardInput(const KeyboardInput&) = delete;
+    KeyboardInput& operator=(const KeyboardInput&) = delete;
+
     // Get key press, returns -1 if no key pressed
     int getKey() override;
 

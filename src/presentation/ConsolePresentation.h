@@ -32,7 +32,13 @@ class ConsolePresentation : public IPresentation {
 public:
     ConsolePresentation();
     ~ConsolePresentation() override;
-    
+
+    // Manages console/output state. Copying has no meaningful semantics here and
+    // is never done in practice (held via std::unique_ptr or as a test fixture
+    // member), so copy is disabled to prevent accidental double-Shutdown.
+    ConsolePresentation(const ConsolePresentation&) = delete;
+    ConsolePresentation& operator=(const ConsolePresentation&) = delete;
+
     bool Initialize(const PresentationConfig& config) override;
     void Shutdown() override;
     
