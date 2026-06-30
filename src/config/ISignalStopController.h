@@ -34,9 +34,9 @@
 #ifndef CLI_I_SIGNAL_STOP_CONTROLLER_H
 #define CLI_I_SIGNAL_STOP_CONTROLLER_H
 
-class ISimulatorSession;
-
 #include <memory>
+
+class ISimulatorSession;
 
 class ISignalStopController {
 public:
