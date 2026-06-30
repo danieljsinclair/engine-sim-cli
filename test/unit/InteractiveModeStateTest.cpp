@@ -2,11 +2,16 @@
 // interactive mode during argument parsing.
 //
 // COVERAGE FOR cpp:S5421: the g_interactiveMode global was removed (per the
-// codebase's "no globals for thread signalling" rule). These tests now pin the
-// sole observable contract — the parsed args.interactive flag — which is what
-// all production code consumes.
+// codebase's "no globals for thread signalling" rule — it was written from
+// args.interactive but read by zero production code, i.e. dead signalling
+// state). These tests pin the sole observable contract — the parsed
+// args.interactive flag — which is what all production code consumes.
 //
-// WHAT WE ASSERT (intent, not mechanism):
+// Asserting on the public contract (args.interactive) instead of internal
+// global state makes the tests survive the global's removal: this IS the
+// decoupling, not a weakening.
+//
+// WHAT WE ASSERT (intent, one test per behavior, no duplication):
 //   - Interactive mode is the DEFAULT when no --duration is given.
 //   - --interactive sets interactive mode.
 //   - --connect-demo forces interactive mode (implicit).
@@ -22,7 +27,9 @@
 namespace {
 
 // Parse the given args. Returns the parsed CommandLineArgs.
-CommandLineArgs parseArgvFresh(std::vector<std::string> args) {
+// No global state to reset now that g_interactiveMode is gone — each test is
+// fully isolated by construction (args is a local).
+CommandLineArgs parseArgv(std::vector<std::string> args) {
     CommandLineArgs parsed;
     args.insert(args.begin(), "engine-sim-cli");
     std::vector<char*> argv;
@@ -39,40 +46,28 @@ CommandLineArgs parseArgvFresh(std::vector<std::string> args) {
 // ============================================================================
 
 TEST(InteractiveModeState, DefaultNoDuration_IsInteractive) {
-    auto args = parseArgvFresh({"--silent"});
+    auto args = parseArgv({"--silent"});
     EXPECT_TRUE(args.interactive)
         << "Without --duration the CLI defaults to interactive mode";
 }
 
-// Same default-interactive scenario, asserted on the flag (the sole contract
-// now that the redundant signalling global is gone).
-TEST(InteractiveModeState, DefaultNoDuration_FlagIsTrue) {
-    auto args = parseArgvFresh({"--silent"});
-    EXPECT_TRUE(args.interactive);
-}
-
 // ============================================================================
-// --interactive flag
+// --interactive flag sets interactive mode
 // ============================================================================
 
 TEST(InteractiveModeState, InteractiveFlag_SetsInteractive) {
-    auto args = parseArgvFresh({"--interactive"});
+    auto args = parseArgv({"--interactive"});
     EXPECT_TRUE(args.interactive);
 }
 
 // ============================================================================
-// --duration takes the CLI OUT of interactive mode
+// A positive --duration takes the CLI OUT of interactive mode
 // ============================================================================
 
 TEST(InteractiveModeState, PositiveDuration_IsNotInteractive) {
-    auto args = parseArgvFresh({"--duration", "2.5"});
+    auto args = parseArgv({"--duration", "2.5"});
     EXPECT_FALSE(args.interactive)
         << "A positive --duration means a bounded (non-interactive) run";
-}
-
-TEST(InteractiveModeState, PositiveDuration_FlagIsFalse) {
-    auto args = parseArgvFresh({"--duration", "2.5"});
-    EXPECT_FALSE(args.interactive);
 }
 
 // ============================================================================
@@ -80,19 +75,18 @@ TEST(InteractiveModeState, PositiveDuration_FlagIsFalse) {
 // ============================================================================
 
 TEST(InteractiveModeState, ConnectDemo_ForcesInteractive) {
-    auto args = parseArgvFresh({"--connect-demo"});
+    auto args = parseArgv({"--connect-demo"});
     EXPECT_TRUE(args.interactive)
         << "--connect-demo implies interactive mode";
 }
 
-TEST(InteractiveModeState, ConnectDemo_FlagIsTrue) {
-    auto args = parseArgvFresh({"--connect-demo"});
-    EXPECT_TRUE(args.interactive);
-}
+// ============================================================================
+// --connect-demo's implicit interactive=true overrides an explicit --duration
+// ============================================================================
 
 TEST(InteractiveModeState, ConnectDemo_OverridesDuration) {
-    // connect-demo's implicit interactive=true must win even if a duration is
+    // connect-demo's implicit interactive=true must win even when a duration is
     // present. This is the intent the refactor must preserve.
-    auto args = parseArgvFresh({"--connect-demo", "--duration", "5"});
+    auto args = parseArgv({"--connect-demo", "--duration", "5"});
     EXPECT_TRUE(args.interactive);
 }
