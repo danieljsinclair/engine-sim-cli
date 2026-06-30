@@ -339,17 +339,12 @@ int main(int argc, char* argv[]) {
             deps.telemetryReader = telemetry.get();
             deps.logger = cliLogger.get();
 
-            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
-
-            // Expose session to signal handler and keyboard provider
-            g_sessionForSignal = session.get();
-            if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
-            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
-
             // DRY: reconfigure ANY gearbox-bearing provider to match the ACTUAL engine
-            // preset's transmission. Works for both replay (ReplayTelemetryProvider) and
-            // keyboard --auto (DemoInputProvider → VirtualIceInputProvider → VirtualIceTwin).
-            // The default zf8hp45 has different ratios than a C63 7-speed or GM LS 6-speed.
+            // preset's transmission BEFORE the simulator moves into the session. Works for
+            // both replay (ReplayTelemetryProvider) and keyboard --auto (DemoInputProvider →
+            // VirtualIceInputProvider → VirtualIceTwin). The default zf8hp45 has different
+            // ratios than a C63 7-speed or GM LS 6-speed. Done while we still own `simulator`
+            // (createSession below takes it by move).
             if (auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator.get())) {
                 const auto* rawSim = bridgeSim->getInternalSimulator();
                 const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
@@ -371,6 +366,13 @@ int main(int argc, char* argv[]) {
                     }
                 }
             }
+
+            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
+
+            // Expose session to signal handler and keyboard provider
+            g_sessionForSignal = session.get();
+            if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
+            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
 
             result = session->run();
             presetIndex = (presetIndex + 1) % paths.size();
