@@ -5,6 +5,7 @@
 #include "CLIMain.h"
 
 #include "CLIconfig.h"
+#include "CliException.h"
 
 #include "strategy/IAudioBuffer.h"
 #include "telemetry/ITelemetryProvider.h"
@@ -76,7 +77,7 @@ struct InputContext {
 };
 
 // Validate replay time-slicing args against the actual trace duration.
-// Throws std::runtime_error with a descriptive message if validation fails.
+// Throws CliException with a descriptive message if validation fails.
 void validateReplayTimeSlicing(const CommandLineArgs& args,
                                input::ReplayTelemetryProvider* replay) {
     if (!replay) return;
@@ -85,7 +86,7 @@ void validateReplayTimeSlicing(const CommandLineArgs& args,
     if (args.replayStartFromS >= 0.0 && traceDur > 0.0 && args.replayStartFromS >= traceDur) {
         std::cerr << "ERROR: --start-from " << args.replayStartFromS
                   << "s is past end of trace (" << traceDur << "s)\n";
-        throw std::runtime_error("start-from beyond trace duration");
+        throw CliException("start-from beyond trace duration");
     }
     if (args.replayEndAtS >= 0.0 && traceDur > 0.0 && args.replayEndAtS > traceDur) {
         std::cerr << "WARNING: --end-at " << args.replayEndAtS
@@ -97,7 +98,7 @@ void validateReplayTimeSlicing(const CommandLineArgs& args,
         && args.replayStartFromS >= args.replayEndAtS) {
         std::cerr << "ERROR: --start-from (" << args.replayStartFromS
                   << "s) must be before --end-at (" << args.replayEndAtS << "s)\n";
-        throw std::runtime_error("start-from >= end-at");
+        throw CliException("start-from >= end-at");
     }
 }
 
@@ -110,7 +111,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         auto replay = std::make_unique<input::ReplayTelemetryProvider>(
             args.replayTelemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.autoGearbox);
         if (!replay->Initialize()) {
-            throw std::runtime_error("Failed to initialize replay telemetry: " + replay->GetLastError());
+            throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
         // Wire Q/P keyboard for replay mode (same pattern as the keyboard path).
         auto kb = std::make_unique<::KeyboardInput>();
@@ -180,7 +181,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         demoControls->shiftUp();  // N → D
 
         if (!demoProvider->Initialize()) {
-            throw std::runtime_error("Failed to initialize demo input provider");
+            throw CliException("Failed to initialize demo input provider");
         }
 
         ctx.demoProvider = std::move(demoProvider);
@@ -190,7 +191,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         std::move(keyboard), target.get());
 
     if (!provider->Initialize()) {
-        throw std::runtime_error("Failed to initialize keyboard input provider");
+        throw CliException("Failed to initialize keyboard input provider");
     }
 
     ctx.target = std::move(target);
@@ -209,7 +210,7 @@ presentation::IPresentation* createPresentation(const SimulationConfig& config) 
     if (auto pres = std::make_unique<presentation::ConsolePresentation>(); pres->Initialize(presConfig)) {
         return pres.release();
     }
-    throw std::runtime_error("Failed to initialize presentation");
+    throw CliException("Failed to initialize presentation");
 }
 
 std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILogging* logger) {
@@ -232,7 +233,7 @@ std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILoggin
     }
 
     // No engine config and no presets found
-    throw std::runtime_error("No engine presets found at " + std::string(presetDir) + ". Use --script <path> to specify an engine.");
+    throw CliException("No engine presets found at " + std::string(presetDir) + ". Use --script <path> to specify an engine.");
 }
 
 }  // anonymous namespace
