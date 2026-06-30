@@ -296,6 +296,7 @@ int main(int argc, char* argv[]) {
     auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
 
     if (CommandLineArgs args; parseArguments(argc, argv, args)) {
+        try {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
 
@@ -313,86 +314,88 @@ int main(int argc, char* argv[]) {
         ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
         ASSERT(presentation, "A presentation provider must be created successfully");
 
-        try {
-            // Determine paths to run
-            auto paths = resolveConfigPaths(args, cliLogger.get());
+        // Determine paths to run
+        auto paths = resolveConfigPaths(args, cliLogger.get());
 
-            // Create audio buffer once (client owns for session lifetime)
-            AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-            auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
+        // Create audio buffer once (client owns for session lifetime)
+        AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+        auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
 
-            // cycle through the available engine presets unless a specific one is configured
-            // Each initSimulation() creates a new session, subsequent uses runs hot-swap on the same session
-            std::unique_ptr<ISimulatorSession> session;
-            result = EXIT_BUT_CONTINUE_NEXT;
-            size_t presetIndex = 0;
-            while (result == EXIT_BUT_CONTINUE_NEXT) {
-                const std::string& currentPath = paths[presetIndex];
-                auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
+        // cycle through the available engine presets unless a specific one is configured
+        // Each initSimulation() creates a new session, subsequent uses runs hot-swap on the same session
+        std::unique_ptr<ISimulatorSession> session;
+        result = EXIT_BUT_CONTINUE_NEXT;
+        size_t presetIndex = 0;
+        while (result == EXIT_BUT_CONTINUE_NEXT) {
+            const std::string& currentPath = paths[presetIndex];
+            auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
 
-                // Build SessionDependencies from the available dependencies
-                SessionDependencies deps;
-                deps.audioBuffer = audioBuffer.get();
-                deps.inputProvider = inputProvider;
-                deps.presentation = presentation.get();
-                deps.telemetryWriter = telemetry.get();
-                deps.telemetryReader = telemetry.get();
-                deps.logger = cliLogger.get();
+            // Build SessionDependencies from the available dependencies
+            SessionDependencies deps;
+            deps.audioBuffer = audioBuffer.get();
+            deps.inputProvider = inputProvider;
+            deps.presentation = presentation.get();
+            deps.telemetryWriter = telemetry.get();
+            deps.telemetryReader = telemetry.get();
+            deps.logger = cliLogger.get();
 
-                session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
+            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
 
-                // Expose session to signal handler and keyboard provider
-                g_sessionForSignal = session.get();
-                if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
-                if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
+            // Expose session to signal handler and keyboard provider
+            g_sessionForSignal = session.get();
+            if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
+            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
 
-                // DRY: reconfigure ANY gearbox-bearing provider to match the ACTUAL engine
-                // preset's transmission. Works for both replay (ReplayTelemetryProvider) and
-                // keyboard --auto (DemoInputProvider → VirtualIceInputProvider → VirtualIceTwin).
-                // The default zf8hp45 has different ratios than a C63 7-speed or GM LS 6-speed.
-                if (auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator.get())) {
-                    const auto* rawSim = bridgeSim->getInternalSimulator();
-                    const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
-                    const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
-                    if (trans && vehicle && trans->getGearCount() > 0) {
-                        std::vector<double> ratios;
-                        for (int g = 0; g < trans->getGearCount(); ++g) {
-                            ratios.push_back(trans->getGearRatio(g));
-                        }
-                        // Replay path
-                        if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
-                            replay->reconfigureProfile(ratios, vehicle->getDiffRatio(),
-                                                        vehicle->getTireRadius());
-                        }
-                        // Keyboard --auto path (via DemoInputProvider)
-                        if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
-                            demo->reconfigureProfile(ratios, vehicle->getDiffRatio(),
-                                                     vehicle->getTireRadius());
-                        }
+            // DRY: reconfigure ANY gearbox-bearing provider to match the ACTUAL engine
+            // preset's transmission. Works for both replay (ReplayTelemetryProvider) and
+            // keyboard --auto (DemoInputProvider → VirtualIceInputProvider → VirtualIceTwin).
+            // The default zf8hp45 has different ratios than a C63 7-speed or GM LS 6-speed.
+            if (auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator.get())) {
+                const auto* rawSim = bridgeSim->getInternalSimulator();
+                const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
+                const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
+                if (trans && vehicle && trans->getGearCount() > 0) {
+                    std::vector<double> ratios;
+                    for (int g = 0; g < trans->getGearCount(); ++g) {
+                        ratios.push_back(trans->getGearRatio(g));
+                    }
+                    // Replay path
+                    if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+                        replay->reconfigureProfile(ratios, vehicle->getDiffRatio(),
+                                                    vehicle->getTireRadius());
+                    }
+                    // Keyboard --auto path (via DemoInputProvider)
+                    if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
+                        demo->reconfigureProfile(ratios, vehicle->getDiffRatio(),
+                                                 vehicle->getTireRadius());
                     }
                 }
-
-                result = session->run();
-                presetIndex = (presetIndex + 1) % paths.size();
-            }//while
-
-            // Tell the user why playback stopped
-            if (config.interactive) {
-                std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
-            } else if (config.duration > 0.0) {
-                std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
-                          << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
-            } else {
-                std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
             }
 
-            g_sessionForSignal = nullptr;
-            
-            if (session) {
-                session->close();
-            }
+            result = session->run();
+            presetIndex = (presetIndex + 1) % paths.size();
+        }//while
+
+        // Tell the user why playback stopped
+        if (config.interactive) {
+            std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
+        } else if (config.duration > 0.0) {
+            std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
+                      << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
+        } else {
+            std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
         }
-        catch (const std::exception& e) {
+
+        g_sessionForSignal = nullptr;
+
+        if (session) {
+            session->close();
+        }
+        }
+        // Expected CLI errors: clean exit with the message. Unexpected exceptions
+        // are NOT caught here — they propagate to std::terminate (fail-fast) so
+        // real bugs surface rather than being swallowed as a generic exit 1.
+        catch (const CliException& e) {
             cliLogger->error(LogMask::BRIDGE, std::string(e.what()));
             result = 1;
         }
