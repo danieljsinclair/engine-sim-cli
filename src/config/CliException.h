@@ -8,7 +8,6 @@
 #define CLI_EXCEPTION_H
 
 #include <stdexcept>
-#include <string>
 
 // Dedicated exception for CLI configuration / initialization / validation
 // failures. Thrown from the CLI layer instead of the generic
@@ -16,9 +15,10 @@
 // what() message and catch behaviour are unchanged.
 class CliException : public std::runtime_error {
 public:
-    explicit CliException(const std::string& message)
-        : std::runtime_error(message) {
-    }
+    // Inherit std::runtime_error's constructors so CliException can be thrown
+    // with a string literal or a std::string, matching how it is used at the
+    // CLI call sites (cpp:S5952).
+    using std::runtime_error::runtime_error;
 };
 
 #endif // CLI_EXCEPTION_H
