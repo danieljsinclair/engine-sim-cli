@@ -85,7 +85,7 @@ IDF_PATH ?= $(or $(wildcard $(HOME)/.espressif/v6.*/esp-idf),$(HOME)/esp/esp-idf
 IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.sh))
 
 .DEFAULT_GOAL := all
-.PHONY: all build clean scrub test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
+.PHONY: all build clean clean-cli scrub-cli test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
         coverage-run coverage-clean coverage-summary summary
@@ -209,17 +209,25 @@ remove-orphans:
 	@find . -path ./$(BUILD_DIR) -prune -o -name "*.a" -type f -print -delete 2>/dev/null || true
 	@find . -path ./$(BUILD_DIR) -prune -o -name "_deps" -type d -print -exec rm -rf {} + 2>/dev/null || true
 
+# cascade clean to submodules
 clean: remove-orphans clean_esp32 sonar-clean coverage-clean
 	+@$(MAKE) -C engine-sim-bridge clean 2>/dev/null || true
+
+# clean this repo only
+clean-cli: clean
 	@if [ -d $(BUILD_DIR) ]; then \
 		cmake --build $(BUILD_DIR) --target clean >/dev/null 2>&1 || true; \
 	fi
 	@rm -rf $(CLI_ES)
 	@rm -rf .scannerwork
 
-scrub: clean
-	@echo "Scrubbing all build artifacts..."
+# cascade the scrub to submodules
+scrub: scrub-cli
 	+@$(MAKE) -C engine-sim-bridge scrub 2>/dev/null || true
+
+# scrub this repo only
+scrub-cli: clean-cli
+	@echo "Scrubbing all build artifacts..."
 	@rm -rf $(BUILD_DIR) $(BUILD_COV_DIR) $(CLI_ES)
 	@$(MAKE) remove-orphans
 	@rm -rf .scannerwork
