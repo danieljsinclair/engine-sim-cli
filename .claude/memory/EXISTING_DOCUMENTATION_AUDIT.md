@@ -1,6 +1,6 @@
 # Existing Documentation Audit for VirtualICE Twin Research
 
-## 1. File: /Users/danielsinclair/vscode/escli.refac7/.claude/memory/ARCHITECTURE_DECISIONS.md
+## 1. File: ~/vscode/escli.refac7/.claude/memory/ARCHITECTURE_DECISIONS.md
 - **Relevance**: Core architectural decisions for VirtualICE Twin implementation
 - **Key Findings**: 
   - Decision 1: Twin location - Separate `vehicle-twin` module shared by vehicle-sim and bridge
@@ -17,7 +17,7 @@
   - Outstanding Unknowns: Clutch constraint behavior, dyno sound realism, wheel torque computation, ZF shift algorithm, Tesla telemetry richness
 - **Specialist**: All (Physics Analyst, Gearbox Researcher, Interface Designer, Test Harness Designer)
 
-## 2. File: /Users/danielsinclair/vscode/escli.refac7/docs/BRIDGE_INTEGRATION_ARCHITECTURE.md
+## 2. File: ~/vscode/escli.refac7/docs/BRIDGE_INTEGRATION_ARCHITECTURE.md
 - **Relevance**: Architecture for integrating engine-sim CLI with external controllers including VirtualICE Twin
 - **Key Findings**:
   - VirtualICE Twin described as simulating petrol car behavior from EV telemetry
@@ -28,7 +28,7 @@
   - Architecture shows UpstreamInputProvider receiving data from ODB2 Adapter or VirtualICE Twin
 - **Specialist**: Interface Designer, Test Harness Designer
 
-## 3. File: /Users/danielsinclair/vscode/escli.refac7/.claude/plans/task4-mr-script-survey.md
+## 3. File: ~/vscode/escli.refac7/.claude/plans/task4-mr-script-survey.md
 - **Relevance**: Transmission and vehicle diversity analysis for twin modeling
 - **Key Findings**:
   - All .mr scripts model manual transmissions only (zero automatic transmission support)
@@ -39,7 +39,7 @@
   - Realistic shift point data provided for AMG C63, SUV/Crossover, and Sports car
 - **Specialist**: Gearbox Researcher
 
-## 4. File: /Users/danielsinclair/vscode/escli.refac7/archive/TA3_FINDINGS.md
+## 4. File: ~/vscode/escli.refac7/archive/TA3_FINDINGS.md
 - **Relevance**: Threading and synchronization investigation (relevant for audio thread coordination in twin)
 - **Key Findings**:
   - Root cause of audio dropouts: CLI not calling `endInputBlock()` after simulation frames
@@ -49,7 +49,7 @@
   - Fix: Add `EngineSimEndFrame()` API call and invoke it after `EngineSimUpdate()`
 - **Specialist**: Test Harness Designer
 
-## 5. File: /Users/danielsinclair/vscode/escli.refac7/archive/TA2_FINDINGS.md
+## 5. File: ~/vscode/escli.refac7/archive/TA2_FINDINGS.md
 - **Relevance**: Physics and audio flow investigation (relevant for understanding engine behavior under load)
 - **Key Findings**:
   - Identified critical difference: GUI uses `setSpeedControl()` (Governor with closed-loop feedback) while CLI used `setThrottle()` (though bridge actually calls setSpeedControl)
@@ -59,7 +59,7 @@
   - Exhaust flow calculation shows strong throttle dependence at low throttle levels
 - **Specialist**: Physics Analyst
 
-## 6. File: /Users/danielsinclair/vscode/escli.refac7/engine-sim-bridge/engine-sim/README.md
+## 6. File: ~/vscode/escli.refac7/engine-sim-bridge/engine-sim/README.md
 - **Relevance**: Engine simulator documentation showing available controls and dyno functionality
 - **Key Findings**:
   - Dyno mode enabled via 'D' key - must be enabled for RPM hold to take effect
@@ -69,14 +69,14 @@
   - Simulation time warp keys 1-5
 - **Specialist**: Physics Analyst, Gearbox Researcher
 
-## 7. File: /Users/danielsinclair/vscode/escli.refac7/docs/archive/INIT_SEQUENCE_TRACE.md
+## 7. File: ~/vscode/escli.refac7/docs/archive/INIT_SEQUENCE_TRACE.md
 - **Relevance**: Initialization sequence showing how engine, vehicle, and transmission are created
 - **Key Findings**:
   - Shows sequence: Creates engine, vehicle, transmission → Calls simulator->loadSimulation(engine, vehicle, transmission)
   - Confirms that transmission object is passed to simulator during initialization
 - **Specialist**: Gearbox Researcher
 
-## 8. File: /Users/danielsinclair/vscode/escli.refac7/docs/BRIDGE_ARCHITECTURE_REVIEW.md
+## 8. File: ~/vscode/escli.refac7/docs/BRIDGE_ARCHITECTURE_REVIEW.md
 - **Relevance**: Bridge architecture review and static linking plan
 - **Key Findings**:
   - Confirms bridge properly wraps engine-sim with static linking

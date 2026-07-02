@@ -333,7 +333,7 @@ The user explicitly wants:
 ## 8. Current State of the Generator
 
 ### File: `generate_starter_sound.py`
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/generate_starter_sound.py`
+**Location**: `~/vscode/engine-sim-cli/generate_starter_sound.py`
 
 ### Current Parameters:
 - Three-oscillator architecture (mainOsc sine, gearOsc triangle, humOsc sine)

@@ -184,7 +184,7 @@ RAMPUP_TIME = 3.5            # Slower acceleration
 
 ## Files Modified
 
-- `/Users/danielsinclair/vscode/engine-sim-cli/generate_starter_sound.py` - Main generator script
+- `~/vscode/engine-sim-cli/generate_starter_sound.py` - Main generator script
 
 ## Resources Used
 

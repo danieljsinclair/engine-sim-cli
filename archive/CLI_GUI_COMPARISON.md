@@ -10,7 +10,7 @@ This document provides a code-level comparison of how the GUI and CLI read audio
 
 ### GUI Main Loop (`engine_sim_application.cpp`)
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Process function (lines 202-312)**:
 
@@ -47,7 +47,7 @@ void EngineSimApplication::process(float frame_dt) {
 
 ### CLI Main Loop (`engine_sim_cli.cpp`)
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Main loop (lines 908-1125)**:
 
@@ -150,7 +150,7 @@ int framesToRender = framesPerUpdate;
 
 ## 4. Bridge Implementation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 ### `EngineSimReadAudioBuffer()` implementation (lines 570-629)
 
@@ -203,7 +203,7 @@ EngineSimResult EngineSimReadAudioBuffer(
 
 ## 5. What `readAudioOutput()` Actually Does
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Implementation (lines 141-159)**:
 
@@ -444,7 +444,7 @@ This difference likely contributes to audio quality/performance variations betwe
 
 **Generated**: 2025-01-31
 **Files analyzed**:
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`

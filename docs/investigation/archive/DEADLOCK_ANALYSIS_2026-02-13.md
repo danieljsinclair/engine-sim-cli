@@ -321,9 +321,9 @@ Then apply buffer pre-fill fix (Option 1) as well for defense-in-depth.
 
 ## Files Modified for Investigation
 
-- `/Users/danielsinclair/.claude/projects/-Users-danielsinclair-vscode-engine-sim-cli/memory/MEMORY.md`
-- `/Users/danielsinclair/vscode/engine-sim-cli/docs/investigation/DROPOUT_INVESTIGATION_2026-02-13.md`
-- `/Users/danielsinclair/vscode/engine-sim-cli/docs/investigation/DEADLOCK_ANALYSIS_2026-02-13.md` (this file)
+- `~/.claude/projects/-Users-danielsinclair-vscode-engine-sim-cli/memory/MEMORY.md`
+- `~/vscode/engine-sim-cli/docs/investigation/DROPOUT_INVESTIGATION_2026-02-13.md`
+- `~/vscode/engine-sim-cli/docs/investigation/DEADLOCK_ANALYSIS_2026-02-13.md` (this file)
 
 ## Files Requiring Changes
 

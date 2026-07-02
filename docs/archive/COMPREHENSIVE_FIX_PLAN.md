@@ -61,7 +61,7 @@ The synthesizer uses a condition variable that waits for `m_processed == false`:
 
 ### The Fix (ACTUAL WORKING SOLUTION)
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` after line 516
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` after line 516
 
 **Solution**: Call `renderAudio()` ONCE per `EngineSimRender()` call (1:1 ratio with simulation steps).
 
@@ -82,7 +82,7 @@ The synthesizer maintains a buffer of 1200-2000 samples naturally through the 1:
 ### HOW TO TEST
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/build
+cd ~/vscode/engine-sim-cli/build
 
 # Real-time playback (should be smooth, no dropouts)
 ./engine-sim-cli --script es/subaru_ej25.mr --rpm 1500 --duration 10 --play
@@ -106,7 +106,7 @@ cd /Users/danielsinclair/vscode/engine-sim-cli/build
 
 4. **Verify with diagnostics**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli
+   cd ~/vscode/engine-sim-cli
    ./diagnostics engine-sim-bridge/engine-sim/assets/main.mr 10.0
    ```
 
@@ -138,7 +138,7 @@ In interactive mode, pressing W increases target RPM instead of throttle. This i
 - The CLI has both RPM control and load control, creating confusion
 
 ### Root Cause
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:826-829`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:826-829`
 
 Current code:
 ```cpp
@@ -153,7 +153,7 @@ The W key is supposed to increase throttle (load), not RPM target. This is a hol
 
 ### The Fix
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Replace lines 826-829** with:
 ```cpp
@@ -172,7 +172,7 @@ case 'W':
 
 1. **Compile the CLI**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli/build
+   cd ~/vscode/engine-sim-cli/build
    make
    ```
 
@@ -205,7 +205,7 @@ case 'W':
 When using RPM control mode (`--rpm`), the engine oscillates between 800-1800 RPM constantly. The throttle flips 0-100% rapidly, creating a pulsating engine sound.
 
 ### Root Cause
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:325-368`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:325-368`
 
 The RPMController has overly aggressive PID gains:
 ```cpp
@@ -220,7 +220,7 @@ This creates a race between the control modes where RPM mode keeps trying to tak
 
 ### The Fix
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Replace line 325** with:
 ```cpp
@@ -237,7 +237,7 @@ integral = std::max(-100.0, std::min(100.0, integral + error * dt));
 
 1. **Compile the CLI**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli/build
+   cd ~/vscode/engine-sim-cli/build
    make
    ```
 
@@ -277,7 +277,7 @@ integral = std::max(-100.0, std::min(100.0, integral + error * dt));
 The README and documentation mention an `--output` parameter, but it's not actually implemented in the code. Users expect to be able to specify output file with `--output`.
 
 ### Root Cause
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 The argument parser (lines 423-516) doesn't handle `--output`. It only handles:
 - `--script`
@@ -290,7 +290,7 @@ The argument parser (lines 423-516) doesn't handle `--output`. It only handles:
 
 ### The Fix
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Add after line 465** (after `--duration` handling):
 ```cpp
@@ -321,7 +321,7 @@ std::cout << "  " << progName << " --default-engine --rpm 2000 --play --output e
 
 1. **Compile the CLI**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli/build
+   cd ~/vscode/engine-sim-cli/build
    make
    ```
 
@@ -365,7 +365,7 @@ std::cout << "  " << progName << " --default-engine --rpm 2000 --play --output e
 When using `--load` with `--interactive`, the load parameter is ignored. The interactive controls start at 0% throttle instead of the specified load.
 
 ### Root Cause
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:710`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:710`
 
 ```cpp
 double interactiveLoad = (args.targetLoad >= 0) ? args.targetLoad : 0.0;
@@ -377,7 +377,7 @@ Actually wait, looking more carefully: the code DOES use `args.targetLoad` when 
 
 ### The Fix
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:710`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:710`
 
 **Current code**:
 ```cpp
@@ -407,7 +407,7 @@ Let me adjust the fix to clarify behavior:
 
 ### The Fix (Documentation Only)
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:400-406`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:400-406`
 
 **Update help text**:
 ```cpp
@@ -527,7 +527,7 @@ After all fixes, the CLI should:
 W key increases throttle when pressed, but the throttle stays at the increased value when released. There's no decay mechanism to return to baseline.
 
 ### Root Cause
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:944-948`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:944-948`
 
 Current code:
 ```cpp
@@ -542,7 +542,7 @@ The W key increases `interactiveLoad` by 0.05, but there's NO logic to decrease 
 
 ### The Fix
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **1. Add state tracking** (after line 829):
 ```cpp
@@ -582,7 +582,7 @@ if (key < 0) {
 
 1. **Compile the CLI**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli/build
+   cd ~/vscode/engine-sim-cli/build
    make
    ```
 
@@ -618,7 +618,7 @@ if (key < 0) {
 J and K keys should decrease/increase throttle but appear to do nothing.
 
 ### Root Cause
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:986-993`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:986-993`
 
 The J/K key handlers ARE present and functional:
 ```cpp
@@ -636,7 +636,7 @@ However, they weren't updating the `baselineLoad` variable, which could cause un
 
 ### The Fix
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Update J/K handlers** (lines 986-1004):
 ```cpp
@@ -668,7 +668,7 @@ case 66:  // DOWN arrow (macOS)
 
 1. **Compile the CLI**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli/build
+   cd ~/vscode/engine-sim-cli/build
    make
    ```
 
@@ -710,7 +710,7 @@ case 66:  // DOWN arrow (macOS)
 After pressing R to reset, throttle alternates between 0% and 100% (pulsation). Engine oscillates wildly instead of settling at idle.
 
 ### Root Cause
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:953-959`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:953-959`
 
 Current code:
 ```cpp
@@ -740,7 +740,7 @@ This creates a conflict:
 
 ### The Fix
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Replace R key handler** (lines 959-966):
 ```cpp
@@ -758,7 +758,7 @@ case 'R':
 
 1. **Compile the CLI**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli/build
+   cd ~/vscode/engine-sim-cli/build
    make
    ```
 

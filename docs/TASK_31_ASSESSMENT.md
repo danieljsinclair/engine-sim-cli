@@ -53,7 +53,7 @@ cd build && ./test/integration/integration_tests
 
 **No IAudioHardwareProvider Reference:**
 ```
-grep -n "IAudioHardwareProvider" /Users/danielsinclair/vscode/escli.refac7/src/AudioPlayer.cpp
+grep -n "IAudioHardwareProvider" ~/vscode/escli.refac7/src/AudioPlayer.cpp
 (No matches)
 ```
 

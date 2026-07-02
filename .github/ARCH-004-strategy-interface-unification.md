@@ -114,11 +114,11 @@ No adapter layer between CLIMain and the strategies. Both strategies are truly s
 
 ## References
 
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/IAudioStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/SyncPullStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/state/BufferContext.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/IAudioStrategyFactory.cpp`
+- `~/vscode/escli.refac7/src/audio/strategies/IAudioStrategy.h`
+- `~/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.h`
+- `~/vscode/escli.refac7/src/audio/strategies/SyncPullStrategy.h`
+- `~/vscode/escli.refac7/src/audio/state/BufferContext.h`
+- `~/vscode/escli.refac7/src/audio/strategies/IAudioStrategyFactory.cpp`
 
 ---
 

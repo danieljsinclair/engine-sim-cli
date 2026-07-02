@@ -6,7 +6,7 @@ At max clutch pressure (m_clutchPressure = 1.0), the constraint behaves as **sli
 ## Detailed Analysis
 
 ### Clutch Constraint Formulation
-From `/Users/danielsinclair/vscode/escli.refac7/engine-sim-bridge/engine-sim/dependencies/submodules/simple-2d-constraint-solver/src/clutch_constraint.cpp`:
+From `~/vscode/escli.refac7/engine-sim-bridge/engine-sim/dependencies/submodules/simple-2d-constraint-solver/src/clutch_constraint.cpp`:
 
 - **Jacobian Matrix (lines 24-30)**:
   ```
@@ -32,7 +32,7 @@ From `/Users/danielsinclair/vscode/escli.refac7/engine-sim-bridge/engine-sim/dep
   ```
 
 ### Clutch Pressure Effect
-From `/Users/danielsinclair/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/transmission.cpp` (lines 33-41):
+From `~/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/transmission.cpp` (lines 33-41):
 
 ```cpp
 void Transmission::update(double dt) {
@@ -57,7 +57,7 @@ The constraint solver attempts to enforce v_theta_rotatingMass = v_theta_cranksh
 Therefore, even at max clutch pressure, the constraint **allows slip** when the torque required to maintain synchronization exceeds m_maxClutchTorque.
 
 ### Dynamometer Capability
-From `/Users/danielsinclair/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/dynamometer.cpp`:
+From `~/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/dynamometer.cpp`:
 
 - **Constraint Jacobian (lines 26-28)**:
   ```
@@ -92,7 +92,7 @@ When m_hold = true, it becomes a unidirectional torque limit:
 **Conclusion on dynamometer**: The dynamometer primarily acts as an RPM holder, not a pure torque brake. It can function as a torque-limited device in one direction when m_hold=true, but cannot independently set both min and max torque limits simultaneously for bidirectional torque control.
 
 ### Drivetrain Load Computation
-From `/Users/danielsinclair/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/vehicle_drag_constraint.cpp` (lines 56-58):
+From `~/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/vehicle_drag_constraint.cpp` (lines 56-58):
 ```
 output->limits[0][0] = -m_vehicle->linearForceToVirtualTorque(
     rollingResistance + 0.5 * airDensity * v_squared * c_d * A);
@@ -101,7 +101,7 @@ output->limits[0][1] = 0;
 This shows drivetrain load is computed as a resistance torque (negative limit only) based on vehicle speed, drag coefficient, cross-sectional area, and rolling resistance.
 
 ### Transmission Gear Change
-From `/Users/danielsinclair/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/transmission.cpp` (lines 59-82):
+From `~/vscode/escli.refac7/engine-sim-bridge/engine-sim/src/transmission.cpp` (lines 59-82):
 - changeGear() calculates new moment of inertia (I) based on vehicle mass, gear ratio, diff ratio, and tire radius
 - It preserves kinetic energy (E_r) when changing gears
 - Angular velocity (v_theta) is adjusted to maintain energy: new_v_theta = ±√(E_r * 2 / new_I)

@@ -464,7 +464,7 @@ while (running) {
 ## 10. Evidence Locations
 
 All line numbers refer to:
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/`
 
 ### Files Analyzed:
 

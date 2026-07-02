@@ -603,8 +603,8 @@ The following are valid improvements for cleaner architecture (NOT CRITICAL):
 
 ### Evidence Files
 
-- `/Users/danielsinclair/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` - Complete evidence
-- `/Users/danielsinclair/vscode/escli.refac7/docs/ARCHITECTURE_COMPARISON_REPORT.md` - See correction section at end
+- `~/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` - Complete evidence
+- `~/vscode/escli.refac7/docs/ARCHITECTURE_COMPARISON_REPORT.md` - See correction section at end
 - Test results: 32/32 unit tests passing, 0 underruns in all modes
 
 ---
@@ -699,9 +699,9 @@ Audio is generated correctly for threaded mode.
 
 ### Evidence Files
 
-- `/Users/danielsinclair/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` - Complete evidence
-- `/Users/danielsinclair/vscode/escli.refac7/docs/TASK_50_MODE_SELECTION_VERIFICATION.md` - Mode selection tests
-- `/Users/danielsinclair/vscode/escli.refac7/docs/ANALYSIS_CORRECTIONS.md` - This document
+- `~/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` - Complete evidence
+- `~/vscode/escli.refac7/docs/TASK_50_MODE_SELECTION_VERIFICATION.md` - Mode selection tests
+- `~/vscode/escli.refac7/docs/ANALYSIS_CORRECTIONS.md` - This document
 
 ---
 

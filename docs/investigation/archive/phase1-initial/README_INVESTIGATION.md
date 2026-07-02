@@ -128,9 +128,9 @@ This causes burst writes that create audio discontinuities (crackles).
 
 3. **Build and Test** (5 minutes)
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+   cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
    cmake .. && make
-   cd /Users/danielsinclair/vscode/engine-sim-cli
+   cd ~/vscode/engine-sim-cli
    make
 
    ./build/engine-sim-cli --default-engine --rpm 2000 --play --duration 10 2>&1 | tee test2_engine.log
@@ -225,14 +225,14 @@ This causes burst writes that create audio discontinuities (crackles).
 ### Files Modified for Test 1
 
 **Synthesizer Audio Thread:**
-- **File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- **File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 - **Lines:** 221-266 (renderAudio function)
 - **Changes:** Added wakeup timing diagnostics
 
 ### Files to Modify for Test 2
 
 **Synthesizer Audio Thread:**
-- **File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- **File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 - **Lines:** 221-266 (renderAudio function)
 - **Changes:** Replace wait() with wait_for(), implement fixed-interval rendering
 
@@ -243,9 +243,9 @@ This causes burst writes that create audio discontinuities (crackles).
 ### Build Commands
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 

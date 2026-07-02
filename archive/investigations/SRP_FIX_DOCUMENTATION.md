@@ -85,8 +85,8 @@ if (config && config->scriptPath && strlen(config->scriptPath) > 0) {
 ```
 **Result:**
 - CLI passes: `es/ferrari_f136.mr` (raw)
-- Bridge resolves: `/Users/danielsinclair/vscode/escli.refac7/es/ferrari_f136.mr` (absolute)
-- Bridge derives asset path: `/Users/danielsinclair/vscode/escli.refac7/es/sound-library/...`
+- Bridge resolves: `~/vscode/escli.refac7/es/ferrari_f136.mr` (absolute)
+- Bridge derives asset path: `~/vscode/escli.refac7/es/sound-library/...`
 - Sound: CLEAN ✓
 
 ### Test 2: Absolute Path

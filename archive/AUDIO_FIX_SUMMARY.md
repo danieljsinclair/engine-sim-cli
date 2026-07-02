@@ -99,12 +99,12 @@ After implementing the fix:
 
 ## Files to Modify
 
-1. **Primary Fix**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (lines 592-593)
-2. **Secondary Fix**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` (line 520)
+1. **Primary Fix**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (lines 592-593)
+2. **Secondary Fix**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` (line 520)
 
 ## References
 
-- GUI Configuration: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:213`
-- Bridge Defaults: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:37-39`
-- Synthesizer Defaults: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h:21-25`
-- GUI Usage: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:274`
+- GUI Configuration: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:213`
+- Bridge Defaults: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:37-39`
+- Synthesizer Defaults: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h:21-25`
+- GUI Usage: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:274`

@@ -9,8 +9,8 @@
 ## CONCRETE EXAMPLE FROM USER
 
 **Script says:** `es/sound-library/new/mild_exhaust_reverb.wav`
-**Asset base:** `/Users/danielsinclair/vscode/escli.refac7/es`
-**Result:** `/Users/danielsinclair/vscode/escli.refac7/es/es/sound-library/...`
+**Asset base:** `~/vscode/escli.refac7/es`
+**Result:** `~/vscode/escli.refac7/es/es/sound-library/...`
 
 The "es" appears **twice** - this is the path doubling bug.
 
@@ -40,12 +40,12 @@ if (scriptPath.has_parent_path()) {
 
 ### What Happens With The User's Example
 
-**Script path:** `/Users/danielsinclair/vscode/escli.refac7/es/main.mr`
+**Script path:** `~/vscode/escli.refac7/es/main.mr`
 
 **Step 1:** Extract parent path
 ```cpp
 parentPath = scriptPath.parent_path();
-// parentPath = "/Users/danielsinclair/vscode/escli.refac7/es"
+// parentPath = "~/vscode/escli.refac7/es"
 ```
 
 **Step 2:** Check if parent is "assets"
@@ -54,7 +54,7 @@ if (parentPath.filename() == "assets") {
     // FALSE - filename is "es", not "assets"
 } else {
     assetBasePath = parentPath.string();  // BUG!
-    // assetBasePath = "/Users/danielsinclair/vscode/escli.refac7/es"
+    // assetBasePath = "~/vscode/escli.refac7/es"
 }
 ```
 
@@ -62,8 +62,8 @@ if (parentPath.filename() == "assets") {
 ```cpp
 // engine_sim_bridge.cpp:173
 fullPath = assetBasePath + "/" + filename;
-// fullPath = "/Users/danielsinclair/vscode/escli.refac7/es" + "/" + "es/sound-library/..."
-// fullPath = "/Users/danielsinclair/vscode/escli.refac7/es/es/sound-library/..."
+// fullPath = "~/vscode/escli.refac7/es" + "/" + "es/sound-library/..."
+// fullPath = "~/vscode/escli.refac7/es/es/sound-library/..."
 ```
 
 **RESULT:** Path is doubled - "es" appears twice!
@@ -99,7 +99,7 @@ The bridge **blindly concatenates** the asset base path with the filename from t
 - Asset base is the parent of the asset directory
 - Filename is relative to the asset directory
 
-**BUT** when the CLI sets asset base to `/Users/danielsinclair/vscode/escli.refac7/es` and the script says `es/sound-library/...`, the result is doubled.
+**BUT** when the CLI sets asset base to `~/vscode/escli.refac7/es` and the script says `es/sound-library/...`, the result is doubled.
 
 ---
 
@@ -258,7 +258,7 @@ if (!std::filesystem::exists(resolvedPath)) {
 
 ```cpp
 TEST(PathResolver, NoPathDoubling) {
-    std::string assetBase = "/Users/danielsinclair/vscode/escli.refac7/es";
+    std::string assetBase = "~/vscode/escli.refac7/es";
     std::string filename = "es/sound-library/new/mild_exhaust_reverb.wav";
 
     std::string resolved = PathResolver::resolveWavPath(assetBase, filename);

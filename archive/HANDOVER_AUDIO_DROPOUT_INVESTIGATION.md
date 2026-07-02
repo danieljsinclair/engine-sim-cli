@@ -48,16 +48,16 @@ Each TA will do THE SAME WORK INDEPENDENTLY. Then a Senior Solution Architect wi
 **Files to Compare**:
 
 1. **GUI Code** (reference implementation):
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
 
 2. **Bridge Code** (what we modified):
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
 
 3. **CLI Code** (our usage):
-   - `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+   - `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 ## Investigation Questions
 
@@ -183,7 +183,7 @@ List EVERY change with:
 
 ### 2. Audio Synthesis Process
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Key Functions**:
 - `renderAudio()` - What does it do exactly?
@@ -195,7 +195,7 @@ List EVERY change with:
 
 ### 3. Input Data Flow
 
-**File**: `/Users/danielsinclair/vsicode/engine-sim-cli/engine-sim-bridge/engine-sim/src/piston_engine_simulator.cpp`
+**File**: `~/vsicode/engine-sim-cli/engine-sim-bridge/engine-sim/src/piston_engine_simulator.cpp`
 
 **Questions**:
 - How does exhaust flow get written to synthesizer?
@@ -377,9 +377,9 @@ Check for:
 2. **Accept the role** (TA1, TA2, or TA3)
 3. **Perform investigation** assigned to your role
 4. **Write your findings** in a markdown file:
-   - `/Users/danielsinclair/vscode/engine-sim-cli/TA1_FINDINGS.md`
-   - `/Users/danielsinclair/vscode/engine-sim-cli/TA2_FINDINGS.md`
-   - `/Users/danielsinclair/vscode/engine-sim-cli/TA3_FINDINGS.md`
+   - `~/vscode/engine-sim-cli/TA1_FINDINGS.md`
+   - `~/vscode/engine-sim-cli/TA2_FINDINGS.md`
+   - `~/vscode/engine-sim-cli/TA3_FINDINGS.md`
 
 ## Format for TA Findings
 
@@ -414,7 +414,7 @@ Each TA should produce:
 2. **Compare and contrast** - Where do they agree? Disagree?
 3. **Arbitrate** - What's the ACTUAL root cause?
 4. **Produce composite report**:
-   - `/Users/danielsinclair/vscode/engine-sim-cli/SOLUTION_ARCHITECT_REPORT.md`
+   - `~/vscode/engine-sim-cli/SOLUTION_ARCHITECT_REPORT.md`
 
 ## Critical Constraints
 
@@ -428,12 +428,12 @@ Each TA should produce:
 ## Files to Investigate (All TAs)
 
 ### Primary Files
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` (GUI)
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (GUI audio)
-- `/Users/danielsinclair/vsisco/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h` (GUI audio)
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` (Bridge)
-- `/Users/danielsinclair/vsico/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h` (Bridge API)
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (CLI)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` (GUI)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (GUI audio)
+- `~/vsisco/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h` (GUI audio)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` (Bridge)
+- `~/vsico/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h` (Bridge API)
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (CLI)
 
 ### Search Patterns
 ```bash
@@ -453,7 +453,7 @@ grep -r "m_cv0\|m_lock0\|condition_variable" engine-sim-bridge/engine-sim/ --inc
 ## Session Setup Commands
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 
 # Build current state
 cd build

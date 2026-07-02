@@ -8,7 +8,7 @@
 
 ### The DirectThrottleLinkage Formula (INVERTED)
 
-From `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp:22`:
+From `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp:22`:
 
 ```cpp
 void DirectThrottleLinkage::setSpeedControl(double s) {
@@ -26,7 +26,7 @@ With `gamma = 2.0` (Subaru EJ25):
 
 ### GUI Behavior (CORRECT)
 
-From `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`:
+From `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`:
 
 ```cpp
 // Line 777: No key pressed → reset to 0.0
@@ -74,7 +74,7 @@ So the GUI uses **LOW values (0.0-0.2) to get HIGH throttle (75-100%)**.
 
 ### CLI Behavior (WRONG)
 
-From `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`:
+From `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`:
 
 ```cpp
 // Line 755: Initial value
@@ -94,7 +94,7 @@ throttle = interactiveLoad;
 EngineSimSetThrottle(handle, throttle);
 ```
 
-From `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:433`:
+From `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:433`:
 
 ```cpp
 EngineSimResult EngineSimSetThrottle(EngineSimHandle handle, double position) {
@@ -148,7 +148,7 @@ throttle = interactiveLoad;
 
 ## Default Throttle System
 
-From `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/es/objects/objects.mr:109-111`:
+From `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/es/objects/objects.mr:109-111`:
 
 ```mr
 input throttle_gamma: 1.0;
@@ -184,7 +184,7 @@ Subaru EJ25 sets `throttle_gamma: 2.0`, which makes the inversion more severe.
 
 ## Comparison with Governor
 
-Governor uses NORMAL logic (from `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp:51`):
+Governor uses NORMAL logic (from `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp:51`):
 
 ```cpp
 engine->setThrottle(1 - std::pow(1 - m_currentThrottle, m_gamma));
@@ -218,10 +218,10 @@ throttle = 1.0 - interactiveLoad;
 
 ## Files Analyzed
 
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp` - Throttle implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp` - Governor implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` - GUI throttle handling
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - CLI throttle handling
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` - Bridge implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/es/objects/objects.mr` - Default throttle system
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr` - Subaru EJ25 config
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp` - Throttle implementation
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp` - Governor implementation
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` - GUI throttle handling
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - CLI throttle handling
+- `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` - Bridge implementation
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/es/objects/objects.mr` - Default throttle system
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr` - Subaru EJ25 config

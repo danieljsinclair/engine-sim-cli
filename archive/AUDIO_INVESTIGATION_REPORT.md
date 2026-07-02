@@ -198,14 +198,14 @@ After implementing the fix:
 
 | Component | File | Line |
 |-----------|------|------|
-| CLI config | `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` | 592-593 |
-| CLI render call | `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` | 920-970 |
-| Bridge defaults | `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` | 37-39 |
-| Bridge render | `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` | 483-568 |
-| Bridge read | `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` | 570-629 |
-| GUI config | `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp` | 211-218 |
-| GUI usage | `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` | 274 |
-| Synth defaults | `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h` | 21-25 |
+| CLI config | `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` | 592-593 |
+| CLI render call | `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` | 920-970 |
+| Bridge defaults | `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` | 37-39 |
+| Bridge render | `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` | 483-568 |
+| Bridge read | `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp` | 570-629 |
+| GUI config | `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp` | 211-218 |
+| GUI usage | `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` | 274 |
+| Synth defaults | `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h` | 21-25 |
 
 ## Conclusion
 

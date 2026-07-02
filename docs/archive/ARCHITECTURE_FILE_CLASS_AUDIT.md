@@ -15,7 +15,7 @@ This audit provides a complete responsibility classification for every class and
 3. **Bloat and complexity** (over-engineering, unnecessary responsibilities)
 4. **Architecture fragility** (hard to maintain, test, or extend)
 
-**Scope:** All 42 source files (.h and .cpp) in `/Users/danielsinclair/vscode/escli.refac7/src/`
+**Scope:** All 42 source files (.h and .cpp) in `~/vscode/escli.refac7/src/`
 
 ---
 

@@ -27,7 +27,7 @@
 ### 1. Thread Creation and Lifecycle
 
 #### GUI: When is audio thread created?
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 **Line**: 509
 ```cpp
 void EngineSimApplication::loadEngine(
@@ -64,7 +64,7 @@ m_simulator->endAudioRenderingThread();
 ```
 
 #### CLI: When is audio thread created?
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 **Line**: 702
 ```cpp
 result = EngineSimStartAudioThread(handle);
@@ -78,7 +78,7 @@ result = EngineSimStartAudioThread(handle);
 
 #### GUI: `m_cv0` - When is it notified?
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Line 197-213** - `endInputBlock()` notifies the audio thread:
 ```cpp
@@ -135,12 +135,12 @@ void Synthesizer::renderAudio() {
 
 **Evidence**: Search for `endInputBlock` in CLI:
 ```bash
-$ grep -n "endInputBlock" /Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp
+$ grep -n "endInputBlock" ~/vscode/engine-sim-cli/src/engine_sim_cli.cpp
 # NO RESULTS
 ```
 
 **What happens in the CLI loop?**
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 **Lines 941-966**
 ```cpp
 // Update physics
@@ -212,7 +212,7 @@ m_simulator->endFrame();  // simulator.cpp:166-168
 
 #### GUI: RingBuffer Usage
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 **Lines 253-271**
 ```cpp
 const SampleOffset safeWritePosition = m_audioSource->GetCurrentWritePosition();
@@ -238,7 +238,7 @@ if (currentLead > 44100 * 0.5) {
 
 #### CLI: AudioPlayer Buffer Management
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 **Lines 102-107**
 ```cpp
 // Generate buffers
@@ -284,7 +284,7 @@ The CLI is missing step 3.
 
 #### How does main thread signal audio thread in GUI?
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp`
 **Lines 166-168**
 ```cpp
 void Simulator::endFrame() {
@@ -292,7 +292,7 @@ void Simulator::endFrame() {
 }
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 **Line 245**
 ```cpp
 m_simulator->endFrame();  // Called every frame
@@ -309,7 +309,7 @@ m_simulator->endFrame();  // Called every frame
 
 #### How does audio thread signal back?
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 **Line 255**
 ```cpp
 m_cv0.notify_one();  // Notify waitProcessed()
@@ -378,7 +378,7 @@ The CLI never calls this, so the audio thread sleeps forever.
 
 #### 1. Add `EngineSimEndFrame()` API call
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
 
 **Add after line 235**:
 ```cpp
@@ -399,7 +399,7 @@ EngineSimResult EngineSimEndFrame(
 
 #### 2. Implement `EngineSimEndFrame()`
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Add after line 477**:
 ```cpp
@@ -425,7 +425,7 @@ EngineSimResult EngineSimEndFrame(
 
 #### 3. Update CLI to call `EngineSimEndFrame()`
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Replace lines 941-942**:
 ```cpp
@@ -534,7 +534,7 @@ The fix is simple: Add `EngineSimEndFrame()` to the bridge API and call it from 
 ### Key Files
 
 1. **Synthesizer (audio thread implementation)**
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
    - Lines 107-110: Thread creation
    - Lines 161-166: `waitProcessed()` - waits for audio to be processed
    - Lines 197-213: `endInputBlock()` - **NOTIFIES AUDIO THREAD**
@@ -542,35 +542,35 @@ The fix is simple: Add `EngineSimEndFrame()` to the bridge API and call it from 
    - Lines 222-256: `renderAudio()` - waits on `m_cv0`, processes audio, notifies back
 
 2. **Synthesizer (interface)**
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
    - Line 74: `endInputBlock()` declaration
    - Line 76: `waitProcessed()` declaration
    - Lines 114-119: Thread, mutex, condition variable members
 
 3. **Simulator**
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp`
    - Lines 166-168: `endFrame()` calls `endInputBlock()`
    - Line 152: `simulateStep()` calls `writeToSynthesizer()`
 
 4. **GUI Application**
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
    - Line 245: **Calls `endFrame()` every frame**
    - Line 274: Reads audio from synthesizer
    - Line 509: Starts audio thread
 
 5. **Bridge API**
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
    - Lines 115-117: `EngineSimStartAudioThread()` declaration
    - **MISSING**: `EngineSimEndFrame()` declaration
 
 6. **Bridge Implementation**
-   - `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+   - `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
    - Lines 379-396: `EngineSimStartAudioThread()` implementation
    - Lines 439-477: `EngineSimUpdate()` implementation
    - **MISSING**: `EngineSimEndFrame()` implementation
 
 7. **CLI**
-   - `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+   - `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
    - Line 702: Starts audio thread
    - Lines 941-966: Main simulation loop
    - **MISSING**: Call to `EngineSimEndFrame()` after `EngineSimUpdate()`

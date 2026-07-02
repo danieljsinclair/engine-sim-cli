@@ -19,7 +19,7 @@
 
 ## 1. GUI Audio Implementation (FACTS)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 ### 1.1 Audio Thread Start
 
@@ -62,7 +62,7 @@ These are COMPLETELY different code paths with different buffer management!
 
 ### 2.1 Change 1: Start Audio Thread
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Before** (line 772-776):
 ```cpp

@@ -57,7 +57,7 @@ AudioUnit Callback (~94Hz, real-time)
 ### Key Files
 
 **Primary implementation:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
   - Lines 71-95: AudioUnitContext structure
   - Lines 192-205: Circular buffer initialization
   - Lines 320-420: Write discontinuity detection
@@ -65,13 +65,13 @@ AudioUnit Callback (~94Hz, real-time)
   - Lines 1100-1200: Main loop audio generation
 
 **Documentation:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/AUDIO_THEORIES_TRACKING.md` - Complete investigation history
-- `/Users/danielsinclair/vscode/engine-sim-cli/AUDIO_DIAGNOSTIC_REPORT.md` - Diagnostic analysis
-- `/Users/danielsinclair/vscode/engine-sim-cli/AUDIO_FIX_IMPLEMENTATION_GUIDE.md` - Proposed fixes
+- `~/vscode/engine-sim-cli/AUDIO_THEORIES_TRACKING.md` - Complete investigation history
+- `~/vscode/engine-sim-cli/AUDIO_DIAGNOSTIC_REPORT.md` - Diagnostic analysis
+- `~/vscode/engine-sim-cli/AUDIO_FIX_IMPLEMENTATION_GUIDE.md` - Proposed fixes
 
 **Reference implementations:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` - GUI reference
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` - Audio thread
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` - GUI reference
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` - Audio thread
 
 ## Configuration
 
@@ -113,7 +113,7 @@ This confirms position tracking is NOT the problem.
 
 ### Build
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make clean
 make
 ```
@@ -221,7 +221,7 @@ make
 ## Code Locations Reference
 
 ### CLI Implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
   - Line 71-95: AudioUnitContext structure
   - Line 192-205: Circular buffer initialization
   - Line 320-420: addToCircularBuffer() with discontinuity detection
@@ -230,13 +230,13 @@ make
   - Line 1600-1645: Main loop audio generation (engine mode)
 
 ### GUI Reference
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
   - Line 169-170: Buffer initialization with 10% lead
   - Line 253-274: Main loop buffer management
   - Line 179: Audio source creation (DirectSound)
 
 ### Synthesizer
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
   - Line 228: Audio thread throttle (2000 sample buffer)
   - Line 232-234: Burst rendering
 
@@ -272,7 +272,7 @@ Every theory must be tested with diagnostics. Every result must be documented. F
 ## Git Status
 
 **Current branch:** master
-**Uncommitted changes:** `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Uncommitted changes:** `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Recent commits:**
 - `0f54807` feat: Real-time AudioUnit streaming with diagnostics

@@ -597,5 +597,5 @@ No unique commits. Personal testing branch.
 ## 📁 Saved Report Location
 
 ```
-/Users/danielsinclair/vscode/escli.refac7/FORK_ANALYSIS.md
+~/vscode/escli.refac7/FORK_ANALYSIS.md
 ```

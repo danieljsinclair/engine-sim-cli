@@ -27,7 +27,7 @@ The previous agents claimed to have implemented:
 
 ### 1.1 Audio Thread Implementation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 848-857**:
 ```cpp
@@ -47,7 +47,7 @@ std::cout << "[3/5] Audio thread started (matching GUI architecture)\n";
 
 ### 1.2 AudioBuffer Class Implementation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 71-140**: AudioBuffer class is fully implemented with:
 - Mutex-protected read/write operations
@@ -69,7 +69,7 @@ if (audioPlayer) {
 
 ### 1.3 Throttle Smoothing Implementation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 1137-1140**:
 ```cpp
@@ -83,7 +83,7 @@ lastThrottle = throttle;
 
 ### 1.4 EngineSimReadAudioBuffer Implementation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Lines 570-629**: Function is implemented and:
 - Calls `ctx->simulator->readAudioOutput()` (matching GUI line 274)
@@ -98,7 +98,7 @@ lastThrottle = throttle;
 
 ### 2.1 GUI Throttle Handling (WORKING)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Line 798** - The CRITICAL line:
 ```cpp
@@ -116,7 +116,7 @@ m_iceEngine->setSpeedControl(m_speedSetting);
 3. Governor applies closed-loop feedback with safety features
 4. Governor calls `engine->setThrottle()` with modified value
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp`
 
 **Lines 45-51** - Governor's closed-loop feedback:
 ```cpp
@@ -129,7 +129,7 @@ engine->setThrottle(1 - std::pow(1 - m_currentThrottle, m_gamma));
 
 ### 2.2 CLI Throttle Handling (BROKEN)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 1137-1140**:
 ```cpp
@@ -143,7 +143,7 @@ lastThrottle = throttle;
 EngineSimSetThrottle(handle, throttle);
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
 
 **Lines 424-429** - EngineSimSetThrottle implementation:
 ```cpp
@@ -172,7 +172,7 @@ Starting simulation...
 
 **THE SMOKING GUN**: Throttle is at 0% throughout the entire run!
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 1129-1135** - Auto throttle ramp:
 ```cpp
@@ -413,7 +413,7 @@ Previous agents assumed:
 
 ### 4.1 Default Interactive Throttle
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 919** - CURRENT (BROKEN):
 ```cpp
@@ -427,7 +427,7 @@ double interactiveLoad = (args.targetLoad >= 0) ? args.targetLoad : 0.2;  // Def
 
 ### 4.2 Initialize lastThrottle Before Main Loop
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **After line 988** (after warmup completes):
 ```cpp

@@ -88,7 +88,7 @@ The CLI does NOT do this. It says "Give me 800 samples NOW" even if only 100 are
 ## Specific Code Location
 
 ### CLI (WRONG):
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File:** `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 **Lines:** 485, 942-959
 
 ```cpp
@@ -100,7 +100,7 @@ result = EngineSimReadAudioBuffer(handle, writePtr, framesToRender, &samplesWrit
 ```
 
 ### GUI (CORRECT):
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 **Lines:** 253-274
 
 ```cpp

@@ -65,7 +65,7 @@ The CLI has a **timing-dependent race condition** where it reads audio samples f
 
 ### The Smoking Gun: Audio Thread Releases Lock Mid-Render
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Lines 222-256** (renderAudio function):
 ```cpp
@@ -231,7 +231,7 @@ The CLI reads audio immediately after notifying the audio thread, before the thr
 
 #### Step 1: Add `EngineSimWaitForAudio()` Call to CLI
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Location**: After line 798 (after `EngineSimUpdate()`)
 
@@ -256,7 +256,7 @@ int framesToRender = framesPerUpdate;
 
 #### Step 2: (Optional) Reduce Read Size Back to Original
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 485**: Currently might be `sampleRate / 10` (4800 frames)
 
@@ -379,7 +379,7 @@ result = EngineSimReadAudioBuffer(handle, writePtr, framesToRender, &samplesWrit
 
 #### Part 1: Add Buffer Level Query API
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
 
 **Add after line 266**:
 ```cpp
@@ -396,7 +396,7 @@ EngineSimResult EngineSimGetAudioBufferLevel(
 );
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Add after line 629**:
 ```cpp
@@ -424,7 +424,7 @@ EngineSimResult EngineSimGetAudioBufferLevel(
 }
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
 
 **Add after line 77**:
 ```cpp
@@ -433,7 +433,7 @@ int getAudioBufferLevel() const { return m_audioBuffer.size(); }
 
 #### Part 2: Update CLI to Match GUI's Read Pattern
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Replace lines 942-959**:
 ```cpp

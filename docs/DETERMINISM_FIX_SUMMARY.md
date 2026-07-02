@@ -14,7 +14,7 @@ Removed the unnecessary background thread from the test harness in `test/integra
 - Removed `simulator_->startAudioRenderingThread()` call
 - Removed sleep delay
 
-**File Modified:** `/Users/danielsinclair/vscode/escli.refac7/test/integration/SimulatorLevelAudioTest.cpp` (lines 135-138)
+**File Modified:** `~/vscode/escli.refac7/test/integration/SimulatorLevelAudioTest.cpp` (lines 135-138)
 
 ## Results
 
@@ -43,5 +43,5 @@ Removed the unnecessary background thread from the test harness in `test/integra
 The determinism failure was caused by incorrect test setup, not a problem with the audio pipeline itself. The fix is simple, safe, and achieves perfect determinism for sync-pull mode testing.
 
 **Related Documents:**
-- `/Users/danielsinclair/vscode/escli.refac7/docs/DETERMINISM_FAILURE_FIX_PLAN.md` (detailed analysis)
-- `/Users/danielsinclair/vscode/escli.refac7/docs/DETERMINISM_FIX_SUMMARY.md` (this summary)
+- `~/vscode/escli.refac7/docs/DETERMINISM_FAILURE_FIX_PLAN.md` (detailed analysis)
+- `~/vscode/escli.refac7/docs/DETERMINISM_FIX_SUMMARY.md` (this summary)

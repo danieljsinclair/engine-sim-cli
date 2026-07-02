@@ -5,7 +5,7 @@
 | Aspect | Finding |
 |--------|---------|
 | **Root Cause** | Buffer overflow in `audioBuffer` after 3 seconds |
-| **Location** | `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` line 1168 |
+| **Location** | `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` line 1168 |
 | **Trigger** | `--interactive --play` mode running longer than 3 seconds |
 | **Why WAV works** | Buffer size matches duration, loop terminates before overflow |
 | **Fix required** | Circular buffer or larger buffer for interactive mode |

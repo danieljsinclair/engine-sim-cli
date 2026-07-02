@@ -358,7 +358,7 @@ All critical SOLID violations identified have been resolved through Phase 1-5:
 
 ### Static Linking Architecture (COMPLETED in reference escli)
 - **DECISION**: Bridge should be statically linked, NOT dynamically loaded via dlopen
-- Reference implementation: `/Users/danielsinclair/vscode/escli/escli` (uncommitted)
+- Reference implementation: `~/vscode/escli/escli` (uncommitted)
 - Direct function calls instead of function pointer indirection
 - C++ interfaces for SOLID compliance (IInputProvider, IPresentation)
 - No runtime library loading - compile-time type safety

@@ -10,7 +10,7 @@ Before running tests, ensure you have:
 
 1. **Built the project**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli
+   cd ~/vscode/engine-sim-cli
    mkdir build && cd build
    cmake ..
    make
@@ -18,7 +18,7 @@ Before running tests, ensure you have:
 
 2. **Built the diagnostic tool**:
    ```bash
-   cd /Users/danielsinclair/vscode/engine-sim-cli
+   cd ~/vscode/engine-sim-cli
    g++ -std=c++17 -O2 -Wall -Wextra \
        -I./engine-sim-bridge/include \
        diagnostics.cpp \

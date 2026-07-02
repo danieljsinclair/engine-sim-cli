@@ -10,16 +10,16 @@
 
 ### 1. Added Reset Method to Convolution Filter
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/convolution_filter.h`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/convolution_filter.h`
 - Added public method `resetShiftRegister()` to reset filter state without losing impulse response
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/convolution_filter.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/convolution_filter.cpp`
 - Implemented `resetShiftRegister()` to zero shift register and reset offset
 - Preserves impulse response data (unlike destroy/initialize)
 
 ### 2. Updated Synthesizer Buffer Management
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 - Modified `endInputBlock()` method (line 197-213)
 - Added convolution filter reset after removing old samples from input buffer
 - Reset occurs within mutex-protected section for thread safety

@@ -4,7 +4,7 @@
 
 ```bash
 # Build
-cd /Users/danielsinclair/vscode/engine-sim-cli/build
+cd ~/vscode/engine-sim-cli/build
 make
 
 # Test interactive mode
@@ -44,7 +44,7 @@ make
 ## Technical Summary
 
 **Files Modified**:
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Changes**:
 1. Added `baselineLoad` and `wKeyPressed` state variables
@@ -85,8 +85,8 @@ Decay rate: 6% per second at 60 FPS
 ## Documentation
 
 Full details in:
-- `/Users/danielsinclair/vscode/engine-sim-cli/INTERACTIVE_CONTROLS_FIX_SUMMARY.md`
-- `/Users/danielsinclair/vscode/engine-sim-cli/COMPREHENSIVE_FIX_PLAN.md` (updated)
+- `~/vscode/engine-sim-cli/INTERACTIVE_CONTROLS_FIX_SUMMARY.md`
+- `~/vscode/engine-sim-cli/COMPREHENSIVE_FIX_PLAN.md` (updated)
 
 ## Status
 

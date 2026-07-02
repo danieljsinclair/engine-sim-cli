@@ -45,7 +45,7 @@
 
 **Evidence**:
 ```cpp
-// File: /Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp
+// File: ~/vscode/engine-sim-cli/src/engine_sim_cli.cpp
 // Lines 848-857
 // CRITICAL: Start audio thread to match GUI behavior exactly
 // GUI calls startAudioRenderingThread() at line 509 of engine_sim_application.cpp
@@ -74,7 +74,7 @@ std::cout << "[3/5] Audio thread started (matching GUI architecture)\n";
 
 **Evidence**:
 ```cpp
-// File: /Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp
+// File: ~/vscode/engine-sim-cli/src/engine_sim_cli.cpp
 // Lines 1137-1140
 // Smooth throttle transitions (matches GUI pattern at line 798 of engine_sim_application.cpp)
 // This prevents abrupt RPM changes and combustion instability
@@ -93,7 +93,7 @@ lastThrottle = throttle;
 
 **Evidence**:
 ```cpp
-// File: /Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp
+// File: ~/vscode/engine-sim-cli/src/engine_sim_cli.cpp
 // Line 742
 config.inputBufferSize = 44100;  // Match GUI's input buffer size
 ```
@@ -109,7 +109,7 @@ config.inputBufferSize = 44100;  // Match GUI's input buffer size
 
 **Evidence**:
 ```cpp
-// File: /Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp
+// File: ~/vscode/engine-sim-cli/src/engine_sim_cli.cpp
 // Lines 70-140: Full AudioBuffer class implementation
 class AudioBuffer {
 private:

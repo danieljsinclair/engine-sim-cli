@@ -394,7 +394,7 @@ This index provides a comprehensive overview of the complete audio investigation
 ## File Organization
 
 ```
-/Users/danielsinclair/vscode/engine-sim-cli/
+~/vscode/engine-sim-cli/
 ├── AUDIO_INVESTIGATION_COMPLETE_SUMMARY.md        # Comprehensive final report
 ├── MOCK_ENGINE_SIM_VALIDATION_REPORT.md          # Mock validation breakthrough
 ├── INTERFACE_EQUIVALENCE_PROOF.md                # Interface equivalence proof

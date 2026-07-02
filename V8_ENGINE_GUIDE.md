@@ -78,7 +78,7 @@ The default engine in main.mr is currently a Subaru EJ25 (flat-4). To use it:
 
 ### Issue 3: Local es/ Directory Files Don't Work
 
-**Problem:** Files in `/Users/danielsinclair/vscode/engine-sim-cli/es/` fail to compile.
+**Problem:** Files in `~/vscode/engine-sim-cli/es/` fail to compile.
 
 **Root Cause:** These local copies have incorrect or outdated import paths that don't resolve properly.
 

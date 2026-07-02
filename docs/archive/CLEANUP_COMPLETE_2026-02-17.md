@@ -85,7 +85,7 @@ cd build && make -j8
 ### Sine Mode Verification
 ```bash
 cd build && ./engine-sim-cli --sine --duration 1
-# Library loaded: /Users/danielsinclair/vscode/engine-sim-cli/build/libenginesim-mock.dylib
+# Library loaded: ~/vscode/engine-sim-cli/build/libenginesim-mock.dylib
 # Mode: RPM-Linked Sine Wave Test
 # Works correctly
 ```
@@ -93,7 +93,7 @@ cd build && ./engine-sim-cli --sine --duration 1
 ### Engine Mode Verification
 ```bash
 cd build && ./engine-sim-cli --script ../engine-sim-bridge/engine-sim/assets/main.mr --duration 2
-# Library loaded: /Users/danielsinclair/vscode/engine-sim-cli/build/libenginesim.dylib
+# Library loaded: ~/vscode/engine-sim-cli/build/libenginesim.dylib
 # Engine: ../engine-sim-bridge/engine-sim/assets/main.mr
 # Works correctly
 ```

@@ -2,7 +2,7 @@
 
 **Date**: 2026-01-28
 **Status**: ✅ COMPLETED
-**Files Modified**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Files Modified**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 ## Overview
 
@@ -151,7 +151,7 @@ The interactive system now has two distinct control modes:
 Interactive mode requires manual testing to verify fixes:
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/build
+cd ~/vscode/engine-sim-cli/build
 ./engine-sim-cli --default-engine --interactive --play
 ```
 
@@ -212,7 +212,7 @@ All load-changing keys update `baselineLoad`:
 ### Build Verification
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/build
+cd ~/vscode/engine-sim-cli/build
 make
 ```
 

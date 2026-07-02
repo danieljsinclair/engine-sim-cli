@@ -482,10 +482,10 @@ std::max(0, bufferSize - (int)m_audioBuffer.size()),
 
 ### Evidence Locations
 
-- CLI config: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:745`
-- Throttle smoothing: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:1142`
-- Audio thread throttle: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228,233`
-- GUI buffer lead: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:257`
+- CLI config: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:745`
+- Throttle smoothing: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:1142`
+- Audio thread throttle: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228,233`
+- GUI buffer lead: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:257`
 
 ### Recommended Action
 

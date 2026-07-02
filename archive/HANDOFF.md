@@ -4,7 +4,7 @@
 
 **Date**: 2025-01-14
 **Current Branch**: `claude/virtual-throttle-revving-08p4K`
-**Working Directory**: `/Users/danielsinclair/vscode/engine-sim`
+**Working Directory**: `~/vscode/engine-sim`
 **Target Platform**: M4 macOS (Apple Silicon) → eventual iPhone 15 deployment
 **Build Architecture**: x86_64 (Rosetta) for immediate POC, ARM64 native for production
 

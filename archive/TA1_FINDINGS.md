@@ -77,7 +77,7 @@ This is the ROOT CAUSE of audio dropouts at higher throttle!
 ### 1. Audio Thread Lifecycle
 
 #### GUI: How `startAudioRenderingThread()` Works
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Line 509**:
 ```cpp
@@ -87,7 +87,7 @@ m_simulator->startAudioRenderingThread();
 **When Called**: In `loadEngine()` function after impulse responses are loaded.
 
 #### CLI: Does CLI Call Audio Thread Start?
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 702**:
 ```cpp
@@ -103,7 +103,7 @@ result = EngineSimStartAudioThread(handle);
 ### 2. Audio Buffer Reading
 
 #### GUI (engine_sim_application.cpp): How GUI Reads Audio
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Line 274**:
 ```cpp
@@ -117,7 +117,7 @@ const int readSamples = m_simulator->readAudioOutput(maxWrite, samples);
 - `samples`: Output buffer for int16 mono samples
 
 #### Bridge: What Function Does CLI Call?
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Line 570-629**: `EngineSimReadAudioBuffer` function
 ```cpp
@@ -166,7 +166,7 @@ result = EngineSimReadAudioBuffer(handle, writePtr, framesToRender, &samplesWrit
 
 #### CRITICAL DIFFERENCE: `EngineSimRender` vs `EngineSimReadAudioBuffer`
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Lines 483-568**: `EngineSimRender` function
 ```cpp
@@ -209,7 +209,7 @@ EngineSimResult EngineSimRender(
 ### 3. Configuration Parameters
 
 #### GUI Configuration
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp`
 
 **Lines 211-218**:
 ```cpp
@@ -232,7 +232,7 @@ void Simulator::initializeSynthesizer() {
 - `fluidSimulationSteps`: 8 (default, set in piston_engine_simulator.cpp:26)
 
 #### CLI Configuration
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 591-599**:
 ```cpp
@@ -256,7 +256,7 @@ config.airNoise = 1.0f;
 - `fluidSimulationSteps`: 8
 
 #### Bridge Defaults
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Lines 118-128**:
 ```cpp
@@ -291,7 +291,7 @@ static void setDefaultConfig(EngineSimConfig* config) {
 ### 4. Control Flow Differences
 
 #### GUI Main Loop: How GUI Processes Each Frame
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Lines 202-312**: `process()` function
 ```cpp
@@ -349,7 +349,7 @@ void EngineSimApplication::process(float frame_dt) {
 8. Write to OpenAL buffer
 
 #### CLI Main Loop: How CLI Processes Each Frame
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 772-1015**: Main simulation loop
 ```cpp
@@ -454,7 +454,7 @@ The CLI code has been updated to use the audio thread architecture, matching the
 ### 6. Underrun Handling
 
 #### GUI (synthesizer.cpp): Does GUI Fill Underruns with Silence?
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Lines 141-159**: `readAudioOutput()` function
 ```cpp
@@ -482,7 +482,7 @@ int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
 **FINDING**: YES, GUI fills underruns with silence (line 150-153).
 
 #### Bridge: Did We Remove Silence-Filling?
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Lines 607-611**: `EngineSimReadAudioBuffer()` function
 ```cpp
@@ -571,7 +571,7 @@ Based on the investigation, here are the recommended fixes:
 
 ### Fix 1: Match GUI's Audio Read Pattern (CRITICAL - Highest Priority)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 485**: Change from:
 ```cpp
@@ -614,7 +614,7 @@ if (samplesWritten < framesToRender) {
 
 ### Fix 3: Remove or Fix `EngineSimRender()` Function
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Option A**: Remove the `renderAudio()` call from `EngineSimRender()`:
 ```cpp
@@ -648,7 +648,7 @@ if (ctx->simulator->synthesizer().m_thread != nullptr) {
 
 ### Fix 4: Match GUI's Audio Read Pattern
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp**
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp**
 
 **Lines 946-970**: Modify to match GUI's pattern of reading up to 100ms of audio:
 

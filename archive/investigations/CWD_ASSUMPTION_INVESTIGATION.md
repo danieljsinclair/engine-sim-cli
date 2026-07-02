@@ -42,8 +42,8 @@ void es_script::Compiler::initialize() {
 
 **PROBLEM:**
 - These paths only work if CWD is in a specific location
-- If you run from `/Users/danielsinclair/vscode/escli.refac7/build/`, the paths fail
-- If you run from `/Users/danielsinclair/vscode/escli.refac7/`, the paths work
+- If you run from `~/vscode/escli.refac7/build/`, the paths fail
+- If you run from `~/vscode/escli.refac7/`, the paths work
 
 **EVIDENCE:**
 - `"../../es/"` - assumes CWD is 2 levels deep from `es/` directory

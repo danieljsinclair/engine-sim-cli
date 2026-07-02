@@ -10,7 +10,7 @@ CLI throttle is backwards because DirectThrottleLinkage uses inverted logic:
 
 ### Option 1: Simple Inversion (Quick Fix)
 
-In `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`:
+In `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`:
 
 ```cpp
 // Around line 923, change:
@@ -53,7 +53,7 @@ if (throttleType == ESIM_THROTTLE_DIRECT) {
 
 ### Option 3: Fix at Bridge Level (Cleanest)
 
-In `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`:
+In `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`:
 
 ```cpp
 EngineSimResult EngineSimSetThrottle(EngineSimHandle handle, double position) {

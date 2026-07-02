@@ -153,7 +153,7 @@ After applying the fix, you should see:
 
 ## Files Modified
 
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (sine mode loop timing control)
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (sine mode loop timing control)
 
 ## Related Documentation
 

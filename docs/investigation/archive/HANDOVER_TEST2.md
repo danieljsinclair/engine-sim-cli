@@ -60,7 +60,7 @@ Replacing the condition variable with a timed wait and implementing fixed-interv
 
 ### Code Changes Required
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Function:** `renderAudio()` (lines 221-266)
 
@@ -204,9 +204,9 @@ void Synthesizer::renderAudio() {
 ### Build Commands
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 
@@ -291,12 +291,12 @@ make
 ## Code Locations Reference
 
 **Files to modify:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (lines 221-266)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (lines 221-266)
 
 **Files to reference:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/TEST1_AUDIO_THREAD_WAKEUP_ANALYSIS.md` (Test 1 results)
-- `/Users/danielsinclair/vscode/engine-sim-cli/TEST_INVESTIGATION_LOG.md` (Test log)
-- `/Users/danielsinclair/vscode/engine-sim-cli/AUDIO_THEORIES_TRACKING.md` (Theories)
+- `~/vscode/engine-sim-cli/TEST1_AUDIO_THREAD_WAKEUP_ANALYSIS.md` (Test 1 results)
+- `~/vscode/engine-sim-cli/TEST_INVESTIGATION_LOG.md` (Test log)
+- `~/vscode/engine-sim-cli/AUDIO_THEORIES_TRACKING.md` (Theories)
 
 ## Context
 

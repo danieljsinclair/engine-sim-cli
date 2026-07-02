@@ -14,8 +14,8 @@
 ### 1. Added Comprehensive Logging
 
 **Files Modified**:
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Diagnostics Added**:
 - Frame count tracking (requested vs received)
@@ -97,7 +97,7 @@
 
 ### Code Change
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Location**: Lines 1214-1237 (main simulation loop)
 
@@ -202,7 +202,7 @@ if (framesToRender > 0) {
 **Verification**: All evidence-based tests pass. No more crackling, buffer underruns, or thread contention.
 
 **Files Modified**:
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (lines 1214-1237)
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (lines 1214-1237)
 
 **Impact**:
 - ✅ Eliminates audio crackling during real-time playback

@@ -208,7 +208,7 @@ The performance difference (1 vs 3 frames) is significant and affects audio qual
 2. Test with higher targetSynthesizerLatency (50ms or 100ms)
 3. Investigate buffer writeOffset behavior across double initialization
 
-**Full tech-architect report:** `/Users/danielsinclair/vscode/escli.refac7/UNDERRUN_INVESTIGATION.md`
+**Full tech-architect report:** `~/vscode/escli.refac7/UNDERRUN_INVESTIGATION.md`
 
 ---
 
