@@ -1,8 +1,8 @@
-path = "/Users/danielsinclair/.espressif"
-idf_path = "/Users/danielsinclair/.espressif/v6.0.1/esp-idf"
-esp_idf_json_path = "/Users/danielsinclair/.espressif/tools"
-tool_download_folder_name = "/Users/danielsinclair/.espressif/dist"
-tool_install_folder_name = "/Users/danielsinclair/.espressif/tools"
+path = "~/.espressif"
+idf_path = "~/.espressif/v6.0.1/esp-idf"
+esp_idf_json_path = "~/.espressif/tools"
+tool_download_folder_name = "~/.espressif/dist"
+tool_install_folder_name = "~/.espressif/tools"
 target = ["all"]
 idf_versions = ["v6.0.1"]
 tools_json_file = "tools/tools.json"
@@ -17,7 +17,7 @@ install_all_prerequisites = true
 skip_prerequisites_check = false
 cleanup = false
 python_env_folder_name = "python"
-activation_script_path_override = "/Users/danielsinclair/.espressif/tools"
+activation_script_path_override = "~/.espressif/tools"
 python_version_override = "python313"
 create_bat_activation_script = false
 
