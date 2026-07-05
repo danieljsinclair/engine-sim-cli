@@ -129,6 +129,7 @@ add_executable(engine-sim-cli
     src/config/CLIconfig.cpp
     src/config/CLIMain.cpp
     src/config/KqueueSignalStopController.cpp
+    src/config/ReplayTimeValidator.cpp
     src/config/ANSIColors.cpp
     # Presentation layer
     src/presentation/ConsolePresentation.cpp

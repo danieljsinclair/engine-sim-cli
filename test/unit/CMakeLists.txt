@@ -14,8 +14,12 @@ add_executable(unit_tests
     AudioTestConstants.cpp
     KeyboardInputProviderTest.cpp
     ISimulatorTest.cpp
+    ANSIColorsTest.cpp
+    CLIMainTest.cpp
+    ReplayTimeValidatorTest.cpp
     # Required support code
     ../../src/config/CLIconfig.cpp
+    ../../src/config/ReplayTimeValidator.cpp
     ../../src/config/KqueueSignalStopController.cpp
     ../../src/config/ANSIColors.cpp
     ../../src/presentation/ConsolePresentation.cpp

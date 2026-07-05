@@ -10,16 +10,33 @@
 #include <unistd.h>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 // PATH_MAX may not be defined on all systems
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
 
+// macOS: _NSGetExecutablePath for getting the test binary's path
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 class SmokeTestHelper {
 public:
     // Get the project root directory
     static std::string getProjectRoot() {
+        // Prefer the build directory from the test binary's path (argv[0] / _NSGetExecutablePath)
+        // to handle cases where tests are invoked from the project root.
+        std::string binaryDir = getTestBinaryDirectory();
+        if (!binaryDir.empty()) {
+            size_t pos = binaryDir.find("/build");
+            if (pos != std::string::npos) {
+                return binaryDir.substr(0, pos);
+            }
+        }
+
+        // Fallback to cwd-based detection
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             std::string currentDir(cwd);
@@ -49,6 +66,21 @@ public:
     // directory the tests are running from (build/ for normal, build-cov/
     // for coverage) so instrumented binaries are exercised when present.
     static std::string getCLIPath() {
+        // Prefer build directory from test binary path (works when invoked from project root)
+        std::string binaryDir = getTestBinaryDirectory();
+        if (!binaryDir.empty()) {
+            size_t pos = binaryDir.find("/build");
+            if (pos != std::string::npos) {
+                size_t buildEnd = binaryDir.find('/', pos + 1);
+                std::string buildDir = (buildEnd != std::string::npos)
+                    ? binaryDir.substr(pos + 1, buildEnd - pos - 1)
+                    : binaryDir.substr(pos + 1);
+                std::string projectRoot = getProjectRoot();
+                return projectRoot + "/" + buildDir + "/engine-sim-cli";
+            }
+        }
+
+        // Fallback to cwd-based detection
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             std::string currentDir(cwd);
@@ -73,7 +105,11 @@ public:
         std::string projectRoot = getProjectRoot();
         std::string cliPath = getCLIPath();
         std::string logFile = projectRoot + "/build/cli_test_" + std::to_string(getpid()) + ".log";
-        std::string command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + args;
+
+        // Pass LLVM_PROFILE_FILE to child process so it writes its own profile data
+        // Use a unique profraw file per CLI invocation to avoid collisions
+        std::string profrawFile = projectRoot + "/build-cov/profraw/cli_test_" + std::to_string(getpid()) + "_%p.profraw";
+        std::string command = "cd \"" + projectRoot + "\" && LLVM_PROFILE_FILE=\"" + profrawFile + "\" \"" + cliPath + "\" " + args;
 
         // Always capture the CLI's stdout + stderr to the log file. Tests that
         // pass their own explicit file redirect (e.g. > /dev/null or 2>&1 merged
@@ -87,10 +123,34 @@ public:
             ? args.substr(0, args.size() - kStderrMerge.size())
             : args;
         // Rebuild the command without the trailing 2>&1 (if present).
-        command = "cd \"" + projectRoot + "\" && \"" + cliPath + "\" " + strippedArgs;
+        command = "cd \"" + projectRoot + "\" && LLVM_PROFILE_FILE=\"" + profrawFile + "\" \"" + cliPath + "\" " + strippedArgs;
         command += " >> \"" + logFile + "\" 2>&1";
 
         return system(command.c_str());
+    }
+
+private:
+    // Get the directory containing the test binary (the executable running the tests).
+    // Uses _NSGetExecutablePath on macOS, falls back to argv[0] heuristic.
+    static std::string getTestBinaryDirectory() {
+#if defined(__APPLE__)
+        uint32_t size = PATH_MAX;
+        std::unique_ptr<char[]> buf(new char[size]);
+        if (_NSGetExecutablePath(buf.get(), &size) == 0) {
+            std::string path(buf.get());
+            // Resolve symlinks to get the real path
+            char realPath[PATH_MAX];
+            if (realpath(path.c_str(), realPath)) {
+                path = realPath;
+            }
+            // Return directory containing the binary
+            size_t pos = path.find_last_of('/');
+            if (pos != std::string::npos) {
+                return path.substr(0, pos);
+            }
+        }
+#endif
+        return "";
     }
 };
 
