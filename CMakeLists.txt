@@ -63,6 +63,22 @@ else()
     message(FATAL_ERROR "engine-sim-cli only supports macOS with AudioQueue. Linux/Windows support has been removed.")
 endif()
 
+# Promote -Wnonportable-include-path to a HARD ERROR (project-wide, DRY). Clang
+# warns when an #include's case/path differs from the file on disk (e.g. writing
+# "config/CLIconfig.h" when the file is "config/CLIconFIG.h"), or when an include
+# ambiguously resolves across -I roots. That exact warning was emitted — and
+# ignored — when a wrong-case include silently resolved to a bridge stub sharing
+# the same path + include guard on the iOS toolchain, shipping a build break.
+# This makes the warning unignorable. Applies to the engine-sim-cli target and
+# all test targets (smoke_tests / unit_tests / integration_tests /
+# telemetry_isp_tests) created below; the iOS cross-build's bridge subdir sets
+# its own copy in engine-sim-bridge/CMakeLists.txt. -Werror=nonportable-system-
+# include-path covers the angled-include (<...>) twin. Valid under Apple Clang.
+add_compile_options(
+    -Werror=nonportable-include-path
+    -Werror=nonportable-system-include-path
+)
+
 # engine-sim-bridge: consumed as a pre-built STATIC archive (macOS) or built
 # from source via add_subdirectory (iOS cross-compilation). The bridge builds
 # independently via its own Makefile BEFORE this cmake configure runs.

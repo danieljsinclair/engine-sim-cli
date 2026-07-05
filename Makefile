@@ -88,8 +88,17 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .PHONY: all build clean clean-cli scrub-cli test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
-        coverage-run coverage-clean coverage-summary summary
+        coverage-run coverage-clean coverage-summary summary gate
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
+.PHONY: build-cross-gate
+# gate MUST run its steps strictly in order: build -> test -> iOS cross ->
+# coverage -> sonar -> summary. The steps share build dirs (build/ for the
+# macOS compile, build-OS64/ for the cross, build-cov/ for coverage) and the
+# bridge submodule; running them concurrently under `make -j gate` would race
+# on those dirs. .NOTPARALLEL forces serial execution of the gate (and its
+# cross-build wrapper) regardless of -j, while leaving the rest of the
+# Makefile's parallelism (compiler/ctest -j inside each step) intact.
+.NOTPARALLEL: gate build-cross-gate
 
 # ============================================================================
 # all: Full pipeline -- build + test (default target). `summary` is the LAST
@@ -97,6 +106,37 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 # is the final build output.
 # ============================================================================
 all: build test summary
+
+# ============================================================================
+# gate: THE pre-commit command. Encodes the COMMIT GATE rule from CLAUDE.md as
+# a single fail-fast command so it cannot be skipped by accident.
+#
+# The full gate, in order: macOS build -> bridge+CLI tests -> iOS cross-build
+# -> coverage-regen -> Sonar scan (zero-new-issues) -> headline summary.
+#
+# WHY the cross-build is in here: on 2025-07-04 the lead declared the tree
+# green after running only the macOS build, missing an iOS (PLATFORM=OS64)
+# cross-build break. The rule already existed; the discipline failed. `gate`
+# makes the rule mechanical.
+#
+# Sequential, fail-fast via prerequisites: the first failing step stops the
+# run and the exit code propagates. Reuses existing targets (DRY) -- it does
+# not reimplement their bodies. Ordering is enforced even under `make -j`
+# via the .NOTPARALLEL declaration near the .PHONY block.
+#
+# NOTE: sonar-scan requires SONAR_TOKEN_ES or SONAR_TOKEN. If neither is set
+# the sonar-scan step fails fast with a clear message (it does NOT silently
+# skip), so the gate surfaces the missing token rather than passing without it.
+# ============================================================================
+gate: build test build-cross-gate coverage-run sonar-scan summary
+	@echo ""
+	@printf '\033[0;32m=== [engine-sim-cli] GATE PASSED: build + tests + iOS cross + coverage + sonar ===\033[0m\n'
+
+# iOS cross-build wrapper so `gate` can pass PLATFORM=OS64 to build-cross
+# without re-declaring its recipe. Fail-fast: build-cross's own $(error)
+# guards malformed PLATFORM.
+build-cross-gate:
+	+@$(MAKE) build-cross PLATFORM=OS64
 
 # ============================================================================
 # build: Compile everything -- configure, compile, build presets, sync es/
@@ -362,6 +402,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  make          - Build + test (complete pipeline)"
+	@echo "  make gate     - FULL pre-commit gate: build + tests + iOS cross + coverage + sonar (fail-fast)"
 	@echo "  make build    - Compile everything (no tests)"
 	@echo "  make sonar-scan - Run SonarQube scan with coverage (only re-runs when build/inputs change)"
 	@echo "  make coverage-run - Run CLI tests with coverage instrumentation"
