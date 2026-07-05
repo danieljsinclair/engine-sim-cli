@@ -259,7 +259,6 @@ clean-cli: clean
 		cmake --build $(BUILD_DIR) --target clean >/dev/null 2>&1 || true; \
 	fi
 	@rm -rf $(CLI_ES)
-	@rm -rf .scannerwork
 
 # cascade the scrub to submodules
 scrub: scrub-cli
@@ -270,7 +269,6 @@ scrub-cli: clean-cli
 	@echo "Scrubbing all build artifacts..."
 	@rm -rf $(BUILD_DIR) $(BUILD_COV_DIR) $(CLI_ES)
 	@$(MAKE) remove-orphans
-	@rm -rf .scannerwork
 	@echo "Build artifacts scrubbed. Run 'make' to rebuild."
 
 # ---------------------------------------------------------------------------
@@ -524,7 +522,7 @@ coverage-clean:
 
 sonar-clean:
 	@rm -f $(SONAR_REPORT)
-	@rm -rf .scannerwork
+	@rm -rf $(BUILD_COV_DIR)/.scannerwork
 
 # Sonar summary -- display issues from a LIVE SonarCloud report (DRY: bridge script).
 # No prereq on $(SONAR_REPORT): this must NEVER trigger a scan. Curls the API
