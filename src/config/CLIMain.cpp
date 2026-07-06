@@ -200,8 +200,10 @@ std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILoggin
         return {scriptPath};
     }
 
-    // No script specified: default to cycling all presets
-    if (auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir); !presetDiscovery.presets.empty()) {
+    // No script specified: default to cycling all presets. No current selection
+    // is tracked here, so currentFullPath is empty (currentIndex stays at its
+    // default 0 — the CLI cycles from the first preset regardless).
+    if (auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir, /*currentFullPath=*/{}); !presetDiscovery.presets.empty()) {
         std::vector<std::string> paths;
         for (const auto& preset : presetDiscovery.presets) {
             paths.push_back(preset.fullPath);
