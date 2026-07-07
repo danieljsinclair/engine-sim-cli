@@ -437,24 +437,25 @@ help:
 # finds CLI build-cov/test/* binaries), sonar_summary.py, coverage_summary.py.
 # ============================================================================
 
-# Bridge instrumented lib. The bridge instruments its ``build/`` directory
-# (Debug + llvm-cov), not a separate build-cov. The CLI therefore points
-# -DBRIDGE_BUILD_DIR at the bridge's instrumented ``build/`` directly. This
-# rule ensures the instrumented lib is current by re-running the bridge's
-# coverage-run (cheap when build/ is already instrumented).
-BRIDGE_COV_DIR := $(BRIDGE_DIR)/build
-$(BRIDGE_BUILD_COV_LIB): $(BRIDGE_COV_DIR)/libenginesim.a
-	@:
-
-$(BRIDGE_COV_DIR)/libenginesim.a:
+# Bridge instrumented lib. The bridge instruments its ``build-cov/`` directory
+# (RelWithDebInfo + -fprofile-instr-generate/-fcoverage-mapping), produced by
+# the bridge's own coverage-run. The CLI MUST link this instrumented archive
+# (NOT the plain build/libenginesim.a) so bridge source lines get a coverage
+# mapping — otherwise llvm-cov export emits no SF records for archive-only
+# bridge TUs (SimulationLoop, BridgeSimulator, all deserializers, ...) and they
+# silently drop to 0% in lcov/Sonar despite being exercised by the CLI binary.
+BRIDGE_COV_DIR := $(BRIDGE_DIR)/build-cov
+# BRIDGE_BUILD_COV_LIB (defined above) == $(BRIDGE_COV_DIR)/libenginesim.a, so a
+# single rule builds it by delegating to the bridge's coverage-run (which
+# configures + builds + tests the bridge's instrumented build-cov/).
+$(BRIDGE_BUILD_COV_LIB):
 	+@$(MAKE) -C $(BRIDGE_DIR) coverage-run
 	@test -e $@ || { echo "ERROR: bridge instrumented lib missing at $@"; exit 1; }
 
 # Coverage build: separate build-cov dir with llvm-cov instrumentation.
 # RelWithDebInfo (NOT Debug) + -fprofile-instr-generate/-fcoverage-mapping/-g.
-# Points at the bridge's instrumented build/ (the bridge instruments build/,
-# not build-cov) so coverage attributes bridge source. Depends on the bridge
-# instrumented lib existing first (ordering).
+# Points at the bridge's instrumented build-cov/ so coverage attributes bridge
+# source. Depends on the bridge instrumented lib existing first (ordering).
 $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 	@mkdir -p $(BUILD_COV_DIR)
 	@cd $(BUILD_COV_DIR) && cmake \
