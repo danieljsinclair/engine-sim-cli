@@ -10,7 +10,7 @@ This is NOT a "larger buffer" strategy - it's a classic circular buffer implemen
 
 ## 1. GUI Buffer Type
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
 
 **Line 107**:
 ```cpp
@@ -23,7 +23,7 @@ RingBuffer<int16_t> m_audioBuffer;
 
 ## 2. GUI Buffer Allocation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
 
 **Lines 34-40** (Parameters struct):
 ```cpp
@@ -37,7 +37,7 @@ struct Parameters {
 };
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Line 51** (Initialization):
 ```cpp
@@ -57,7 +57,7 @@ for (int i = 0; i < m_audioBufferSize; ++i) {
 
 ## 3. GUI Buffer Management (Circular Buffer Behavior)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/ring_buffer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/ring_buffer.h`
 
 ### Write Implementation (Lines 40-46):
 ```cpp
@@ -110,7 +110,7 @@ inline size_t size() const {
 
 ## 4. GUI Read/Write Pattern
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 ### readAudioOutput (Lines 141-159):
 ```cpp

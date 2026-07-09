@@ -8,7 +8,7 @@ User reported crackling/static throughout audio playback:
 
 ### The Bug: Uninitialized Memory in Audio Buffer
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Functions Affected**:
 1. `EngineSimRender()` (lines 557-567)
@@ -81,7 +81,7 @@ if (samplesRead < frames) {
 
 ### Changes Made
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Function**: `EngineSimRender()` (after line 561)
 **Function**: `EngineSimReadAudioBuffer()` (after line 631)

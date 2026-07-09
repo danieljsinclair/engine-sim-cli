@@ -14,7 +14,7 @@
 
 ### 1.1 Audio API: Windows Audio (ysAudioSource)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Lines 176-184**: Audio initialization
 ```cpp
@@ -35,7 +35,7 @@ m_audioSource->SetMode((m_simulator->getEngine() != nullptr)
 
 ### 1.2 Buffer Synchronization (The Magic)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Lines 253-271**: Synchronization logic
 ```cpp
@@ -128,7 +128,7 @@ if (readSamples > 0) {
 
 ### 2.1 Circular Buffer Implementation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
 
 **Lines 30-38**: `offsetDelta` - calculates distance between two buffer positions
 ```cpp
@@ -147,7 +147,7 @@ inline int offsetDelta(int offset0, int offset1) const {
 
 ### 2.2 Buffer Initialization
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Line 169-170**:
 ```cpp
@@ -217,7 +217,7 @@ else {
 
 ### 4.1 CLI Has NO Hardware Feedback
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **CLI does NOT call**:
 - `GetCurrentWritePosition()` - doesn't exist in OpenAL without extensions
@@ -257,7 +257,7 @@ while (framesRemaining > 0) {
 
 ### 4.2 OpenAL Doesn't Provide `GetCurrentWritePosition()`
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **CLI uses OpenAL** (lines 173-189):
 ```cpp
@@ -404,7 +404,7 @@ Result: Underruns, delays, silence gaps
 
 ### 6.3 Root Cause of CLI Delays
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 560**: Chunk size = 1 second
 ```cpp

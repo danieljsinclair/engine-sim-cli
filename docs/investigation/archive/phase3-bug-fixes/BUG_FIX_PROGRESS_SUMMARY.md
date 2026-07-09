@@ -44,7 +44,7 @@ Discontinuities (10-second test)
 ## Bug Fix #1: SUCCESS (60% improvement)
 
 **Date:** 2025-02-04 14:05
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 **Line:** 312
 
 ### The Bug
@@ -84,7 +84,7 @@ m_filters[i]->process(sample[0], sample[1]);  // Iterate all filters
 ## Bug Fix #2: FAILED (made it worse)
 
 **Date:** 2025-02-04 14:08
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/leveling_filter.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/leveling_filter.cpp`
 **Line:** 31
 
 ### The Hypothesis
@@ -173,7 +173,7 @@ m_filteredInput = 0.99 * m_filteredInput + 0.01 * input;
 
 ## Test Log Archive
 
-**Location:** `/Users/danielsinclair/vscode/engine-sim-cli/test_logs/`
+**Location:** `~/vscode/engine-sim-cli/test_logs/`
 
 **Contents:**
 - 12 test log files (738 KB total)
@@ -189,9 +189,9 @@ m_filteredInput = 0.99 * m_filteredInput + 0.01 * input;
 
 **Build current code (with Bugfix #1):**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 

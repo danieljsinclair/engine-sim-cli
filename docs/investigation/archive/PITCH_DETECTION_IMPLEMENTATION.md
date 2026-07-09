@@ -91,7 +91,7 @@ void getPitchStats(int& jumpCount, double& lastPitch, double& expectedPitch);
    ```
 
 ## Files Modified
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
   - Added pitch detection fields to AudioUnitContext
   - Implemented detectPitch() function
   - Added pitch detection logic to audio callback

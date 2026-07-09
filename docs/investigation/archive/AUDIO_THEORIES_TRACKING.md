@@ -51,7 +51,7 @@ Discontinuities originate in the synthesizer's output due to code bugs, not audi
 - Whether GUI uses different audio thread scheduling
 
 ### Current Code State
-- **Modified file:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- **Modified file:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 - **Changes:** Diagnostic instrumentation added for Test 1
 - **Diagnostics:** Audio thread wakeup timing, buffer write patterns, discontinuity detection
 - **Status:** Test 1 complete, Test 2 pending
@@ -80,7 +80,7 @@ Discontinuities originate in the synthesizer's output due to code bugs, not audi
 
 **Date:** 2025-02-04 14:05
 **Status:** SUCCESS - 60% improvement
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 **Line:** 312
 
 #### Problem Identified
@@ -115,11 +115,11 @@ for (int i = 0; i < m_inputChannels.size(); i++) {
 #### Build Results
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
 # Output: [ 50%] Building CXX object engine-sim/CMakeFiles/engine-sim.dir/src/synthesizer.cpp.o
 #         [100%] Linking CXX static library libengine-sim.a
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 # Output: clang++ ... -o build/engine-sim-cli
 ```
@@ -177,7 +177,7 @@ Total discontinuities detected: 25
 
 **Date:** 2025-02-04 14:08
 **Status:** FAILED - Made it worse (300% increase)
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/leveling_filter.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/leveling_filter.cpp`
 **Line:** 31
 
 #### Hypothesis
@@ -210,11 +210,11 @@ m_filteredInput = 0.99 * m_filteredInput + 0.01 * input;
 #### Build Results
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
 # Output: [ 50%] Building CXX object engine-sim/CMakeFiles/engine-sim.dir/src/leveling_filter.cpp.o
 #         [100%] Linking CXX static library libengine-sim.a
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 # Output: clang++ ... -o build/engine-sim-cli
 ```
@@ -312,9 +312,9 @@ The original smoothing factor (0.9/0.1) was correct. Changing it to 0.99/0.01 in
 #### Build Results
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make  # SUCCESS
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make  # SUCCESS
 ```
 
@@ -426,7 +426,7 @@ All code changes were reverted to restore the working state from Bug Fix #1.
 
 ### Test Implementation
 
-**File Modified:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File Modified:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Lines 221-243:** Added wakeup timing diagnostics to `renderAudio()`:
 
@@ -461,9 +461,9 @@ void Synthesizer::renderAudio() {
 ### Test Commands
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 
 ./build/engine-sim-cli --default-engine --rpm 2000 --play --duration 10 2>&1 | tee engine_test.log
@@ -1567,7 +1567,7 @@ Samples: L_prev=0.067, L_new=-1.000, R_prev=0.067, R_new=-1.000
 
 ### Architecture Overview
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File:** `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Audio Flow:**
 ```
@@ -1828,7 +1828,7 @@ void addToCircularBuffer(const float* samples, int frameCount) {
 ### Files Modified
 
 **Current Uncommitted Changes:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
   - Added circular buffer architecture
   - Implemented position tracking diagnostics
   - Added underrun detection
@@ -1839,7 +1839,7 @@ void addToCircularBuffer(const float* samples, int frameCount) {
 
 **Sine Mode Test:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 ./build/engine-sim-cli --sine --rpm 2000 --play
 ```
 
@@ -1850,7 +1850,7 @@ cd /Users/danielsinclair/vscode/engine-sim-cli
 
 **Build:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make clean
 make
 ```

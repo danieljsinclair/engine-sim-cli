@@ -7,7 +7,7 @@
 **Impact:** Reduces periodic crackling by 3x
 
 **Files to modify:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Changes:**
 
@@ -49,7 +49,7 @@ const int n = std::min(
 **Impact:** Reduces latency by ~30ms
 
 **Files to modify:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Changes:**
 
@@ -74,7 +74,7 @@ smoothedThrottle = throttle * 0.8 + smoothedThrottle * 0.2;
 **Impact:** Reduces baseline latency by ~30ms
 
 **Files to modify:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Changes:**
 
@@ -99,7 +99,7 @@ config.targetSynthesizerLatency = 0.02;
 ### 1. Build and Test
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make clean
 make
 
@@ -246,9 +246,9 @@ config.targetSynthesizerLatency = 0.03;  // 30ms (compromise)
 ## Code References
 
 **Key files:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - Main loop, throttle smoothing
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` - Audio thread, burst rendering
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` - GUI reference
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - Main loop, throttle smoothing
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` - Audio thread, burst rendering
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` - GUI reference
 
 **Key lines:**
 - CLI config: line 745 (targetSynthesizerLatency)

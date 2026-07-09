@@ -129,11 +129,11 @@ std::unique_ptr<IAudioStrategy> IAudioStrategyFactory::createStrategy(
 
 ## References
 
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/IAudioStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/SyncPullStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/IAudioStrategyFactory.cpp`
-- `/Users/danielsinclair/vscode/escli.refac7/docs/ARCHITECTURE_AUDIT.md`
+- `~/vscode/escli.refac7/src/audio/strategies/IAudioStrategy.h`
+- `~/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.h`
+- `~/vscode/escli.refac7/src/audio/strategies/SyncPullStrategy.h`
+- `~/vscode/escli.refac7/src/audio/strategies/IAudioStrategyFactory.cpp`
+- `~/vscode/escli.refac7/docs/ARCHITECTURE_AUDIT.md`
 
 ---
 

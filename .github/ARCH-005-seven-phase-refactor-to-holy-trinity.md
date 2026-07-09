@@ -608,11 +608,11 @@ git mv src/audio/strategies/SyncPullStrategy.h src/audio/strategies/SyncPullAudi
 
 ## References
 
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/IAudioStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/SyncPullStrategy.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/simulation/SimulationLoop.cpp`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/hardware/IAudioHardwareProvider.h`
+- `~/vscode/escli.refac7/src/audio/strategies/IAudioStrategy.h`
+- `~/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.h`
+- `~/vscode/escli.refac7/src/audio/strategies/SyncPullStrategy.h`
+- `~/vscode/escli.refac7/src/simulation/SimulationLoop.cpp`
+- `~/vscode/escli.refac7/src/audio/hardware/IAudioHardwareProvider.h`
 
 ---
 

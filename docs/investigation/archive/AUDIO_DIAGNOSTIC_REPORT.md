@@ -256,10 +256,10 @@ if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
 **Total estimated latency: ~95-115ms** ✓ matches observation
 
 **Evidence locations:**
-- CLI config: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:745`
-- Throttle smoothing: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:1142`
-- Audio throttle: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228`
-- GUI buffer lead: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:257`
+- CLI config: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:745`
+- Throttle smoothing: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:1142`
+- Audio throttle: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228`
+- GUI buffer lead: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:257`
 
 ### Periodic Crackling
 
@@ -275,8 +275,8 @@ if (framesToWrite * 2 * sizeof(float) > buffer.mDataByteSize) {
 - Crackle frequency: **~22 Hz** (1 / 0.045)
 
 **Evidence:**
-- Audio thread throttle: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228,233`
-- Render loop: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:222-256`
+- Audio thread throttle: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228,233`
+- Render loop: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:222-256`
 
 **Secondary factor:** Throttle smoothing aligns with audio cycle
 - Smoothing: 16.7ms intervals (60Hz)
@@ -335,7 +335,7 @@ const int n = std::min(
 
 ## Code Locations for Fixes
 
-### File: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+### File: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 745:** Reduce target latency
 ```cpp
@@ -347,7 +347,7 @@ config.targetSynthesizerLatency = 0.02;  // Change from 0.05
 smoothedThrottle = throttle * 0.8 + smoothedThrottle * 0.2;  // Change from 0.5/0.5
 ```
 
-### File: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+### File: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Line 228:** Reduce burst size
 ```cpp

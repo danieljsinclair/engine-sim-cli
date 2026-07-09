@@ -36,7 +36,7 @@ This document analyzes the current state of baseline file management for audio r
 
 **Current Blocker:**
 ```cpp
-/Users/danielsinclair/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.cpp:104:68: error:
+~/vscode/escli.refac7/src/audio/strategies/ThreadedStrategy.cpp:104:68: error:
 no member named 'channels' in 'AudioState'
 ```
 
@@ -75,9 +75,9 @@ There is NO `channels` member.
 
 **Orphaned Baseline Files in Root:**
 ```
-/Users/danielsinclair/vscode/escli.refac7/threaded_renderer_baseline.dat
-/Users/danielsinclair/vscode/escli.refac7/sync_pull_renderer_baseline_underrun.dat
-/Users/danielsinclair/vscode/escli.refac7/sync_pull_renderer_baseline.dat
+~/vscode/escli.refac7/threaded_renderer_baseline.dat
+~/vscode/escli.refac7/sync_pull_renderer_baseline_underrun.dat
+~/vscode/escli.refac7/sync_pull_renderer_baseline.dat
 ```
 
 **Issue:** Baseline files in root directory (not in test/unit/baselines/)
@@ -131,9 +131,9 @@ There is NO `channels` member.
 
 2. **Remove Orphaned Baseline Files**
    ```bash
-   rm /Users/danielsinclair/vscode/escli.refac7/threaded_renderer_baseline.dat
-   rm /Users/danielsinclair/vscode/escli.refac7/sync_pull_renderer_baseline_underrun.dat
-   rm /Users/danielsinclair/vscode/escli.refac7/sync_pull_renderer_baseline.dat
+   rm ~/vscode/escli.refac7/threaded_renderer_baseline.dat
+   rm ~/vscode/escli.refac7/sync_pull_renderer_baseline_underrun.dat
+   rm ~/vscode/escli.refac7/sync_pull_renderer_baseline.dat
    ```
    - **Assignee:** @doc-writer or @tech-architect
    - **Priority:** HIGH

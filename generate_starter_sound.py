@@ -16,6 +16,7 @@ from scipy.io import wavfile
 from scipy.signal import sawtooth
 import subprocess
 import sys
+from pathlib import Path
 
 # ============ PARAMETERS ============
 SAMPLE_RATE = 48000  # Hz
@@ -226,7 +227,7 @@ if max_val > 0:
 audio_int16 = (audio * 32767).astype(np.int16)
 
 # Save WAV
-output_path = "/Users/danielsinclair/vscode/engine-sim-cli/generate_starter_sound.wav"
+output_path = str(Path(__file__).with_suffix('.wav'))
 wavfile.write(output_path, SAMPLE_RATE, audio_int16)
 
 print(f"\n✓ Generated: {output_path}")

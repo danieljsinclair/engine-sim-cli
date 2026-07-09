@@ -68,8 +68,8 @@ TEST(CommandLineParserTest, AutoFlagEnablesAutoGearbox) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
-    EXPECT_TRUE(args.autoGearbox);
-    EXPECT_FALSE(args.manualGearbox);
+    EXPECT_TRUE(args.gearbox.automatic);
+    EXPECT_FALSE(args.gearbox.manual);
 }
 
 TEST(CommandLineParserTest, ManualFlagExplicit) {
@@ -77,8 +77,8 @@ TEST(CommandLineParserTest, ManualFlagExplicit) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.autoGearbox);
-    EXPECT_TRUE(args.manualGearbox);
+    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_TRUE(args.gearbox.manual);
 }
 
 TEST(CommandLineParserTest, DefaultGearboxIsManual) {
@@ -86,8 +86,8 @@ TEST(CommandLineParserTest, DefaultGearboxIsManual) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.autoGearbox);
-    EXPECT_FALSE(args.manualGearbox);
+    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_FALSE(args.gearbox.manual);
 }
 
 TEST(CommandLineParserTest, AutoAndManualAreMutuallyExclusive) {
@@ -102,6 +102,6 @@ TEST(CommandLineParserTest, AutoFlagWithConnectDemo) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_TRUE(args.autoGearbox);
+    EXPECT_TRUE(args.gearbox.automatic);
     EXPECT_TRUE(args.connectDemo);
 }

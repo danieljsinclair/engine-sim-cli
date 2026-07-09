@@ -37,7 +37,7 @@ The synthesizer's audio thread uses `wait()` with a condition variable that has 
 
 ### Code Changes
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Lines 221-243:** Added wakeup timing diagnostics to `renderAudio()`:
 
@@ -74,9 +74,9 @@ void Synthesizer::renderAudio() {
 **Status:** SUCCESS
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 
@@ -251,7 +251,7 @@ Replacing the condition variable with a timed wait and implementing fixed-interv
 
 ### Code Changes (Planned)
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Current Implementation (lines 221-266):**
 ```cpp
@@ -358,7 +358,7 @@ The synthesizer produces discontinuous audio samples due to state management bug
 
 ### Test Implementation
 
-**File Modified:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File Modified:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Added Write Discontinuity Detection (lines 298-334):**
 
@@ -392,7 +392,7 @@ for (int i = 0; i < n; i++) {
 
 **Command:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 ./build/engine-sim-cli --default-engine --rpm 2000 --play --duration 10 2>&1 | tee test4_engine.log
 ./build/engine-sim-cli --sine --play --duration 10 2>&1 | tee test4_sine.log
 ```
@@ -420,7 +420,7 @@ cd /Users/danielsinclair/vscode/engine-sim-cli
 
 ### Problem Identified
 
-Code inspection of `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` line 312 revealed a critical array access bug:
+Code inspection of `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` line 312 revealed a critical array access bug:
 
 **Buggy Code (line 312):**
 ```cpp
@@ -442,9 +442,9 @@ m_filters[i]->process(sample[0], sample[1]);  // CORRECT: iterate through all fi
 
 **Build:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 
@@ -514,7 +514,7 @@ The leveling filter's smoothing factor is too aggressive, causing discontinuitie
 
 ### Code Changes
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/leveling_filter.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/leveling_filter.cpp`
 
 **Line 31 - Before:**
 ```cpp
@@ -530,9 +530,9 @@ m_filteredInput = 0.99 * m_filteredInput + 0.01 * input;
 
 **Build:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 
@@ -676,9 +676,9 @@ The remaining 25 discontinuities (from Bugfix 1) likely come from:
 
 **Build:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 
@@ -923,7 +923,7 @@ The CLI now produces professional-quality audio output that matches the Windows 
 
 ### Mock Implementation
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/src/mock_engine_sim.cpp`
+**File:** `~/vscode/engine-sim-cli/src/mock_engine_sim.cpp`
 
 **Implementation Details:**
 - Generates sine waves at mathematically correct RPM frequencies
@@ -1249,9 +1249,9 @@ std::cout << "Buffer pre-filled with 3 seconds of silence\n";
 
 **Build Commands:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 

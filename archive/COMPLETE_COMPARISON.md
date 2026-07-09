@@ -45,7 +45,7 @@ The CLI directly sets throttle to the calculated value without any smoothing.
 
 ### How GUI Smoothing Works
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Lines 776-800:**
 ```cpp
@@ -82,7 +82,7 @@ This creates **gradual transitions** over multiple frames (~10 frames at 60fps =
 
 ### How CLI Throttle Setting Works
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File:** `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 1051-1052:**
 ```cpp
@@ -208,7 +208,7 @@ At 15% throttle (which in RPM control mode means the PID is outputting 0.15), th
 
 ### GUI Config
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/main.mr`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/main.mr`
 
 **Line 3:** `import "engines/atg-video-2/01_subaru_ej25_eh.mr"`
 
@@ -228,7 +228,7 @@ At 15% throttle (which in RPM control mode means the PID is outputting 0.15), th
 
 ### DirectThrottleLinkage (Used by BOTH GUI and CLI)
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp`
 
 **Lines 20-28:**
 ```cpp
@@ -250,7 +250,7 @@ void DirectThrottleLinkage::update(double dt, Engine *engine) {
 
 ### Governor (Alternative, NOT used by Subaru EJ25)
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp`
 
 **Lines 30-52:**
 ```cpp
@@ -292,7 +292,7 @@ void Governor::update(double dt, Engine *engine) {
 
 ### GUI Update Rate
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File:** `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Line 234:** `m_simulator->startFrame(1 / avgFramerate);`
 - Variable framerate based on actual render time
@@ -301,7 +301,7 @@ void Governor::update(double dt, Engine *engine) {
 
 ### CLI Update Rate
 
-**File:** `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File:** `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 558:** `const double updateInterval = 1.0 / 60.0;`
 - Fixed 60 fps (0.0167 sec per frame)

@@ -46,7 +46,7 @@ This document defines a comprehensive test strategy for the engine-sim-cli proje
 ### Directory Structure
 
 ```
-/Users/danielsinclair/vscode/escli.refac7/
+~/vscode/escli.refac7/
 ├── test/                          # NEW: Test directory
 │   ├── CMakeLists.txt            # Test build configuration
 │   ├── smoke/                     # Priority 1: Smoke tests
@@ -697,7 +697,7 @@ TEST_F(ImpulseResponseTest, LoadImpulseResponsesSucceeds) {
 
 ```bash
 # Configure with tests enabled
-cd /Users/danielsinclair/vscode/escli.refac7/build
+cd ~/vscode/escli.refac7/build
 cmake .. -DBUILD_TESTS=ON
 
 # Build tests

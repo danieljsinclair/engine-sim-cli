@@ -28,11 +28,17 @@ char gearChar(int selector, int physicalGear);
 // Pure and public so the composite is testable without friend hacks.
 std::string gearTriple(int selector, bool autoMode, int physicalGear);
 
-class ConsolePresentation : public IPresentation {
+class ConsolePresentation final : public IPresentation {
 public:
     ConsolePresentation();
     ~ConsolePresentation() override;
-    
+
+    // Manages console/output state. Copying has no meaningful semantics here and
+    // is never done in practice (held via std::unique_ptr or as a test fixture
+    // member), so copy is disabled to prevent accidental double-Shutdown.
+    ConsolePresentation(const ConsolePresentation&) = delete;
+    ConsolePresentation& operator=(const ConsolePresentation&) = delete;
+
     bool Initialize(const PresentationConfig& config) override;
     void Shutdown() override;
     
@@ -62,7 +68,7 @@ private:
 
     PresentationConfig config_;
     std::chrono::steady_clock::time_point lastDiagTime_;
-    bool initialized_;
+    bool initialized_{false};
 };
 
 } // namespace presentation

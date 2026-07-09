@@ -190,7 +190,7 @@ This makes the real Synthesizer match the mock's corrected behavior.
 
 ## Files Modified
 
-- `/Users/danielsinclair/.claude/projects/-Users-danielsinclair-vscode-engine-sim-cli/memory/MEMORY.md` - Updated with deadlock findings
+- `~/.claude/projects/-Users-danielsinclair-vscode-engine-sim-cli/memory/MEMORY.md` - Updated with deadlock findings
 
 ## Files Requiring Changes
 

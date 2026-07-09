@@ -3,15 +3,15 @@
 ## Test Configuration
 
 **Files Modified:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
   - Added wakeup timing diagnostics at start of `renderAudio()`
   - Tracks time between wakeups, buffer size, and samples written
 
 **Build Commands Executed:**
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/build
+cd ~/vscode/engine-sim-cli/engine-sim-bridge/build
 cmake .. && make
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make
 ```
 

@@ -167,7 +167,7 @@ See `AUDIO_FIX_IMPLEMENTATION_GUIDE.md` for:
 
 ### Build
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make clean
 make
 ```
@@ -185,7 +185,7 @@ make
 ## Key Files
 
 ### Implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
   - Lines 71-95: AudioUnitContext structure
   - Lines 192-205: Circular buffer initialization
   - Lines 320-420: Write discontinuity detection
@@ -193,7 +193,7 @@ make
   - Lines 1100-1200: Main loop audio generation
 
 ### Reference
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
   - GUI reference implementation (works perfectly)
 
 ## Success Criteria

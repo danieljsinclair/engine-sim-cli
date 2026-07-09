@@ -14,12 +14,6 @@
 #include <vector>
 
 // ============================================================================
-// Global State (required for signal handling)
-// ============================================================================
-
-std::atomic<bool> g_interactiveMode(false);
-
-// ============================================================================
 // Command Line Parsing
 // ============================================================================
 
@@ -90,17 +84,17 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--load", loadArg, "Dyno load torque percentage (engine works against this)") ->check(CLI::Range(0.0, 100.0));
     app.add_option("--output", args.outputWav, "Output WAV file path");
     app.add_option("--duration", args.duration, "Duration in seconds (default: 3.0, ignored in interactive)");
-    app.add_option("--sim-freq", args.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
-    app.add_option("--synth-latency", args.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
-    app.add_option("--pre-fill-ms", args.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
-    app.add_option("--cranking-volume", args.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
+    app.add_option("--sim-freq", args.audio.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
+    app.add_option("--synth-latency", args.audio.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
+    app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
+    app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    app.add_option("--replay-telemetry", args.replayTelemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
+    app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
-    app.add_option("--start-from", args.replayStartFrom, "Start replay at this time (seconds, mm:ss, or hh:mm:ss)")
+    app.add_option("--start-from", args.replay.startFrom, "Start replay at this time (seconds, mm:ss, or hh:mm:ss)")
         ->needs("--replay-telemetry");
-    app.add_option("--end-at", args.replayEndAt, "Stop replay at this time (seconds or mm:ss)")
+    app.add_option("--end-at", args.replay.endAt, "Stop replay at this time (seconds or mm:ss)")
         ->needs("--replay-telemetry");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
@@ -119,10 +113,10 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
     app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
-    app.add_option("--gearbox-log", args.gearboxLogPath, "Log gearbox decisions to CSV file")->expected(0, 1);
+    app.add_option("--gearbox-log", args.gearbox.logPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
-    auto autoFlag = app.add_flag("--auto", args.autoGearbox, "Use automatic gearbox");
-    auto manualFlag = app.add_flag("--manual", args.manualGearbox, "Use manual gearbox (default)");
+    auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox");
+    auto manualFlag = app.add_flag("--manual", args.gearbox.manual, "Use manual gearbox (default)");
     autoFlag->excludes(manualFlag);
 
     app.add_flag("--diagnostic-frames", args.diagnostics.frames,
@@ -144,31 +138,34 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag) {
     args.syncPull = !threadedFlag;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
-    if (silentFlag) args.silent = args.playAudio = true;
+    if (silentFlag) {
+        args.playAudio = true;
+        args.silent = true;
+    }
 
     // Default to interactive mode unless --duration is given.
     if (args.duration <= 0.0) {
         args.interactive = true;
     }
-    if (args.interactive) g_interactiveMode.store(true);
 
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
         args.playAudio = true;
         args.interactive = true;
-        g_interactiveMode.store(true);
     }
 
     // Auto-generate gearbox log filename if flag given without value
-    if (args.gearboxLogPath == "true") {
+    if (args.gearbox.logPath == "true") {
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
-        char buf[64];
-        std::strftime(buf, sizeof(buf), "gearbox_%Y%m%d_%H%M%S.csv", std::localtime(&time));
-        args.gearboxLogPath = buf;
+        struct tm tm_local;
+        localtime_r(&time, &tm_local);
+        std::string buf(64, '\0');
+        std::strftime(buf.data(), buf.size(), "gearbox_%Y%m%d_%H%M%S.csv", &tm_local);
+        args.gearbox.logPath = buf.c_str();
     }
 
-    args.engineConfig = scriptPath.empty() ? std::move(positionalEngineConfig) : std::move(scriptPath);
+    args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;
 
     auto fail = [&](const char* message) {
         std::cerr << message;
@@ -178,17 +175,17 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     if (args.targetLoad < -1.0 || args.targetLoad > 1.0) return fail("ERROR: Load must be between 0 and 100\n");
 
     // Parse time strings (plain seconds or mm:ss or hh:mm:ss) into doubles.
-    if (!args.replayStartFrom.empty()) {
-        args.replayStartFromS = parseReplayTimeToSeconds(args.replayStartFrom);
-        if (args.replayStartFromS < 0.0) {
-            std::cerr << "ERROR: Invalid --start-from time: " << args.replayStartFrom << "\n";
+    if (!args.replay.startFrom.empty()) {
+        args.replay.startFromS = parseReplayTimeToSeconds(args.replay.startFrom);
+        if (args.replay.startFromS < 0.0) {
+            std::cerr << "ERROR: Invalid --start-from time: " << args.replay.startFrom << "\n";
             return false;
         }
     }
-    if (!args.replayEndAt.empty()) {
-        args.replayEndAtS = parseReplayTimeToSeconds(args.replayEndAt);
-        if (args.replayEndAtS < 0.0) {
-            std::cerr << "ERROR: Invalid --end-at time: " << args.replayEndAt << "\n";
+    if (!args.replay.endAt.empty()) {
+        args.replay.endAtS = parseReplayTimeToSeconds(args.replay.endAt);
+        if (args.replay.endAtS < 0.0) {
+            std::cerr << "ERROR: Invalid --end-at time: " << args.replay.endAt << "\n";
             return false;
         }
     }
@@ -225,7 +222,11 @@ double parseReplayTimeToSeconds(const std::string& s) {
                  + std::stod(parts[1]) * 60.0
                  + std::stod(parts[2]);
         }
-    } catch (...) {
+    } catch (const std::invalid_argument&) {
+        // std::stod: token isn't a number.
+        return -1.0;
+    } catch (const std::out_of_range&) {
+        // std::stod: token parses but the value is out of double range.
         return -1.0;
     }
 

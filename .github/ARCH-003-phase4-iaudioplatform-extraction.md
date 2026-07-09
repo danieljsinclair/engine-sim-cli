@@ -130,12 +130,12 @@ AudioPlayer delegates to `hardwareProvider_` for:
 
 ## References
 
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/hardware/IAudioHardwareProvider.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/hardware/CoreAudioHardwareProvider.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/hardware/CoreAudioHardwareProvider.cpp`
-- `/Users/danielsinclair/vscode/escli.refac7/src/audio/hardware/AudioHardwareProviderFactory.cpp`
-- `/Users/danielsinclair/vscode/escli.refac7/src/AudioPlayer.h`
-- `/Users/danielsinclair/vscode/escli.refac7/src/AudioPlayer.cpp`
+- `~/vscode/escli.refac7/src/audio/hardware/IAudioHardwareProvider.h`
+- `~/vscode/escli.refac7/src/audio/hardware/CoreAudioHardwareProvider.h`
+- `~/vscode/escli.refac7/src/audio/hardware/CoreAudioHardwareProvider.cpp`
+- `~/vscode/escli.refac7/src/audio/hardware/AudioHardwareProviderFactory.cpp`
+- `~/vscode/escli.refac7/src/AudioPlayer.h`
+- `~/vscode/escli.refac7/src/AudioPlayer.cpp`
 
 ---
 

@@ -243,7 +243,7 @@ int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
 
 ### 6. Evidence from Code
 
-**File: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`**
+**File: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`**
 
 Lines 940-966 (CLI main loop):
 ```cpp
@@ -271,7 +271,7 @@ if (framesToRender > 0) {
     auto renderEnd = std::chrono::steady_clock::now();
 ```
 
-**File: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`**
+**File: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`**
 
 Lines 245-274 (GUI process loop):
 ```cpp
@@ -307,7 +307,7 @@ int16_t *samples = new int16_t[maxWrite];
 const int readSamples = m_simulator->readAudioOutput(maxWrite, samples);  // Line 274
 ```
 
-**File: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`**
+**File: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`**
 
 Lines 222-256 (Audio thread rendering):
 ```cpp
@@ -374,7 +374,7 @@ The CLI reads audio immediately after notifying the audio thread, before the thr
 
 ### Recommended Implementation
 
-**File: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`**
+**File: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`**
 
 Add new function:
 ```cpp
@@ -388,14 +388,14 @@ EngineSimResult EngineSimWaitForAudio(EngineSimHandle handle) {
 }
 ```
 
-**File: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`**
+**File: `~/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`**
 
 Add declaration:
 ```cpp
 EngineSimResult EngineSimWaitForAudio(EngineSimHandle handle);
 ```
 
-**File: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`**
+**File: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`**
 
 Modify main loop (around line 942):
 ```cpp

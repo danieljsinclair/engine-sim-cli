@@ -54,7 +54,7 @@ endif()
 4. **Post-build commands** in CMake run after all targets are built, ensuring dependencies are available
 
 ## Files Changed
-- `/Users/danielsinclair/vscode/engine-sim-cli/CMakeLists.txt` - Added explicit library copying in POST_BUILD command
+- `~/vscode/engine-sim-cli/CMakeLists.txt` - Added explicit library copying in POST_BUILD command
 
 ## Impact
 - CLI now works in both sine mode and real engine mode

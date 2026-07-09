@@ -329,7 +329,7 @@ The bridge (`engine_sim_bridge.cpp`) **properly wraps** engine-sim:
 
 #### Transition Plan: Direct C++ Interface
 
-Reference implementation exists in `/Users/danielsinclair/vscode/escli/escli` (uncommitted):
+Reference implementation exists in `~/vscode/escli/escli` (uncommitted):
 
 ```cpp
 // engine_sim_loader.h (static linking version)

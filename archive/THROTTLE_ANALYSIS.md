@@ -20,7 +20,7 @@
 ## 1. Governor vs DirectThrottleLinkage
 
 ### Governor Class
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp`
 
 ```cpp
 // Line 30-34: setSpeedControl() implementation
@@ -57,7 +57,7 @@ void Governor::update(double dt, Engine *engine) {
 - Safety feature: Full throttle at low RPM (line 43-46)
 
 ### DirectThrottleLinkage Class
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp`
 
 ```cpp
 // Line 20-23: setSpeedControl() implementation
@@ -84,7 +84,7 @@ void DirectThrottleLinkage::update(double dt, Engine *engine) {
 ## 2. Engine Configuration Analysis
 
 ### Subaru EJ25 Engine Configuration
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr`
 
 ```mr
 // Line 143: Engine uses throttle_gamma=2.0
@@ -106,7 +106,7 @@ engine engine(
 ```
 
 ### Default Engine Template
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/es/objects/objects.mr`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/es/objects/objects.mr`
 
 ```mr
 // Line 109-111: Default throttle linkage
@@ -145,7 +145,7 @@ input throttle:
 **GUI Verification**: The GUI loads the same `../assets/main.mr` file (line 626 of engine_sim_application.cpp), which imports the Subaru EJ25 engine with the same DirectThrottleLinkage and `gamma=2.0`. Both GUI and CLI use identical throttle configurations.
 
 ### Intake Throttle Plate Calculation
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/intake.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/intake.h`
 
 ```cpp
 // Line 49: Throttle plate position calculation
@@ -154,7 +154,7 @@ inline double getThrottlePlatePosition() const {
 }
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr`
 
 ```mr
 // Line 217: Idle throttle plate position
@@ -175,7 +175,7 @@ throttlePlatePosition = 0.9978 * (1 - 0.15²)
 ```
 
 ### Flow Attenuation Calculation
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/intake.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/intake.cpp`
 
 ```cpp
 // Line 76-77: Flow attenuation based on throttle plate angle
@@ -213,7 +213,7 @@ This is the **opposite** of expected behavior!
 ## 4. Load to Throttle Mapping: GUI vs CLI
 
 ### GUI Throttle Application
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 ```cpp
 // Line 798-800: GUI throttle setting
@@ -228,7 +228,7 @@ m_iceEngine->setSpeedControl(m_speedSetting);
 4. DirectThrottleLinkage applies gamma transformation
 
 ### CLI Throttle Application
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 ```cpp
 // Line 451: Load argument parsing
@@ -250,7 +250,7 @@ EngineSimSetThrottle(handle, throttle);
 4. DirectThrottleLinkage applies gamma transformation
 
 ### Bridge Implementation
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
 
 ```cpp
 // Line 423-430: EngineSimSetThrottle implementation
@@ -314,7 +314,7 @@ Let me verify which throttle linkage the GUI actually uses...
 ## CRITICAL DISCREPANCY FOUND
 
 ### Bridge Code Comment vs Reality
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
 
 ```cpp
 // Line 426-428: Comment says "Governor abstraction"
@@ -467,9 +467,9 @@ EngineSimSetThrottle(handle, smoothedThrottle);
 
 ## File References
 
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp` - Governor implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp` - DirectThrottleLinkage implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr` - Subaru EJ25 engine config (gamma=2.0)
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/intake.cpp` - Throttle plate and flow calculations
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp` - Bridge control functions
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - CLI throttle application
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/governor.cpp` - Governor implementation
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp` - DirectThrottleLinkage implementation
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/assets/engines/atg-video-2/01_subaru_ej25_eh.mr` - Subaru EJ25 engine config (gamma=2.0)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/intake.cpp` - Throttle plate and flow calculations
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp` - Bridge control functions
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - CLI throttle application

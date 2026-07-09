@@ -379,7 +379,7 @@ The mock engine-sim provides several advantages:
 ### Mock Engine-Sim Implementation Files
 
 **Primary Implementation:**
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/mock_engine_sim.cpp`
+- `~/vscode/engine-sim-cli/src/mock_engine_sim.cpp`
 - Mock engine interface and sine wave generation
 
 **Integration Points:**

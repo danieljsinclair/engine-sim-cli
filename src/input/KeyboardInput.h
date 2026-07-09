@@ -24,13 +24,26 @@ public:
     KeyboardInput();
     ~KeyboardInput() override;
 
+    // Owns process-global terminal state (termios). Copying would restore the
+    // saved settings twice (double-cleanup), so copy is disabled. The class is
+    // never copied or moved in practice (held via std::unique_ptr).
+    KeyboardInput(const KeyboardInput&) = delete;
+    KeyboardInput& operator=(const KeyboardInput&) = delete;
+
     // Get key press, returns -1 if no key pressed
     int getKey() override;
 
 private:
 #ifndef _WIN32
-    termios oldSettings;
-    bool initialized;
+    // Configures the terminal for non-blocking canonical-off input and captures
+    // the original settings for restoration in the destructor. Returns true only
+    // when every step (read current attrs, apply raw mode, set non-blocking)
+    // succeeds -- so 'initialized' (and thus the destructor's termios restore)
+    // reflects actual setup success rather than being set unconditionally.
+    bool setupTerminal();
+
+    termios oldSettings{};
+    bool initialized{false};
 #endif
 };
 

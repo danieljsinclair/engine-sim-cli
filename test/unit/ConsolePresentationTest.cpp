@@ -4,6 +4,10 @@
 #include "config/ANSIColors.h"
 #include "io/IPresentation.h"
 
+#include <iostream>
+#include <sstream>
+#include <streambuf>
+
 using namespace presentation;
 using GS = bridge::GearSelector;
 
@@ -21,6 +25,24 @@ static EngineState makeState() {
     return s;
 }
 
+// RAII helper to capture std::cout/std::cerr output
+class OutputCapture {
+public:
+    explicit OutputCapture(std::ostream& target) : target_(target), oldBuf_(target.rdbuf()) {
+        target_.rdbuf(buffer_.rdbuf());
+    }
+    ~OutputCapture() {
+        target_.rdbuf(oldBuf_);
+    }
+    std::string str() const { return buffer_.str(); }
+    void reset() { buffer_.str(""); buffer_.clear(); }
+
+private:
+    std::ostream& target_;
+    std::streambuf* oldBuf_;
+    std::ostringstream buffer_;
+};
+
 class ConsolePresentationTest : public ::testing::Test {
 protected:
     ConsolePresentation presentation_;
@@ -34,11 +56,6 @@ protected:
     // formatEngineState is private, so we test via the formatted output
     // by calling ShowEngineState and checking the result string
     std::string format(const EngineState& state) {
-        // formatEngineState is private, so we exercise it through
-        // the public API indirectly. For direct testing we use a friend
-        // or just test the observable behaviors through the output.
-        // Since formatEngineState is private, we test the component behaviors
-        // by extracting them into testable helper functions below.
         return {};
     }
 };
@@ -264,4 +281,114 @@ TEST(ANSIColorTest, ColorsAreDistinct) {
 
 TEST(ConversionConstantTest, KmhToMph_Value) {
     EXPECT_NEAR(EngineSimDefaults::KMH_TO_MPH, 0.621371, 0.000001);
+}
+
+// ============================================================================
+// ShowMessage / ShowError / ShowProgress tests with DI for ostream
+// ============================================================================
+
+TEST_F(ConsolePresentationTest, ShowMessage_OutputsMessageToCout) {
+    OutputCapture capture(std::cout);
+    const std::string testMessage = "Test message content";
+
+    presentation_.ShowMessage(testMessage);
+
+    EXPECT_NE(capture.str().find(testMessage), std::string::npos)
+        << "ShowMessage should output the message to cout";
+}
+
+TEST_F(ConsolePresentationTest, ShowMessage_EmptyString_OutputsNewline) {
+    OutputCapture capture(std::cout);
+    presentation_.ShowMessage("");
+
+    // Should output at least a newline
+    EXPECT_FALSE(capture.str().empty());
+}
+
+TEST_F(ConsolePresentationTest, ShowError_OutputsErrorToCerr) {
+    OutputCapture capture(std::cerr);
+    const std::string testError = "Test error content";
+
+    presentation_.ShowError(testError);
+
+    EXPECT_NE(capture.str().find("ERROR:"), std::string::npos)
+        << "ShowError should prefix with 'ERROR:'";
+    EXPECT_NE(capture.str().find(testError), std::string::npos)
+        << "ShowError should include the error message";
+}
+
+TEST_F(ConsolePresentationTest, ShowError_EmptyString_OutputsErrorPrefix) {
+    OutputCapture capture(std::cerr);
+    presentation_.ShowError("");
+
+    EXPECT_NE(capture.str().find("ERROR:"), std::string::npos)
+        << "ShowError should output 'ERROR:' prefix even for empty message";
+}
+
+TEST_F(ConsolePresentationTest, ShowProgress_DisabledByDefault_NoOutput) {
+    OutputCapture capture(std::cout);
+    presentation_.ShowProgress(1.0, 5.0);
+
+    // Progress is disabled by default (showProgress=false in config)
+    EXPECT_TRUE(capture.str().empty())
+        << "ShowProgress should produce no output when showProgress is false";
+}
+
+TEST_F(ConsolePresentationTest, ShowProgress_Enabled_OutputsProgressBar) {
+    PresentationConfig config;
+    config.showDiagnostics = true;
+    config.showProgress = true;
+    config.interactive = true;
+    presentation_.Initialize(config);
+
+    OutputCapture capture(std::cout);
+    presentation_.ShowProgress(2.5, 5.0);  // 50% progress
+
+    EXPECT_NE(capture.str().find("Progress:"), std::string::npos)
+        << "ShowProgress should output 'Progress:' when enabled";
+    EXPECT_NE(capture.str().find("50%"), std::string::npos)
+        << "ShowProgress should show 50% for half-complete";
+}
+
+TEST_F(ConsolePresentationTest, ShowProgress_ZeroDuration_NoOutput) {
+    PresentationConfig config;
+    config.showDiagnostics = true;
+    config.showProgress = true;
+    config.interactive = true;
+    presentation_.Initialize(config);
+
+    OutputCapture capture(std::cout);
+    presentation_.ShowProgress(1.0, 0.0);  // Zero duration
+
+    EXPECT_TRUE(capture.str().empty())
+        << "ShowProgress should produce no output when duration is 0";
+}
+
+TEST_F(ConsolePresentationTest, ShowProgress_NonInteractive_NoOutput) {
+    PresentationConfig config;
+    config.showDiagnostics = true;
+    config.showProgress = true;
+    config.interactive = false;  // Not interactive
+    presentation_.Initialize(config);
+
+    OutputCapture capture(std::cout);
+    presentation_.ShowProgress(1.0, 5.0);
+
+    EXPECT_TRUE(capture.str().empty())
+        << "ShowProgress should produce no output when not interactive";
+}
+
+TEST_F(ConsolePresentationTest, ShowProgress_Complete_ShowsPercentage) {
+    PresentationConfig config;
+    config.showDiagnostics = true;
+    config.showProgress = true;
+    config.interactive = true;
+    presentation_.Initialize(config);
+
+    OutputCapture capture(std::cout);
+    presentation_.ShowProgress(10.0, 5.0);  // 200% progress
+
+    // Implementation doesn't cap at 100%, so it shows 200%
+    EXPECT_NE(capture.str().find("200%"), std::string::npos)
+        << "ShowProgress should show 200% when currentTime/duration = 2.0";
 }

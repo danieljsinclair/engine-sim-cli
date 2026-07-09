@@ -77,7 +77,7 @@ const int framesPerUpdate = sampleRate / 60;
 **CLAIM**: CLI doesn't call `endInputBlock()`, so audio thread never wakes up
 
 **EVIDENCE PRESENTED**:
-- TA3 searched for `endInputBlock` in CLI code: `grep -n "endInputBlock" /Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` = NO RESULTS
+- TA3 searched for `endInputBlock` in CLI code: `grep -n "endInputBlock" ~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` = NO RESULTS
 - Concluded CLI never calls `endInputBlock()`
 - Claimed audio thread is permanently blocked in `m_cv0.wait()`
 
@@ -260,7 +260,7 @@ void Synthesizer::endInputBlock() {
 
 ### Fix 1: Increase Audio Read Size (PRIMARY FIX - CRITICAL)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Line 485**: Change from:
 ```cpp
@@ -289,7 +289,7 @@ const int framesPerUpdate = sampleRate / 10;  // 4800 frames @ 48kHz (100ms) - M
 
 ### Fix 2: Add Buffer Underrun Detection (DIAGNOSTIC)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **After line 990** (after `EngineSimReadAudioBuffer` call), add:
 ```cpp
@@ -326,7 +326,7 @@ if (result == ESIM_SUCCESS && samplesWritten > 0) {
 
 ### Fix 3: Add Audio Buffer Level Monitoring (DIAGNOSTIC)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
 
 **After line 266**, add:
 ```cpp
@@ -343,7 +343,7 @@ EngineSimResult EngineSimGetAudioBufferLevel(
 );
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **After line 777**, add:
 ```cpp
@@ -366,7 +366,7 @@ EngineSimResult EngineSimGetAudioBufferLevel(
 }
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.h`
 
 **After line 77**, add:
 ```cpp
@@ -550,7 +550,7 @@ The CLI's audio buffer read size is too small (800 samples @ 16.7ms) compared to
 
 ### Recommended Action
 
-Implement **Fix 1** immediately: Change `framesPerUpdate` from `sampleRate / 60` to `sampleRate / 10` in `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` at line 485.
+Implement **Fix 1** immediately: Change `framesPerUpdate` from `sampleRate / 60` to `sampleRate / 10` in `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` at line 485.
 
 This single-line change will match the GUI's 100ms audio read target and eliminate the buffer underruns causing dropouts at 15%+ throttle.
 

@@ -8,11 +8,19 @@ add_executable(unit_tests
     CommandLineParserTest.cpp
     ConsolePresentationTest.cpp
     CLITimeParsingTest.cpp
+    GearboxLogFilenameTest.cpp
+    InteractiveModeStateTest.cpp
+    SignalStopControllerTest.cpp
     AudioTestConstants.cpp
     KeyboardInputProviderTest.cpp
     ISimulatorTest.cpp
+    ANSIColorsTest.cpp
+    CLIMainTest.cpp
+    ReplayTimeValidatorTest.cpp
     # Required support code
     ../../src/config/CLIconfig.cpp
+    ../../src/config/ReplayTimeValidator.cpp
+    ../../src/config/KqueueSignalStopController.cpp
     ../../src/config/ANSIColors.cpp
     ../../src/presentation/ConsolePresentation.cpp
     ../../src/input/KeyboardInput.cpp

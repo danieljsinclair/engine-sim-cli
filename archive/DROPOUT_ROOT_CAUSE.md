@@ -190,7 +190,7 @@ To verify this is the root cause:
 
 ## Related Files
 
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (line 666-670)
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp` (line 67-96, 211-219)
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (line 168-213, 222-256)
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp` (line 239-250)
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` (line 666-670)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp` (line 67-96, 211-219)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (line 168-213, 222-256)
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp` (line 239-250)

@@ -25,7 +25,7 @@ The diagnostic tool tests 5 critical stages:
 ### Method 1: Manual Compilation (Recommended)
 
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 
 g++ -std=c++17 -O2 -Wall -Wextra \
     -I./engine-sim-bridge/include \

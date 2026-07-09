@@ -8,7 +8,7 @@ The engine won't start in the CLI. RPM stays at ~0 despite throttle being applie
 
 ### Evidence
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 782-804 (Warmup loop)**:
 ```cpp

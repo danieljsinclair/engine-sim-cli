@@ -82,9 +82,9 @@ The telemetry plumbing (interface, data flow) is in place in `SimulationLoop`, b
 
 ## References
 
-- `/Users/danielsinclair/vscode/escli.refac7/src/simulation/SimulationLoop.h` -- forward declaration
-- `/Users/danielsinclair/vscode/escli.refac7/src/simulation/SimulationLoop.cpp` -- usage
-- `/Users/danielsinclair/vscode/escli.refac7/src/config/CLIMain.cpp` -- entry point (telemetryWriter = nullptr)
+- `~/vscode/escli.refac7/src/simulation/SimulationLoop.h` -- forward declaration
+- `~/vscode/escli.refac7/src/simulation/SimulationLoop.cpp` -- usage
+- `~/vscode/escli.refac7/src/config/CLIMain.cpp` -- entry point (telemetryWriter = nullptr)
 
 ---
 

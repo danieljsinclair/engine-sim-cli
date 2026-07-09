@@ -33,5 +33,5 @@ The fix successfully prevents buffer overflow by:
 - Ensuring continuous audio playback without memory corruption
 
 ## Files Modified
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - Main implementation
-- `/Users/danielsinclair/vscode/engine-sim-cli/fix_buffer_overflow.cpp` - Reference implementation
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp` - Main implementation
+- `~/vscode/engine-sim-cli/fix_buffer_overflow.cpp` - Reference implementation

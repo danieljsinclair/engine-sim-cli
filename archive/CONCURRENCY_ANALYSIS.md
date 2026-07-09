@@ -13,13 +13,13 @@
 ### 1.1 Thread Roles
 
 **Audio Thread (Producer)**:
-- Location: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:215-219`
+- Location: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:215-219`
 - Entry point: `Synthesizer::audioRenderingThread()`
 - Pattern: Continuous loop calling `renderAudio()`
 - Purpose: Fill `m_audioBuffer` with synthesized audio samples
 
 **Main Thread (Consumer)**:
-- Location: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- Location: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 - Entry point: `runSimulation()` main loop (line 809)
 - Pattern: 60Hz update loop
 - Purpose: Run physics simulation, read audio from buffer
@@ -43,7 +43,7 @@
 
 ### 2.1 Audio Thread (Producer) Work Pattern
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:222-256`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:222-256`
 
 ```cpp
 void Synthesizer::renderAudio() {
@@ -91,7 +91,7 @@ void Synthesizer::renderAudio() {
 
 ### 2.2 Main Thread (Consumer) Work Pattern
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:935-960`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:935-960`
 
 ```cpp
 // Update physics (60 Hz)
@@ -168,7 +168,7 @@ Main Thread (60Hz)                    Audio Thread (Continuous)
 
 ### 3.1 The Missing Link: `EngineSimWaitForAudio()`
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:631-655`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:631-655`
 
 ```cpp
 EngineSimResult EngineSimWaitForAudio(EngineSimHandle handle) {
@@ -451,7 +451,7 @@ After ~1 second: Buffer is empty, audio thread can't keep up due to race conditi
 
 ### 8.1 Option 1: Add `EngineSimWaitForAudio()` to CLI Main Loop
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Change**:
 ```cpp
@@ -481,7 +481,7 @@ EngineSimReadAudioBuffer(handle, writePtr, framesToRender, &samplesWritten);
 
 ### 8.2 Option 2: Remove `m_processed` Check from Audio Thread Wait Condition
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:225-230`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:225-230`
 
 **Change**:
 ```cpp
@@ -510,7 +510,7 @@ m_cv0.wait(lk0, [this] {
 
 ### 8.3 Option 3: Adjust Buffer Thresholds
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228`
 
 **Change**:
 ```cpp
@@ -548,7 +548,7 @@ const bool inputAvailable =
 
 ### 9.1 Code Changes Required
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Location**: Line 938 (after `EngineSimUpdate`)
 

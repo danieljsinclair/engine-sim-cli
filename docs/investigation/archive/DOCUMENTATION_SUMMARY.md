@@ -184,7 +184,7 @@ Replace `m_cv0.wait()` with `m_cv0.wait_for()` and implement fixed-interval rend
 
 ## File Locations
 
-All documentation files are in: `/Users/danielsinclair/vscode/engine-sim-cli/`
+All documentation files are in: `~/vscode/engine-sim-cli/`
 
 **Key Files:**
 - `TEST_INVESTIGATION_LOG.md` - Test history

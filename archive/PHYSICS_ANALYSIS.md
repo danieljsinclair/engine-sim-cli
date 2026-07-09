@@ -19,13 +19,13 @@ The audio dropout problem is **NOT a bug** - it's a **physics mismatch** between
 
 ### 1.1 Physics Simulation Frequency
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:13`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:13`
 
 ```cpp
 m_simulationFrequency = 10000;  // 10 kHz physics update rate
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:75`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:75`
 
 ```cpp
 m_synthesizer.setInputSampleRate(m_simulationFrequency * m_simulationSpeed);
@@ -36,7 +36,7 @@ m_synthesizer.setInputSampleRate(m_simulationFrequency * m_simulationSpeed);
 
 ### 1.2 Audio Generation Path
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:168-195`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:168-195`
 
 ```cpp
 void Synthesizer::writeInput(const double *data) {
@@ -61,7 +61,7 @@ void Synthesizer::writeInput(const double *data) {
 
 ### 1.3 Exhaust Flow Events per Second
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/piston_engine_simulator.cpp:371-413`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/piston_engine_simulator.cpp:371-413`
 
 ```cpp
 void PistonEngineSimulator::writeToSynthesizer() {
@@ -88,7 +88,7 @@ void PistonEngineSimulator::writeToSynthesizer() {
 
 ### 2.1 Real-Time Constraints
 
-**CLI Configuration** (`/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:482-486`):
+**CLI Configuration** (`~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:482-486`):
 
 ```cpp
 const int sampleRate = 48000;
@@ -103,7 +103,7 @@ const int framesPerUpdate = sampleRate / 60;  // 800 frames per update
 
 ### 2.2 The Physics-to-Audio Mismatch
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:232-234`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:232-234`
 
 ```cpp
 void Synthesizer::renderAudio() {
@@ -125,7 +125,7 @@ void Synthesizer::renderAudio() {
 
 ### 2.3 CLI's Read Pattern
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:950-970`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:950-970`
 
 ```cpp
 if (framesToRender > 0) {
@@ -155,7 +155,7 @@ if (framesToRender > 0) {
 
 ### 3.1 Buffer as a Physical System
 
-**Configuration** (`/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:591-593`):
+**Configuration** (`~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:591-593`):
 
 ```cpp
 config.inputBufferSize = config.sampleRate;  // 48000 samples
@@ -182,7 +182,7 @@ config.audioBufferSize = config.sampleRate;  // 48000 samples
 
 ### 3.3 The Timing Deficit
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:225-230`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:225-230`
 
 ```cpp
 m_cv0.wait(lk0, [this] {
@@ -236,7 +236,7 @@ At higher throttle/RPM:
 3. **Input buffer fills faster** → audio thread has more work
 4. **2000-sample limit** becomes a bottleneck
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:77-89`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:77-89`
 
 ```cpp
 void Simulator::startFrame(double dt) {
@@ -269,7 +269,7 @@ At 60 Hz with `dt = 1/60`:
 
 ## 4. The Dropout Pattern - Root Cause
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:570-629`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp:570-629`
 
 ```cpp
 EngineSimResult EngineSimReadAudioBuffer(
@@ -288,7 +288,7 @@ EngineSimResult EngineSimReadAudioBuffer(
     );
 ```
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:141-159`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:141-159`
 
 ```cpp
 int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
@@ -317,7 +317,7 @@ int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
 
 ### 4.1 The Input Buffer Constraint
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:225-234`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:225-234`
 
 ```cpp
 m_cv0.wait(lk0, [this] {
@@ -334,7 +334,7 @@ const int n = std::min(
 
 **THE CONSTRAINT**: Audio thread can only render as many samples as are in the **input buffer** (10 kHz domain).
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:168-195`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:168-195`
 
 ```cpp
 void Synthesizer::writeInput(const double *data) {
@@ -359,7 +359,7 @@ void Synthesizer::writeInput(const double *data) {
 
 **When does the input buffer run low?**
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:197-213`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:197-213`
 
 ```cpp
 void Synthesizer::endInputBlock() {
@@ -421,7 +421,7 @@ void Synthesizer::endInputBlock() {
 
 ### 4.4 The Real Root Cause: Audio Thread Starvation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:215-256`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:215-256`
 
 ```cpp
 void Synthesizer::audioRenderingThread() {
@@ -516,7 +516,7 @@ const bool inputAvailable =
 
 ### 5.1 GUI Configuration
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:211-218`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:211-218`
 
 ```cpp
 void Simulator::initializeSynthesizer() {
@@ -538,7 +538,7 @@ void Simulator::initializeSynthesizer() {
 
 ### 5.2 GUI Read Pattern
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:235-276`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:235-276`
 
 ```cpp
 const double avgFramerate = clamp(m_engine.GetAverageFramerate(), 30.0f, 1000.0f);
@@ -618,7 +618,7 @@ m_synthesizer.readAudioOutput(samplesToRead, buffer);
 
 **Increase the CLI's read size to match the GUI's 100ms target**:
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:485`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:485`
 
 **Change from**:
 ```cpp
@@ -665,6 +665,6 @@ The audio dropout problem is a **physics/timing mismatch**, not a bug. The CLI's
 **The fix is straightforward**: Increase the CLI's read size from `sampleRate / 60` to `sampleRate / 10` to match the GUI's 100ms target, giving the audio thread sufficient time to fill the buffer between reads.
 
 **File locations**:
-- CLI config: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:485`
-- Synthesizer limit: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228`
-- GUI reference: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:274-276`
+- CLI config: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:485`
+- Synthesizer limit: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp:228`
+- GUI reference: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:274-276`

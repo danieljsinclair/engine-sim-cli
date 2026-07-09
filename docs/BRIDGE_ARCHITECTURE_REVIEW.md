@@ -52,7 +52,7 @@ The bridge (`engine-sim-bridge/src/engine_sim_bridge.cpp`) properly wraps engine
 
 ## Reference Implementation (escli)
 
-**Location:** `/Users/danielsinclair/vscode/escli/escli` (uncommitted changes)
+**Location:** `~/vscode/escli/escli` (uncommitted changes)
 
 ### Key Changes
 
@@ -149,7 +149,7 @@ class MockEngineProvider : public IEngineProvider {
 
 ## Action Items
 
-- [ ] Review reference implementation in `/Users/danielsinclair/vscode/escli/escli`
+- [ ] Review reference implementation in `~/vscode/escli/escli`
 - [ ] Port `engine_sim_loader.h` static linking version
 - [ ] Update `CLIMain.cpp` to remove dynamic loading
 - [ ] Update CMakeLists.txt for static linking

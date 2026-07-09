@@ -10,7 +10,7 @@
 
 ## 1. What Does readAudioOutput() Actually Do?
 
-### Location: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (lines 141-159)
+### Location: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp` (lines 141-159)
 
 ```cpp
 int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
@@ -47,7 +47,7 @@ int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
 
 ## 2. What GUI Actually Does With Playback Position
 
-### Location: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` (lines 253-274)
+### Location: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp` (lines 253-274)
 
 ```cpp
 const SampleOffset safeWritePosition = m_audioSource->GetCurrentWritePosition();

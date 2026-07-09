@@ -8,7 +8,7 @@ The GUI achieves consistent audio playback without dropouts through a **dual-buf
 
 ### 1.1 Buffer Types and Sizes
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Lines 169-177**:
 ```cpp
@@ -29,7 +29,7 @@ m_outputAudioBuffer = m_engine.GetAudioDevice()->CreateBuffer(&params, 44100);
 
 ### 1.2 AudioBuffer Class Implementation
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
 
 **Key Methods** (lines 40-54):
 ```cpp
@@ -57,7 +57,7 @@ inline void commitBlock(int length) {
 
 ### 2.1 Hardware Feedback Loop
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Lines 253-271** (CRITICAL):
 ```cpp
@@ -185,7 +185,7 @@ if (readSamples > 0) {
 
 ### 3.2 Buffer Copy with Wraparound
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
 
 **Lines 56-68**:
 ```cpp
@@ -210,7 +210,7 @@ inline void copyBuffer(int16_t *dest, int offset, int length) {
 
 ### 4.1 Audio Thread (Producer)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
 
 **Lines 215-256**:
 ```cpp
@@ -286,7 +286,7 @@ int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
 
 ### 4.3 Intermediate Buffer (No Locks)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 **Lines 274-306** (main thread only):
 ```cpp
@@ -485,7 +485,7 @@ int paCallback(const void *input, void *output,
 
 ### 7.1 Current Architecture
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Lines 1071-1137**:
 ```cpp
@@ -726,8 +726,8 @@ To replicate this on macOS/iOS/ES32:
 ---
 
 **Files Referenced**:
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/ring_buffer.h`
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/audio_buffer.h`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/ring_buffer.h`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`

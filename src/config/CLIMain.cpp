@@ -5,6 +5,8 @@
 #include "CLIMain.h"
 
 #include "CLIconfig.h"
+#include "CliException.h"
+#include "ReplayTimeValidator.h"
 
 #include "strategy/IAudioBuffer.h"
 #include "telemetry/ITelemetryProvider.h"
@@ -39,23 +41,21 @@
 #include "engine-sim/include/units.h"
 
 #include <iostream>
-#include <csignal>
 #include <memory>
 #include <stdexcept>
 #include <vector>
 
-// ============================================================================
-// Signal Handler
-// ============================================================================
+#include "config/KqueueSignalStopController.h"
 
-namespace {
-ISimulatorSession* g_sessionForSignal = nullptr;
-}
-
-void signalHandler(int signal) {
-    (void)signal;
-    if (g_sessionForSignal) g_sessionForSignal->stop();
-}
+// ============================================================================
+// Signal handling: no handler, no global.
+// ============================================================================
+// On macOS, SIGINT/SIGTERM are watched by the injected ISignalStopController
+// provider (kqueue EVFILT_SIGNAL): the provider blocks the signals and a reader
+// thread stops the attached session when one arrives. There is no signal-handler
+// function here and no file-scope pointer -- the provider is created via the
+// factory below in main() and held as a local. See KqueueSignalStopController.h
+// for the Open/Closed provider structure (other platforms add their own class).
 
 // ============================================================================
 // Dependency Constructors - Create injectable providers
@@ -76,52 +76,27 @@ struct InputContext {
 };
 
 // Validate replay time-slicing args against the actual trace duration.
-// Throws std::runtime_error with a descriptive message if validation fails.
-void validateReplayTimeSlicing(const CommandLineArgs& args,
-                               input::ReplayTelemetryProvider* replay) {
-    if (!replay) return;
-    const double traceDur = replay->durationS();
-
-    if (args.replayStartFromS >= 0.0) {
-        if (traceDur > 0.0 && args.replayStartFromS >= traceDur) {
-            std::cerr << "ERROR: --start-from " << args.replayStartFromS
-                      << "s is past end of trace (" << traceDur << "s)\n";
-            throw std::runtime_error("start-from beyond trace duration");
-        }
-    }
-    if (args.replayEndAtS >= 0.0) {
-        if (traceDur > 0.0 && args.replayEndAtS > traceDur) {
-            std::cerr << "WARNING: --end-at " << args.replayEndAtS
-                      << "s is past end of trace (" << traceDur
-                      << "s); will play to end\n";
-            replay->setEndAtS(-1.0);
-        }
-    }
-    if (args.replayStartFromS >= 0.0 && args.replayEndAtS >= 0.0
-        && args.replayStartFromS >= args.replayEndAtS) {
-        std::cerr << "ERROR: --start-from (" << args.replayStartFromS
-                  << "s) must be before --end-at (" << args.replayEndAtS << "s)\n";
-        throw std::runtime_error("start-from >= end-at");
-    }
-}
+// Throws CliException with a descriptive message if validation fails.
+// Extracted to ReplayTimeValidator.{h,cpp} (against IReplayTimeline) so it is
+// unit-testable; called from createInputProvider below.
 
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
     InputContext ctx;
 
     // Replay mode: the telemetry CSV is the sole input source (no keyboard).
     // --start is implicit — the provider fires the starter on frame 0.
-    if (!args.replayTelemetryPath.empty()) {
+    if (!args.replay.telemetryPath.empty()) {
         auto replay = std::make_unique<input::ReplayTelemetryProvider>(
-            args.replayTelemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.autoGearbox);
+            args.replay.telemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.gearbox.automatic);
         if (!replay->Initialize()) {
-            throw std::runtime_error("Failed to initialize replay telemetry: " + replay->GetLastError());
+            throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
         // Wire Q/P keyboard for replay mode (same pattern as the keyboard path).
         auto kb = std::make_unique<::KeyboardInput>();
         replay->setKeyboardInput(kb.get());
         // Wire time slicing and validate against trace duration.
-        replay->setStartFromS(args.replayStartFromS);
-        replay->setEndAtS(args.replayEndAtS);
+        replay->setStartFromS(args.replay.startFromS);
+        replay->setEndAtS(args.replay.endAtS);
         validateReplayTimeSlicing(args, replay.get());
         ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
@@ -149,7 +124,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
 
     // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
     // and route the shift keys to its PRND selector (P/R/N/D).
-    if (args.connectDemo || args.autoGearbox) {
+    if (args.connectDemo || args.gearbox.automatic) {
         auto throttle = std::make_unique<input::DemoThrottleSource>();
         auto gearSelector = std::make_unique<input::GearSelectorInput>();
         auto ignition = std::make_unique<input::IgnitionInput>();
@@ -161,13 +136,13 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             twin::IceVehicleProfile::zf8hp45()
         );
 
-        if (!args.gearboxLogPath.empty()) {
-            static twin::GearboxCsvLogger gearboxLogger(args.gearboxLogPath);
+        if (!args.gearbox.logPath.empty()) {
+            static twin::GearboxCsvLogger gearboxLogger(args.gearbox.logPath);
             if (gearboxLogger.isOpen()) {
                 demoProvider->setGearboxLogger(&gearboxLogger);
-                std::cout << "  Gearbox log: " << args.gearboxLogPath << std::endl;
+                std::cout << "  Gearbox log: " << args.gearbox.logPath << std::endl;
             } else {
-                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearboxLogPath << std::endl;
+                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearbox.logPath << std::endl;
             }
         }
 
@@ -184,7 +159,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         demoControls->shiftUp();  // N → D
 
         if (!demoProvider->Initialize()) {
-            throw std::runtime_error("Failed to initialize demo input provider");
+            throw CliException("Failed to initialize demo input provider");
         }
 
         ctx.demoProvider = std::move(demoProvider);
@@ -194,7 +169,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         std::move(keyboard), target.get());
 
     if (!provider->Initialize()) {
-        throw std::runtime_error("Failed to initialize keyboard input provider");
+        throw CliException("Failed to initialize keyboard input provider");
     }
 
     ctx.target = std::move(target);
@@ -202,7 +177,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     return ctx;
 }
 
-presentation::IPresentation* createPresentation(const SimulationConfig& config) {
+std::unique_ptr<presentation::IPresentation> createPresentation(const SimulationConfig& config) {
     presentation::PresentationConfig presConfig;
     // SimulationConfig is the source of truth; PresentationConfig receives copies for display purposes only
     // Note: interactive conceptually belongs to IInputProvider but is surfaced here for presentation
@@ -210,11 +185,10 @@ presentation::IPresentation* createPresentation(const SimulationConfig& config) 
     presConfig.duration = config.duration;
     presConfig.diagnostics = config.diagnostics;
 
-    auto pres = std::make_unique<presentation::ConsolePresentation>();
-    if (pres->Initialize(presConfig)) {
-        return pres.release();
+    if (auto pres = std::make_unique<presentation::ConsolePresentation>(); pres->Initialize(presConfig)) {
+        return pres;
     }
-    throw std::runtime_error("Failed to initialize presentation");
+    throw CliException("Failed to initialize presentation");
 }
 
 std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILogging* logger) {
@@ -226,19 +200,20 @@ std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILoggin
         return {scriptPath};
     }
 
-    // No script specified: default to cycling all presets
-    auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir);
-    if (!presetDiscovery.presets.empty()) {
+    // No script specified: default to cycling all presets. No current selection
+    // is tracked here, so currentFullPath is empty (currentIndex stays at its
+    // default 0 — the CLI cycles from the first preset regardless).
+    if (auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir, /*currentFullPath=*/{}); !presetDiscovery.presets.empty()) {
         std::vector<std::string> paths;
         for (const auto& preset : presetDiscovery.presets) {
             paths.push_back(preset.fullPath);
         }
-        logger->info(LogMask::BRIDGE, "Presets: %zu found (P to cycle)", paths.size());
+        logger->info(LogMask::BRIDGE, std::to_string(paths.size()) + " found (P to cycle)");
         return paths;
     }
 
     // No engine config and no presets found
-    throw std::runtime_error("No engine presets found at " + std::string(presetDir) + ". Use --script <path> to specify an engine.");
+    throw CliException("No engine presets found at " + std::string(presetDir) + ". Use --script <path> to specify an engine.");
 }
 
 }  // anonymous namespace
@@ -253,11 +228,12 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.interactive = args.interactive != config.interactive ? args.interactive : config.interactive;
     config.playAudio = args.playAudio != config.playAudio ? args.playAudio : config.playAudio;
     // Interactive mode runs until user quits (duration=0). Non-interactive defaults to 3s.
-    config.duration = args.duration > 0.0 ? args.duration : (config.interactive ? 0.0 : config.duration);
+    const double defaultDuration = config.interactive ? 0.0 : config.duration;
+    config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
-    config.preFillMs = (args.preFillMs > 0) ? args.preFillMs : config.preFillMs;
+    config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
 
@@ -265,13 +241,13 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // simulationFrequency: 0 means "use engine's built-in frequency" (piston engines get it from
     // their script). SineEngine has no built-in frequency, so the factory applies the default.
     // If the user provides an explicit value, use that; otherwise leave as 0 (engine decides).
-    if (args.simulationFrequency > 0) {
-        config.engineConfig.simulationFrequency = args.simulationFrequency;
+    if (args.audio.simulationFrequency > 0) {
+        config.engineConfig.simulationFrequency = args.audio.simulationFrequency;
     }
-    config.engineConfig.targetSynthesizerLatency = (args.synthLatency > 0.0) ? args.synthLatency : config.engineConfig.targetSynthesizerLatency;
+    config.engineConfig.targetSynthesizerLatency = (args.audio.synthLatency > 0.0) ? args.audio.synthLatency : config.engineConfig.targetSynthesizerLatency;
 
     // Gearbox mode: --auto enables automatic gearbox, default is manual
-    config.autoGearbox = args.autoGearbox;
+    config.autoGearbox = args.gearbox.automatic;
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
@@ -280,27 +256,76 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // Factory instruction
     config.simulatorType = args.sineMode ? SimulatorType::SineWave : SimulatorType::PistonEngine;
 
-    // Forward selective debug categories to the presentation layer
+// Forward selective debug categories to the presentation layer
     config.diagnostics = args.diagnostics;
 
     return config;
+}
+
+// Reconfigure gearbox-bearing input providers to match the simulator's actual
+// transmission ratios. Localizes the BridgeSimulator/provider casts into one
+// cohesive unit (SRP) so the run loop stays flat. Open/Closed note: the cast
+// here is the seam — providers expose reconfigureProfile() but it is not yet on
+// the shared IInputProvider interface (that lives in engine-sim-bridge). When it
+// is promoted there, this helper collapses to a single polymorphic call.
+void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inputCtx) {
+    auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator);
+    if (!bridgeSim) return;
+
+    const auto* rawSim = bridgeSim->getInternalSimulator();
+    const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
+    const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
+    // Anticipated bad/empty-preset state (no transmission or vehicle, or a
+    // preset with no gears) — silently leave the provider's default profile.
+    if (!trans || !vehicle || trans->getGearCount() <= 0) return;
+
+    std::vector<double> ratios;
+    ratios.reserve(static_cast<size_t>(trans->getGearCount()));
+    for (int g = 0; g < trans->getGearCount(); ++g) {
+        ratios.push_back(trans->getGearRatio(g));
+    }
+
+    // Replay path
+    if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+        replay->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
+    }
+    // Keyboard --auto path (via DemoInputProvider)
+    if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
+        demo->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
+    }
+}
+
+// Print why playback stopped, based on how the session ended. Single exit point.
+void reportStopReason(const SimulationConfig& config) {
+    if (config.interactive) {
+        std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
+    } else if (config.duration > 0.0) {
+        std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
+                  << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
+    } else {
+        std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
+    }
 }
 
 // ============================================================================
 // Main Entry Point
 // ============================================================================
 
+
 int main(int argc, char* argv[]) {
     int result = 1;
 
-    std::signal(SIGINT, signalHandler);
-    std::signal(SIGTERM, signalHandler);
+    // Signal-stop controller: the macOS provider (kqueue) blocks SIGINT/SIGTERM
+    // and a reader thread stops the attached session when one arrives. Held as a
+    // local; its reader thread is joined in its destructor at return. No handler,
+    // no file-scope pointer.
+    auto stopController = createSignalStopController();
 
     auto cliLogger = std::make_unique<ConsoleLogger>();
     auto telemetry = std::make_unique<telemetry::InMemoryTelemetry>();
 
-    CommandLineArgs args;
-    if (parseArguments(argc, argv, args)) {
+    if (CommandLineArgs args; parseArguments(argc, argv, args)) {
+        try {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
 
@@ -309,7 +334,7 @@ int main(int argc, char* argv[]) {
         // --replay-telemetry: when --duration isn't given (and not interactive),
         // default to the trace's full length so each capture just runs to its end.
         if (!config.interactive && args.duration <= 0.0) {
-            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+            if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
                 config.duration = replay->durationS();
             }
         }
@@ -318,79 +343,73 @@ int main(int argc, char* argv[]) {
         ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
         ASSERT(presentation, "A presentation provider must be created successfully");
 
-        try {
-            // Determine paths to run
-            auto paths = resolveConfigPaths(args, cliLogger.get());
+        // Determine paths to run
+        auto paths = resolveConfigPaths(args, cliLogger.get());
 
-            // Create audio buffer once (client owns for session lifetime)
-            AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
-            auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
+        // Create audio buffer once (client owns for session lifetime)
+        AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+        auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
 
-            // cycle through the available engine presets unless a specific one is configured
-            // Each initSimulation() creates a new session, subsequent uses runs hot-swap on the same session
-            std::unique_ptr<ISimulatorSession> session;
-            result = EXIT_BUT_CONTINUE_NEXT;
-            for (size_t presetIndex = 0; result == EXIT_BUT_CONTINUE_NEXT; presetIndex = (presetIndex + 1) % paths.size()) {
-                const std::string& currentPath = paths[presetIndex];
-                auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
-                session = createSession(config, currentPath, std::move(simulator), audioBuffer.get(), std::move(session), inputProvider, presentation, telemetry.get(), telemetry.get(), cliLogger.get());
+        // cycle through the available engine presets unless a specific one is configured
+        // Each initSimulation() creates a new session, subsequent uses runs hot-swap on the same session
+        std::unique_ptr<ISimulatorSession> session;
+        result = EXIT_BUT_CONTINUE_NEXT;
+        size_t presetIndex = 0;
+        while (result == EXIT_BUT_CONTINUE_NEXT) {
+            const std::string& currentPath = paths[presetIndex];
+            auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
 
-                // Expose session to signal handler and keyboard provider
-                g_sessionForSignal = session.get();
-                if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
-                if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
+            // Build SessionDependencies from the available dependencies
+            SessionDependencies deps;
+            deps.audioBuffer = audioBuffer.get();
+            deps.inputProvider = inputProvider;
+            deps.presentation = presentation.get();
+            deps.telemetryWriter = telemetry.get();
+            deps.telemetryReader = telemetry.get();
+            deps.logger = cliLogger.get();
 
-                // DRY: reconfigure ANY gearbox-bearing provider to match the ACTUAL engine
-                // preset's transmission. Works for both replay (ReplayTelemetryProvider) and
-                // keyboard --auto (DemoInputProvider → VirtualIceInputProvider → VirtualIceTwin).
-                // The default zf8hp45 has different ratios than a C63 7-speed or GM LS 6-speed.
-                if (auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator.get())) {
-                    auto* rawSim = bridgeSim->getInternalSimulator();
-                    auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
-                    auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
-                    if (trans && vehicle && trans->getGearCount() > 0) {
-                        std::vector<double> ratios;
-                        for (int g = 0; g < trans->getGearCount(); ++g) {
-                            ratios.push_back(trans->getGearRatio(g));
-                        }
-                        // Replay path
-                        if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
-                            replay->reconfigureProfile(ratios, vehicle->getDiffRatio(),
-                                                        vehicle->getTireRadius());
-                        }
-                        // Keyboard --auto path (via DemoInputProvider)
-                        if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
-                            demo->reconfigureProfile(ratios, vehicle->getDiffRatio(),
-                                                     vehicle->getTireRadius());
-                        }
-                    }
-                }
+            // Match gearbox-bearing providers to the preset's transmission while we
+            // still own the simulator (createSession takes it by move below).
+            reconfigureGearboxProviders(simulator.get(), inputCtx);
 
-                result = session->run();
-            }//for
+            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
 
-            // Tell the user why playback stopped
-            if (config.interactive) {
-                std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
-            } else if (config.duration > 0.0) {
-                std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
-                          << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
-            } else {
-                std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
-            }
+            // Expose session to the signal-stop controller and keyboard provider.
+            // The controller never dereferences the session from a signal handler;
+            // it stores the pointer for its reader thread to call stop() on.
+            stopController->attachSession(session.get());
+            if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
+            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
 
-            g_sessionForSignal = nullptr;
-            
-            if (session) {
-                session->close();
-            }
+            result = session->run();
+            // Detach before the session may be hot-swapped/recreated next loop
+            // iteration, so a late stop request can't touch a stale session.
+            stopController->detach();
+            presetIndex = (presetIndex + 1) % paths.size();
+        }//while
+
+        // Tell the user why playback stopped
+        reportStopReason(config);
+
+        // No session remains; detach so any stray signal is inert.
+        stopController->detach();
+
+        // The loop body always assigns a non-null session (createSession returns
+        // a SimulatorSession and the loop runs at least once since result starts
+        // as EXIT_BUT_CONTINUE_NEXT). A null session here is a can't-happen
+        // invariant violation — fail-fast rather than silently skip close().
+        ASSERT(session, "session must exist after the run loop");
+        session->close();
         }
-        catch (const std::exception& e) {
-            cliLogger->error(LogMask::BRIDGE, "%s", e.what());
+        // Expected CLI errors: clean exit with the message. Unexpected exceptions
+        // are NOT caught here — they propagate to std::terminate (fail-fast) so
+        // real bugs surface rather than being swallowed as a generic exit 1.
+        catch (const CliException& e) {
+            cliLogger->error(LogMask::BRIDGE, std::string(e.what()));
             result = 1;
         }
 
-        delete presentation;
+        // presentation (unique_ptr) destructs here, freeing the provider.
     }
     return result;
 }

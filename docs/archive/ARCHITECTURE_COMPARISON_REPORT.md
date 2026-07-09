@@ -883,7 +883,7 @@ These tasks are marked as "Critical Fixes" but are actually "Architectural Impro
 
 ### Detailed Evidence
 
-See `/Users/danielsinclair/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` for complete evidence that audio pipeline is working correctly.
+See `~/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` for complete evidence that audio pipeline is working correctly.
 
 ---
 
@@ -979,10 +979,10 @@ These tasks are marked as "CRITICAL FIXES" but are actually "ARCHITECTURAL IMPRO
 
 ### Evidence Files
 
-- `/Users/danielsinclair/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` - Detailed evidence
-- `/Users/danielsinclair/vscode/escli.refac7/docs/TASK_50_MODE_SELECTION_VERIFICATION.md` - Mode selection test results
-- `/Users/danielsinclair/vscode/escli.refac7/docs/SESSION_SUMMARY_AUDIO_INVESTIGATION.md` - Session summary
-- `/Users/danielsinclair/vscode/escli.refac7/docs/ANALYSIS_CORRECTIONS.md` - This document
+- `~/vscode/escli.refac7/docs/AUDIO_PIPELINE_VERIFICATION.md` - Detailed evidence
+- `~/vscode/escli.refac7/docs/TASK_50_MODE_SELECTION_VERIFICATION.md` - Mode selection test results
+- `~/vscode/escli.refac7/docs/SESSION_SUMMARY_AUDIO_INVESTIGATION.md` - Session summary
+- `~/vscode/escli.refac7/docs/ANALYSIS_CORRECTIONS.md` - This document
 
 ### Conclusion
 

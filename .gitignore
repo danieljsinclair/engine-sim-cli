@@ -1,7 +1,9 @@
 # Build directories
 build/
 build-*/
+build_*/
 cmake-build-*/
+vehicle-sim/build-native/
 
 # FetchContent cache (cli11) — kept outside build/ to survive `make scrub`.
 # See CMakeLists.txt FETCHCONTENT_BASE_DIR.
@@ -36,6 +38,10 @@ Testing/
 verification_output/
 *.dat
 
+# CMake test Makefiles (vehicle-sim/test/) — regenerated per-machine, contain absolute paths
+vehicle-sim/test/integration/Makefile
+vehicle-sim/test/unit/Makefile
+
 # Temporary files
 *.bak
 *.new
@@ -65,4 +71,3 @@ __pycache__/
 *.pyc
 
 # Other unclassified files
-

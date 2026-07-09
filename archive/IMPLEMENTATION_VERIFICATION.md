@@ -10,7 +10,7 @@
 ## Component Verification Results
 
 ### 1. Synthesizer Header
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/synthesizer.h`
 
 **Status**: ✅ PASS
 
@@ -28,7 +28,7 @@ int getAudioBufferLevel() const { return m_audioBuffer.size(); }
 ---
 
 ### 2. Simulator Header
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/simulator.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/simulator.h`
 
 **Status**: ✅ PASS
 
@@ -46,7 +46,7 @@ int getAudioBufferLevel() const { return m_synthesizer.getAudioBufferLevel(); }
 ---
 
 ### 3. Bridge Header
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/include/engine_sim_bridge.h`
 
 **Status**: ✅ PASS
 
@@ -75,7 +75,7 @@ EngineSimResult EngineSimGetAudioBufferLevel(
 ---
 
 ### 4. Bridge Implementation
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/src/engine_sim_bridge.cpp`
 
 **Status**: ✅ PASS
 
@@ -116,7 +116,7 @@ EngineSimResult EngineSimGetAudioBufferLevel(
 ---
 
 ### 5. CLI Usage
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Status**: ✅ PASS
 

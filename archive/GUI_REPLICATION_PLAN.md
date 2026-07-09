@@ -8,7 +8,7 @@
 
 ## 1. GUI Audio Architecture (EXACT Implementation)
 
-### Location: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+### Location: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
 
 ### 1.1 Main Loop - `process()` function
 
@@ -144,7 +144,7 @@ m_simulator->endAudioRenderingThread();
 
 ## 2. CLI Current Implementation
 
-### Location: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+### Location: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 ### 2.1 Audio Thread Usage
 
@@ -230,7 +230,7 @@ while ((!args.interactive && currentTime < args.duration) || (args.interactive &
 
 **The CLI is calling `EngineSimRender()` WITHOUT having started the audio thread.**
 
-Looking at the bridge implementation (`/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp` lines 515-523):
+Looking at the bridge implementation (`~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp` lines 515-523):
 
 ```cpp
 // CRITICAL: For synchronous rendering (no audio thread), we must call renderAudio()
@@ -269,7 +269,7 @@ The CLI needs to replicate the GUI's audio thread architecture. Here are the spe
 
 ### Change 1: Start Audio Thread After Script Load
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Location**: After line 693 (after `EngineSimLoadScript` succeeds)
 
@@ -289,7 +289,7 @@ std::cout << "[3/5] Audio rendering thread started\n";
 
 ### Change 2: Use readAudioOutput Instead of EngineSimRender
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Location**: Line 954
 
@@ -308,7 +308,7 @@ result = EngineSimReadAudioOutput(handle, writePtr, framesToRender, &samplesWrit
 
 ### Change 3: Stop Audio Thread Before Cleanup
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+**File**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
 
 **Location**: Before line 1033 (before `EngineSimDestroy(handle)`)
 
@@ -323,7 +323,7 @@ if (result != ESIM_SUCCESS) {
 
 ### Change 4: Add Bridge Functions (If Missing)
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/engine_sim_bridge.h`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/include/engine_sim_bridge.h`
 
 **Add after line 268**:
 ```cpp
@@ -377,7 +377,7 @@ EngineSimResult EngineSimReadAudioOutput(
 
 ### Change 5: Implement Bridge Functions
 
-**File**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
+**File**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_bridge.cpp`
 
 **Add implementation**:
 ```cpp

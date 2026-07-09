@@ -7,7 +7,7 @@ The engine simulator CLI is hanging because the engine won't start - RPM stays a
 
 ### 1. Starter Motor Implementation
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/starter_motor.cpp`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/starter_motor.cpp`
 
 ```cpp
 void StarterMotor::calculate(Output *output, atg_scs::SystemState *state) {
@@ -28,7 +28,7 @@ void StarterMotor::calculate(Output *output, atg_scs::SystemState *state) {
 
 ### 2. Starter Motor Initialization
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/piston_engine_simulator.cpp:178-181`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/piston_engine_simulator.cpp:178-181`
 
 ```cpp
 m_starterMotor.connectCrankshaft(m_engine->getOutputCrankshaft());
@@ -41,7 +41,7 @@ m_system->addConstraint(&m_starterMotor);
 
 ### 3. CLI Startup Sequence - THE BUG
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp:779-811`
+**Location**: `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp:779-811`
 
 ```cpp
 // Initial warmup - fixed throttle ramp to start combustion
@@ -96,7 +96,7 @@ EngineSimSetStarterMotor(handle, 1);
 
 ### 4. GUI Startup Sequence
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:859-865`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp:859-865`
 
 ```cpp
 const bool prevStarterEnabled = m_simulator->m_starterMotor.m_enabled;
@@ -114,7 +114,7 @@ else {
 
 ### 5. Physics Update Sequence
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:98-156`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/simulator.cpp:98-156`
 
 ```cpp
 bool Simulator::simulateStep() {
@@ -208,7 +208,7 @@ while (currentTime < warmupDuration) {
 
 **From TA2 findings**: The Subaru EJ25 uses DirectThrottleLinkage with gamma=2.0
 
-**Location**: `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp`
+**Location**: `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/direct_throttle_linkage.cpp`
 
 ```cpp
 void DirectThrottleLinkage::update(double dt, Engine *engine) {

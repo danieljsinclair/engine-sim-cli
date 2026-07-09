@@ -1,10 +1,9 @@
-// CLIconfig.h - CLI argument parsing and global state
+// CLIconfig.h - CLI argument parsing
 // Audio/simulation constants moved to bridge (AudioLoopConfig.h)
 
 #ifndef CLI_CONFIG_H
 #define CLI_CONFIG_H
 
-#include <atomic>
 #include <string>
 #include "simulator/EngineSimTypes.h"
 #include "io/IPresentation.h"  // DiagnosticOutputFilter
@@ -15,6 +14,30 @@ class SimulationConfig;
 // ============================================================================
 // Command Line Arguments
 // ============================================================================
+
+// Replay telemetry CSV input (--replay-telemetry and its time-slicing args).
+struct ReplayArgs {
+    std::string telemetryPath;       // --replay-telemetry <csv>: scripted driving from a telemetry CSV
+    std::string startFrom;           // --start-from <time>: raw string, parsed after CLI
+    std::string endAt;               // --end-at <time>: raw string, parsed after CLI
+    double startFromS = -1.0;        // parsed seconds
+    double endAtS = -1.0;            // parsed seconds
+};
+
+// Gearbox mode and logging (--auto / --manual / --gearbox-log).
+struct GearboxArgs {
+    bool automatic = false;          // Automatic gearbox (--auto flag), default is manual
+    bool manual = false;             // Explicit --manual flag (manual is already the default)
+    std::string logPath;             // Empty = no gearbox logging, path = enable CSV logging
+};
+
+// Audio/simulation timing overrides (0-sentinel: 0 means use EngineSimDefaults).
+struct AudioTimingArgs {
+    int simulationFrequency = 0;     // Physics Hz
+    double synthLatency = 0.0;       // Synth latency seconds
+    int preFillMs = 0;               // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
+    float crankingVolume = 0.0f;     // resolved by bridge/SimulationConfig
+};
 
 struct CommandLineArgs {
     std::string engineConfig;
@@ -27,31 +50,17 @@ struct CommandLineArgs {
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
     bool silent = false;         // Run full audio pipeline but with zero volume
-    bool autoGearbox = false;    // Automatic gearbox (--auto flag), default is manual
-    bool manualGearbox = false;  // Explicit --manual flag (manual is already the default)
-    std::string gearboxLogPath;  // Empty = no gearbox logging, path = enable CSV logging
-    float crankingVolume = 0.0f; // 0-sentinel, resolved by bridge/SimulationConfig
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
     bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
-    std::string replayTelemetryPath;  // --replay-telemetry <csv>: scripted driving from a telemetry CSV
-    std::string replayStartFrom;      // --start-from <time>: raw string, parsed after CLI
-    std::string replayEndAt;          // --end-at <time>: raw string, parsed after CLI
-    double replayStartFromS = -1.0;   // parsed seconds
-    double replayEndAtS = -1.0;       // parsed seconds
-    int simulationFrequency = 0; // Physics Hz — 0 means use EngineSimDefaults
-    double synthLatency = 0.0;   // Synth latency seconds — 0 means use EngineSimDefaults
-    int preFillMs = 0;           // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
+
+    ReplayArgs replay;
+    GearboxArgs gearbox;
+    AudioTimingArgs audio;
 
     // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
 };
-
-// ============================================================================
-// Global State (required for signal handling)
-// ============================================================================
-
-extern std::atomic<bool> g_interactiveMode;
 
 // ============================================================================
 // Function Declarations

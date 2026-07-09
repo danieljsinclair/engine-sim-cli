@@ -208,18 +208,18 @@
 ## Key File Locations
 
 ### Source Code
-- `/Users/danielsinclair/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
+- `~/vscode/engine-sim-cli/src/engine_sim_cli.cpp`
   - Main implementation with diagnostics
   - Lines marked with "PHASE 1 DIAGNOSTICS" contain position tracking
   - Lines marked with "CRITICAL" contain key architectural elements
 
 ### GUI Reference
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/engine_sim_application.cpp`
   - Working reference implementation
   - Use for comparison
 
 ### Synthesizer
-- `/Users/danielsinclair/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
+- `~/vscode/engine-sim-cli/engine-sim-bridge/engine-sim/src/synthesizer.cpp`
   - Audio thread implementation
   - Throttle and burst rendering logic
 
@@ -227,7 +227,7 @@
 
 ### Build
 ```bash
-cd /Users/danielsinclair/vscode/engine-sim-cli
+cd ~/vscode/engine-sim-cli
 make clean
 make
 ```
