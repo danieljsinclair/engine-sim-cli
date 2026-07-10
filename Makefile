@@ -274,47 +274,91 @@ scrub-cli: clean-cli
 # ---------------------------------------------------------------------------
 # Test -- build first, then run all test suites via CTest
 # ---------------------------------------------------------------------------
-test: build
-	+@total_start=$$(date +%s); \
-	bridge_elapsed=0; \
-	cli_elapsed=0; \
-	echo "=== [engine-sim-cli] Stage 1/2: bridge tests ==="; \
+# --- Test caching artefacts (real files, NOT .stamp hacks) -------------------
+# CLI ctest emits JUnit XML to build/cli-test-results.xml (ctest --output-junit).
+# The bridge writes engine-sim-bridge/build/test-summary.log as part of its own
+# `test` (run_bridge_ctest_suite tees ctest output there); we treat that as the
+# bridge cache artefact (read-only on the bridge). `make test` SKIPS both runs
+# when nothing changed: the CLI artefact exists, no source input is newer than
+# it, AND the CLI artefact is newer than the bridge artefact. Touching src/
+# include/ test/ (or a bridge source, via the -nt check) invalidates and re-runs.
+# Folds caching into the existing two-stage flow; does NOT rewrite it.
+CLI_TEST_RESULTS := $(BUILD_DIR)/cli-test-results.xml
+BRIDGE_TEST_ARTEFACT := $(BRIDGE_DIR)/build/test-summary.log
+
+# --- DRY test-stage macros --------------------------------------------------
+# Mirror the file's existing `define ... endef` shell style (cf. ESP32_ACTIVATE).
+# `$(call)` substitutes params textually into the single shell that runs the
+# recipe, so shell vars (bridge_elapsed, cli_elapsed) set by one macro persist
+# into later ones. PASS/FAIL messages, exit codes and the non-fatal
+# coverage/sonar summary call (full mode only) are preserved exactly.
+define run_bridge_stage
 	bridge_start=$$(date +%s); \
-	if $(MAKE) -C engine-sim-bridge test; then \
+	if $(MAKE) -C engine-sim-bridge $(1); then \
 		bridge_end=$$(date +%s); \
 		bridge_elapsed=$$((bridge_end - bridge_start)); \
-		echo "=== [engine-sim-cli] Stage 1/2: bridge tests PASSED ($${bridge_elapsed}s) ==="; \
+		echo "=== [engine-sim-cli] $(2) PASSED ($${bridge_elapsed}s) ==="; \
 	else \
 		bridge_end=$$(date +%s); \
 		bridge_elapsed=$$((bridge_end - bridge_start)); \
-		echo "=== [engine-sim-cli] Stage 1/2: bridge tests FAILED ($${bridge_elapsed}s) ==="; \
+		echo "=== [engine-sim-cli] $(2) FAILED ($${bridge_elapsed}s) ==="; \
 		total_end=$$(date +%s); \
 		total_elapsed=$$((total_end - total_start)); \
-		echo "=== [engine-sim-cli] TIME: bridge=$${bridge_elapsed}s cli=SKIPPED total=$${total_elapsed}s ==="; \
+		echo "=== [engine-sim-cli] TIME: $(3)=$${bridge_elapsed}s cli=SKIPPED total=$${total_elapsed}s ==="; \
 		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
 		exit 1; \
-	fi; \
-	echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
+	fi
+endef
+
+define run_cli_stage
 	cli_start=$$(date +%s); \
-	if (cd $(BUILD_DIR) && ctest $(CTEST_UI_FLAGS) --output-on-failure --output-log ../test.log -j$(CTEST_JOBS)); then \
+	if (cd $(BUILD_DIR) && ctest $(CTEST_UI_FLAGS) --output-on-failure --output-log ../test.log $(4) -j$(CTEST_JOBS)); then \
 		cli_end=$$(date +%s); \
 		cli_elapsed=$$((cli_end - cli_start)); \
 		total_end=$$(date +%s); \
 		total_elapsed=$$((total_end - total_start)); \
-		echo "=== [engine-sim-cli] TIME: bridge=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
-		echo "=== [engine-sim-cli] SUMMARY: PASS (full) ==="; \
-		printf '\033[0;32m=== [engine-sim-cli] RESULT: ALL TESTS PASSED ===\033[0m\n'; \
+		echo "=== [engine-sim-cli] TIME: $(1)=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
+		echo "=== [engine-sim-cli] SUMMARY: PASS ($(2)) ==="; \
+		printf '\033[0;32m=== [engine-sim-cli] RESULT: $(3) ===\033[0m\n'; \
+	else \
+		cli_end=$$(date +%s); \
+		cli_elapsed=$$((cli_end - cli_start)); \
+		total_end=$$(date +%s); \
+		total_elapsed=$$((total_end - total_start)); \
+		echo "=== [engine-sim-cli] TIME: $(1)=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
+		echo "=== [engine-sim-cli] SUMMARY: FAIL ($(2)) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
+		exit 1; \
+	fi
+endef
+
+define run_bridge_only_stage
+	if $(MAKE) -C engine-sim-bridge $(1); then \
+		echo "=== [engine-sim-cli] SUMMARY: PASS ($(2)) ==="; \
+		printf '\033[0;32m=== [engine-sim-cli] RESULT: $(3) ===\033[0m\n'; \
+	else \
+		echo "=== [engine-sim-cli] SUMMARY: FAIL ($(2)) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
+		exit 1; \
+	fi
+endef
+
+test: build
+	+@if [ -f $(CLI_TEST_RESULTS) ] && \
+	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ] && \
+	   [ $(CLI_TEST_RESULTS) -nt $(BRIDGE_TEST_ARTEFACT) ]; then \
+		echo "=== [engine-sim-cli] TESTS UP TO DATE — bridge + ctest skipped (artefacts current) ==="; \
+	else \
+		total_start=$$(date +%s); \
+		bridge_elapsed=0; \
+		cli_elapsed=0; \
+		echo "=== [engine-sim-cli] Stage 1/2: bridge tests ==="; \
+		$(call run_bridge_stage,test,Stage 1/2: bridge tests,bridge); \
+		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
+		$(call run_cli_stage,bridge,full,ALL TESTS PASSED,--output-junit $(CLI_TEST_RESULTS)); \
+		touch $(CLI_TEST_RESULTS); \
 		$(MAKE) $(SONAR_REPORT) coverage-summary sonar-summary || \
 			echo "=== [engine-sim-cli] sonar/coverage summary skipped (non-fatal) ==="; \
-	else \
-		cli_end=$$(date +%s); \
-		cli_elapsed=$$((cli_end - cli_start)); \
-		total_end=$$(date +%s); \
-		total_elapsed=$$((total_end - total_start)); \
-		echo "=== [engine-sim-cli] TIME: bridge=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
-		echo "=== [engine-sim-cli] SUMMARY: FAIL (full) ==="; \
-		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
-		exit 1; \
 	fi
 
 # Fast test path: build + bridge fast tests + full CLI tests.
@@ -323,66 +367,21 @@ test-fast: build
 	bridge_elapsed=0; \
 	cli_elapsed=0; \
 	echo "=== [engine-sim-cli] Fast mode: bridge test-fast + full cli/unit/integration ==="; \
-	bridge_start=$$(date +%s); \
-	if $(MAKE) -C engine-sim-bridge test-fast; then \
-		bridge_end=$$(date +%s); \
-		bridge_elapsed=$$((bridge_end - bridge_start)); \
-		echo "=== [engine-sim-cli] Bridge fast suite PASSED ($${bridge_elapsed}s) ==="; \
-	else \
-		bridge_end=$$(date +%s); \
-		bridge_elapsed=$$((bridge_end - bridge_start)); \
-		echo "=== [engine-sim-cli] Bridge fast suite FAILED ($${bridge_elapsed}s) ==="; \
-		total_end=$$(date +%s); \
-		total_elapsed=$$((total_end - total_start)); \
-		echo "=== [engine-sim-cli] TIME: bridge-fast=$${bridge_elapsed}s cli=SKIPPED total=$${total_elapsed}s ==="; \
-		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
-		exit 1; \
-	fi; \
-	cli_start=$$(date +%s); \
-	if (cd $(BUILD_DIR) && ctest $(CTEST_UI_FLAGS) --output-on-failure --output-log ../test.log -j$(CTEST_JOBS)); then \
-		cli_end=$$(date +%s); \
-		cli_elapsed=$$((cli_end - cli_start)); \
-		total_end=$$(date +%s); \
-		total_elapsed=$$((total_end - total_start)); \
-		echo "=== [engine-sim-cli] TIME: bridge-fast=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
-		echo "=== [engine-sim-cli] SUMMARY: PASS (fast) ==="; \
-		printf '\033[0;32m=== [engine-sim-cli] RESULT: FAST TESTS PASSED ===\033[0m\n'; \
-	else \
-		cli_end=$$(date +%s); \
-		cli_elapsed=$$((cli_end - cli_start)); \
-		total_end=$$(date +%s); \
-		total_elapsed=$$((total_end - total_start)); \
-		echo "=== [engine-sim-cli] TIME: bridge-fast=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
-		echo "=== [engine-sim-cli] SUMMARY: FAIL (fast) ==="; \
-		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
-		exit 1; \
-	fi
+	$(call run_bridge_stage,test-fast,Bridge fast suite,bridge-fast); \
+	echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
+	$(call run_cli_stage,bridge-fast,fast,FAST TESTS PASSED,)
 
 # Quick mode: minimal bridge-only infra checks for tight edit/run loops.
 test-quick: build
 	@echo "=== [engine-sim-cli] Quick mode: bridge test-quick only ==="
-	+@if $(MAKE) -C engine-sim-bridge test-quick; then \
-		echo "=== [engine-sim-cli] SUMMARY: PASS (quick) ==="; \
-		printf '\033[0;32m=== [engine-sim-cli] RESULT: QUICK TESTS PASSED ===\033[0m\n'; \
-	else \
-		echo "=== [engine-sim-cli] SUMMARY: FAIL (quick) ==="; \
-		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
-		exit 1; \
-	fi
+	+@$(call run_bridge_only_stage,test-quick,quick,QUICK TESTS PASSED)
 
 testquick: test-quick
 
 # Explicit long-running tier: bridge isomorphism + engine-sim physics tests.
 test-deep: build
 	@echo "=== [engine-sim-cli] Deep mode: bridge isomorphism + engine-sim physics tests ==="
-	+@if $(MAKE) -C engine-sim-bridge test-deep; then \
-		echo "=== [engine-sim-cli] SUMMARY: PASS (deep) ==="; \
-		printf '\033[0;32m=== [engine-sim-cli] RESULT: DEEP TESTS PASSED ===\033[0m\n'; \
-	else \
-		echo "=== [engine-sim-cli] SUMMARY: FAIL (deep) ==="; \
-		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
-		exit 1; \
-	fi
+	+@$(call run_bridge_only_stage,test-deep,deep,DEEP TESTS PASSED)
 
 testdeep: test-deep
 
