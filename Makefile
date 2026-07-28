@@ -54,6 +54,11 @@ LLVM_COV := $(shell xcrun --find llvm-cov 2>/dev/null || which llvm-cov 2>/dev/n
 LLVM_PROFDATA := $(shell xcrun --find llvm-profdata 2>/dev/null || which llvm-profdata 2>/dev/null)
 
 # Source inputs that affect the coverage build. Invalidation on change.
+# Note: engine-sim-bridge is NOT listed here. The bridge is linked as a static
+# archive, so its invalidation is tracked once (DRY) via the archive dependency
+# chain (BRIDGE_BUILD_COV_LIB -> CMakeCache.txt -> BUILD_COV_STAMP), not by
+# enumerating its source mtimes here. Listing it caused the coverage report to
+# rebuild on every bridge file touch and bloated lcov scope.
 BUILD_INPUTS := $(shell find Makefile CMakeLists.txt src include test tools engine-sim -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.cmake' \) 2>/dev/null | sort)
 
 # Build system: Ninja (recommended) or Make (fallback)
@@ -481,6 +486,7 @@ $(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt
 # end (honesty gate), so a failing test propagates non-zero.
 $(COVERAGE_REPORT): $(BUILD_COV_STAMP) $(BUILD_INPUTS) $(BRIDGE_DIR)/scripts/run_coverage_tests.sh
 	@LLVM_PROFDATA="$(LLVM_PROFDATA)" LLVM_COV="$(LLVM_COV)" \
+		COVERAGE_IGNORE_REGEX='engine-sim-bridge/|\.fetchcache/|/dependencies/' \
 		bash $(BRIDGE_DIR)/scripts/run_coverage_tests.sh $(BUILD_COV_DIR)
 
 coverage-run: $(COVERAGE_REPORT)

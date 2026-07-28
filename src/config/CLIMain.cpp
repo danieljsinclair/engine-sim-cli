@@ -7,6 +7,7 @@
 #include "CLIconfig.h"
 #include "CliException.h"
 #include "ReplayTimeValidator.h"
+#include "common/PresetExceptions.h"
 
 #include "strategy/IAudioBuffer.h"
 #include "telemetry/ITelemetryProvider.h"
@@ -405,6 +406,10 @@ int main(int argc, char* argv[]) {
         // are NOT caught here — they propagate to std::terminate (fail-fast) so
         // real bugs surface rather than being swallowed as a generic exit 1.
         catch (const CliException& e) {
+            cliLogger->error(LogMask::BRIDGE, std::string(e.what()));
+            result = 1;
+        }
+        catch (const SimulatorException& e) {
             cliLogger->error(LogMask::BRIDGE, std::string(e.what()));
             result = 1;
         }
