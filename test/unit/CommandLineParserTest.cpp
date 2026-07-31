@@ -105,3 +105,39 @@ TEST(CommandLineParserTest, AutoFlagWithConnectDemo) {
     EXPECT_TRUE(args.gearbox.automatic);
     EXPECT_TRUE(args.connectDemo);
 }
+
+// --live-telemetry: read live CSV from stdin (vehicle-sim --stdout-csv piped in).
+// Live and recorded replay share the same stdin CSV contract, so they are
+// distinct input sources and must not be combined with each other or with the
+// keyboard-driven demo.
+
+TEST(CommandLineParserTest, LiveTelemetryFlagParses) {
+    const char* argv[] = {"engine-sim-cli", "--live-telemetry"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.liveTelemetry);
+}
+
+TEST(CommandLineParserTest, LiveTelemetryDefaultFalse) {
+    const char* argv[] = {"engine-sim-cli", "--sine"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.liveTelemetry);
+}
+
+TEST(CommandLineParserTest, LiveTelemetryExcludesReplayTelemetry) {
+    // Live (stdin) and recorded (file) telemetry are distinct input sources.
+    const char* argv[] = {"engine-sim-cli", "--live-telemetry", "--replay-telemetry", "trace.csv"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
+}
+
+TEST(CommandLineParserTest, LiveTelemetryExcludesConnectDemo) {
+    const char* argv[] = {"engine-sim-cli", "--live-telemetry", "--connect-demo"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
+}

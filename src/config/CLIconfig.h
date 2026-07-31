@@ -57,6 +57,11 @@ struct CommandLineArgs {
     GearboxArgs gearbox;
     AudioTimingArgs audio;
 
+    // Live telemetry: read decoded CSV from stdin (vehicle-sim --stdout-csv piped in),
+    // one row per frame. Live and recorded replay share the same stdin CSV contract,
+    // so the consumer cannot tell them apart. Implies --start (fires starter on frame 0).
+    bool liveTelemetry = false;  // --live-telemetry
+
     // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq

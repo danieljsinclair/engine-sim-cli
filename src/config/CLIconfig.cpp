@@ -90,7 +90,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
+    auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
     app.add_option("--start-from", args.replay.startFrom, "Start replay at this time (seconds, mm:ss, or hh:mm:ss)")
         ->needs("--replay-telemetry");
@@ -102,10 +102,16 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
+    auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
+
     // Mutual exclusions
     scriptOpt->excludes(engineConfigOpt);
     connectDemoOpt->excludes(scriptOpt);
     connectDemoOpt->excludes(engineConfigOpt);
+    liveTelemetryOpt->excludes(scriptOpt);
+    liveTelemetryOpt->excludes(engineConfigOpt);
+    liveTelemetryOpt->excludes(connectDemoOpt);
+    liveTelemetryOpt->excludes(replayTelemetryOpt);
 
     bool threadedFlag = false;
     bool silentFlag = false;
