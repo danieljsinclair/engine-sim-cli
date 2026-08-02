@@ -141,3 +141,39 @@ TEST(CommandLineParserTest, LiveTelemetryExcludesConnectDemo) {
 
     EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
 }
+
+// --live-telemetry COMBINES with --script so the user can pick the engine to
+// drive from CSV (e.g. the C63 V2b). Without this, --live-telemetry is locked to
+// preset[0] (the alphabetical first preset), because resolveConfigPaths only
+// scans the preset dir when args.engineConfig is empty. Allowing the combo lets
+// args.engineConfig carry the named engine so that engine — not preset[0] — loads.
+TEST(CommandLineParserTest, LiveTelemetryCombinesWithScriptToSelectEngine) {
+    const char* argv[] = {
+        "engine-sim-cli",
+        "--live-telemetry",
+        "--script", "C63_M156_V2b.mr",
+        "--silent"
+    };
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.liveTelemetry);
+    EXPECT_EQ(args.engineConfig, "C63_M156_V2b.mr")
+        << "--live-telemetry must combine with --script so a named engine loads "
+           "instead of the alphabetical preset[0]";
+}
+
+// The positional engine_config form is NOT an engine-selection seam here
+// (output_wav is the first positional and consumes a bare argument), so it stays
+// excluded from --live-telemetry. Regression guard against re-broadening.
+TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
+    const char* argv[] = {
+        "engine-sim-cli",
+        "--live-telemetry",
+        "out.wav",
+        "C63_M156_V2b.mr"
+    };
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
+}
