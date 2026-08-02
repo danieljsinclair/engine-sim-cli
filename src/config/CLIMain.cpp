@@ -305,6 +305,12 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
     if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
         replay->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
     }
+    // Live --live-telemetry path (CSV stdin drives the twin). The named engine
+    // loaded via --script may have different ratios than the twin's default ZF
+    // profile, so reconfigure the box to match (e.g. a C63 M156).
+    if (auto* live = dynamic_cast<input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
+        live->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
+    }
     // Keyboard --auto path (via DemoInputProvider)
     if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
         demo->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());

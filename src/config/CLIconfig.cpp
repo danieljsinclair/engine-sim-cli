@@ -65,6 +65,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive --play\n";
     std::cout << "  " << progName << " --sine --interactive --play\n";
     std::cout << "  " << progName << " --load 75 --play                   # Default presets with load\n";
+    std::cout << "  " << progName << " --live-telemetry --script C63_M156_V2b.mr --silent < recording.csv  # Drive a named engine from CSV\n";
 }
 
 // Forward declaration — defined below parseArguments.
@@ -108,7 +109,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     scriptOpt->excludes(engineConfigOpt);
     connectDemoOpt->excludes(scriptOpt);
     connectDemoOpt->excludes(engineConfigOpt);
-    liveTelemetryOpt->excludes(scriptOpt);
+    // --live-telemetry COMBINES with --script so the user can drive a NAMED
+    // engine from CSV stdin (e.g. the C63 V2b). Without this, --live-telemetry is
+    // locked to preset[0] (the alphabetical first preset): resolveConfigPaths only
+    // scans the preset dir when engineConfig is empty, so the named .mr never
+    // loads. (The positional engine_config stays excluded — output_wav is the
+    // first positional, so a bare positional never reaches engine_config.) Live
+    // CSV is still mutually exclusive with the other input sources.
     liveTelemetryOpt->excludes(engineConfigOpt);
     liveTelemetryOpt->excludes(connectDemoOpt);
     liveTelemetryOpt->excludes(replayTelemetryOpt);
