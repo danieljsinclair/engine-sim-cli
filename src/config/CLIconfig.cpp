@@ -93,8 +93,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
-    app.add_option("--start-from", args.replay.startFrom, "Start replay at this time (seconds, mm:ss, or hh:mm:ss)")
-        ->needs("--replay-telemetry");
+    app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss)");
     app.add_option("--end-at", args.replay.endAt, "Stop replay at this time (seconds or mm:ss)")
         ->needs("--replay-telemetry");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);

@@ -95,6 +95,17 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
         }
+        // Wire --start-from time slicing for live telemetry CSV (mirrors replay).
+        live->setStartFromS(args.replay.startFromS);
+        if (!args.gearbox.logPath.empty()) {
+            static twin::GearboxCsvLogger gearboxLogger(args.gearbox.logPath);
+            if (gearboxLogger.isOpen()) {
+                live->setGearboxLogger(&gearboxLogger);
+                std::cout << "  Gearbox log: " << args.gearbox.logPath << std::endl;
+            } else {
+                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearbox.logPath << std::endl;
+            }
+        }
         ctx.provider = std::move(live);
         return ctx;
     }
