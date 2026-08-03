@@ -17,11 +17,13 @@ add_executable(unit_tests
     ANSIColorsTest.cpp
     CLIMainTest.cpp
     ReplayTimeValidatorTest.cpp
+    ExecutablePathTest.cpp
     # Required support code
     ../../src/config/CLIconfig.cpp
     ../../src/config/ReplayTimeValidator.cpp
     ../../src/config/KqueueSignalStopController.cpp
     ../../src/config/ANSIColors.cpp
+    ../../src/config/ExecutablePath.cpp
     ../../src/presentation/ConsolePresentation.cpp
     ../../src/input/KeyboardInput.cpp
     ../../test/mocks/MockDataSimulator.cpp
