@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "config/KqueueSignalStopController.h"
+#include "config/ExecutablePath.h"
 
 // ============================================================================
 // Signal handling: no handler, no global.
@@ -226,10 +227,15 @@ std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILoggin
         return {scriptPath};
     }
 
+    // Resolve the preset directory relative to the running executable so the
+    // CLI works when launched from any CWD. Falls back to the PWD-relative
+    // presetDir when exe-relative resolution finds nothing.
+    const std::string resolvedPresetDir = cli::ExecutablePath::resolveResource(presetDir);
+
     // No script specified: default to cycling all presets. No current selection
     // is tracked here, so currentFullPath is empty (currentIndex stays at its
     // default 0 — the CLI cycles from the first preset regardless).
-    if (auto presetDiscovery = SimulatorFactory::discoverPresetPaths(presetDir, /*currentFullPath=*/{}); !presetDiscovery.presets.empty()) {
+    if (auto presetDiscovery = SimulatorFactory::discoverPresetPaths(resolvedPresetDir, /*currentFullPath=*/{}); !presetDiscovery.presets.empty()) {
         std::vector<std::string> paths;
         for (const auto& preset : presetDiscovery.presets) {
             paths.push_back(preset.fullPath);
@@ -239,7 +245,7 @@ std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILoggin
     }
 
     // No engine config and no presets found
-    throw CliException("No engine presets found at " + std::string(presetDir) + ". Use --script <path> to specify an engine.");
+    throw CliException("No engine presets found at " + resolvedPresetDir + ". Use --script <path> to specify an engine.");
 }
 
 }  // anonymous namespace
