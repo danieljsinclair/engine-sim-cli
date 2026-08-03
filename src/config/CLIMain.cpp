@@ -82,6 +82,21 @@ struct InputContext {
 // Extracted to ReplayTimeValidator.{h,cpp} (against IReplayTimeline) so it is
 // unit-testable; called from createInputProvider below.
 
+// Attach a CSV gearbox logger to a provider when --gearbox-log is set. The
+// logger is a function-local static so it outlives the provider for the run.
+// Shared by the live, replay and demo input paths (DRY).
+template <typename Provider>
+void attachGearboxLogger(Provider& provider, const std::string& logPath) {
+    if (logPath.empty()) return;
+    static twin::GearboxCsvLogger gearboxLogger(logPath);
+    if (gearboxLogger.isOpen()) {
+        provider.setGearboxLogger(&gearboxLogger);
+        std::cout << "  Gearbox log: " << logPath << std::endl;
+    } else {
+        std::cerr << "  WARNING: Could not open gearbox log: " << logPath << std::endl;
+    }
+}
+
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
     InputContext ctx;
 
@@ -95,17 +110,9 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
         }
-        // Wire --start-from time slicing for live telemetry CSV (mirrors replay).
+        // Wire --start-from time slicing + the optional gearbox logger.
         live->setStartFromS(args.replay.startFromS);
-        if (!args.gearbox.logPath.empty()) {
-            static twin::GearboxCsvLogger gearboxLogger(args.gearbox.logPath);
-            if (gearboxLogger.isOpen()) {
-                live->setGearboxLogger(&gearboxLogger);
-                std::cout << "  Gearbox log: " << args.gearbox.logPath << std::endl;
-            } else {
-                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearbox.logPath << std::endl;
-            }
-        }
+        attachGearboxLogger(*live, args.gearbox.logPath);
         ctx.provider = std::move(live);
         return ctx;
     }
@@ -163,15 +170,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             twin::IceVehicleProfile::zf8hp45()
         );
 
-        if (!args.gearbox.logPath.empty()) {
-            static twin::GearboxCsvLogger gearboxLogger(args.gearbox.logPath);
-            if (gearboxLogger.isOpen()) {
-                demoProvider->setGearboxLogger(&gearboxLogger);
-                std::cout << "  Gearbox log: " << args.gearbox.logPath << std::endl;
-            } else {
-                std::cerr << "  WARNING: Could not open gearbox log: " << args.gearbox.logPath << std::endl;
-            }
-        }
+        attachGearboxLogger(*demoProvider, args.gearbox.logPath);
 
         // Wire demoProvider as speed enhancer to EngineInputTarget
         target->setSpeedEnhancer(demoProvider.get());
