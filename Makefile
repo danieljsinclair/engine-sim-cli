@@ -11,6 +11,17 @@
 BUILD_DIR ?= build
 BUILD_TYPE ?= RelWithDebInfo
 BUILD_PHASE0_SPIKES ?= OFF
+# Afterfire spike (exhaust pops on throttle-cut overrun), needed by
+# --enable-afterfire. MUST match the setting the bridge archive was built with:
+# the macro adds members to CombustionChamber (sizeof 664 -> 904 bytes measured
+# on arm64) and Engine::getChamber() is an inline function indexing an array of
+# them, so a mismatch mis-addresses chambers silently — it is NOT a link error.
+# Forwarded to the CLI cmake configure below; the bridge half is configured by
+# engine-sim-bridge's own build (verify with:
+#   grep ATG_ENGINE_SIM_AFTERFIRE_SPIKE engine-sim-bridge/build/CMakeCache.txt).
+# Changing this does NOT invalidate an existing cache — the CMakeCache.txt rule
+# has no dependency on it. Run `rm -f $(BUILD_DIR)/CMakeCache.txt` when flipping.
+ATG_ENGINE_SIM_AFTERFIRE_SPIKE ?= OFF
 # Set to 1 to allow Debug builds (needed for coverage instrumentation).
 ALLOW_DEBUG_BUILD ?= 0
 CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -234,6 +245,7 @@ $(BUILD_DIR)/CMakeCache.txt: check-submodule
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 		-DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) \
+		-DATG_ENGINE_SIM_AFTERFIRE_SPIKE=$(ATG_ENGINE_SIM_AFTERFIRE_SPIKE) \
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
 		..

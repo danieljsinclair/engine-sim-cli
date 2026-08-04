@@ -57,6 +57,17 @@ struct CommandLineArgs {
     GearboxArgs gearbox;
     AudioTimingArgs audio;
 
+    // Afterfire (--enable-afterfire and the --afterfire-* tuning params).
+    //
+    // This is the bridge's AfterfireConfig VALUE TYPE, not a parallel copy of it:
+    // the CLI options bind straight to its members, so the defaults shown in
+    // --help and the defaults applied to the simulator are the same numbers, and
+    // a field added to AfterfireConfig cannot silently drift out of the CLI. The
+    // `enabled` member is the --enable-afterfire flag; `diagnostics` is
+    // --afterfire-diagnostics. The struct is handed to
+    // SimulatorFactory::configureAfterfire() unchanged.
+    AfterfireConfig afterfire;
+
     // Live telemetry: read decoded CSV from stdin (vehicle-sim --stdout-csv piped in),
     // one row per frame. Live and recorded replay share the same stdin CSV contract,
     // so the consumer cannot tell them apart. Implies --start (fires starter on frame 0).
@@ -74,6 +85,11 @@ struct CommandLineArgs {
 void printUsage(const char* progName);
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
 void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion);
+
+// Print the afterfire tuning block (no output when afterfire is disabled).
+// Separate from ShowConfigHeader because afterfire is applied to the simulator
+// after creation, so it is not carried inside the bridge's SimulationConfig.
+void ShowAfterfireHeader(const AfterfireConfig& afterfire);
 
 // Parse a time string (plain seconds "30.5", mm:ss "1:30.5", or hh:mm:ss "0:01:30.5") into seconds.
 // Returns -1.0 on invalid input.

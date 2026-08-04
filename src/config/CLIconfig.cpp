@@ -40,7 +40,22 @@ void printUsage(const char* progName) {
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
     std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n";
     std::cout << "  --diagnostic-frames  Show per-frame audio buffer timing line (req=/got=/took=/room=)\n";
-    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n\n";
+    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n";
+    // Defaults are read off a default-constructed AfterfireConfig rather than
+    // typed in as literals, so --help can never advertise a stale number.
+    const AfterfireConfig afterfireDefaults;
+    std::cout << "  --enable-afterfire   Enable guarded exhaust afterfire pops on all chambers\n";
+    std::cout << "  --afterfire-intensity <0-1>          Pop pressure intensity (default: " << afterfireDefaults.intensity << ")\n";
+    std::cout << "  --afterfire-cooldown-ms <ms>         Minimum gap between pops on one chamber (default: " << afterfireDefaults.cooldownMs << ")\n";
+    std::cout << "  --afterfire-throttle-cutoff <0-1>    Only pop below this throttle (default: " << afterfireDefaults.throttleCutoff << ")\n";
+    std::cout << "  --afterfire-rpm-min <rpm>            Only pop above this RPM (default: " << afterfireDefaults.rpmMin << ")\n";
+    std::cout << "  --afterfire-fuel-fraction <0-0.02>   Exhaust fuel fraction per pop (default: " << afterfireDefaults.fuelFraction << ")\n";
+    std::cout << "  --afterfire-probability <0-1>        Per-candidate pop probability (default: " << afterfireDefaults.probability << ")\n";
+    std::cout << "  --afterfire-decel-window-ms <ms>     Decel detection window (default: " << afterfireDefaults.decelWindowMs << ")\n";
+    std::cout << "  --afterfire-max-events-per-decel <n> Max pops per decel event (default: " << afterfireDefaults.maxEventsPerDecel << ")\n";
+    std::cout << "  --afterfire-rpm-fall-threshold <rpm> RPM drop per step that counts as overrun (default: " << afterfireDefaults.rpmFallThreshold << ")\n";
+    std::cout << "  --afterfire-pop-interval-ms <ms>     Min sim-time between any two pops (default: " << afterfireDefaults.globalPopIntervalMs << ")\n";
+    std::cout << "  --afterfire-diagnostics              Print afterfire pop/skip counters at exit\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
     std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
@@ -72,6 +87,42 @@ void printUsage(const char* progName) {
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath,
                  const std::string& positionalEngineConfig, double loadArg,
                  bool threadedFlag, bool silentFlag);
+
+namespace {
+
+// Register the afterfire flag and its tuning options against the bridge's
+// AfterfireConfig. Extracted so parseArguments keeps a single responsibility
+// (assemble the parser) rather than also owning one subsystem's tuning surface;
+// the options bind directly to the struct that is handed to the factory, so
+// there is no CLI-side copy of the tuning values to keep in step.
+void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
+    app.add_flag("--enable-afterfire", afterfire.enabled,
+                 "Enable guarded exhaust afterfire pops on all chambers");
+    app.add_option("--afterfire-intensity", afterfire.intensity,
+                   "Pop pressure intensity (0-1)")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--afterfire-cooldown-ms", afterfire.cooldownMs,
+                   "Minimum gap between pops on one chamber (ms)")->check(CLI::Range(0.0, 5000.0));
+    app.add_option("--afterfire-throttle-cutoff", afterfire.throttleCutoff,
+                   "Only pop below this throttle (0-1)")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--afterfire-rpm-min", afterfire.rpmMin,
+                   "Only pop above this RPM")->check(CLI::Range(0.0, 20000.0));
+    app.add_option("--afterfire-fuel-fraction", afterfire.fuelFraction,
+                   "Exhaust fuel fraction per pop (0-0.02)")->check(CLI::Range(0.0, 0.02));
+    app.add_option("--afterfire-probability", afterfire.probability,
+                   "Per-candidate pop probability (0-1)")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--afterfire-decel-window-ms", afterfire.decelWindowMs,
+                   "Decel detection window (ms)")->check(CLI::Range(0.0, 10000.0));
+    app.add_option("--afterfire-max-events-per-decel", afterfire.maxEventsPerDecel,
+                   "Max pops per decel event")->check(CLI::Range(0, 20));
+    app.add_option("--afterfire-rpm-fall-threshold", afterfire.rpmFallThreshold,
+                   "RPM drop per step that counts as overrun")->check(CLI::Range(0.0, 5000.0));
+    app.add_option("--afterfire-pop-interval-ms", afterfire.globalPopIntervalMs,
+                   "Min sim-time between any two pops (ms)")->check(CLI::Range(0.0, 5000.0));
+    app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
+                 "Print afterfire pop/skip counters at exit");
+}
+
+}  // namespace
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     CLI::App app{"Engine Simulator CLI v2.0"};
@@ -135,6 +186,8 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
                  "Show per-frame audio buffer timing line (req=/got=/took=/room=)");
     app.add_flag("--diagnostic-freq", args.diagnostics.freq,
                  "Show per-frame update-call frequency line (calls=/need/kfps)");
+
+    addAfterfireOptions(app, args.afterfire);
 
     try {
         app.parse(argc, argv);
@@ -280,4 +333,31 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
     std::cout << "  Gearbox: " << (config.autoGearbox ? "Auto" : "Manual") << "\n";
     std::cout << "\n";
+}
+
+// ============================================================================
+// Afterfire banner
+// ============================================================================
+// Separate from ShowConfigHeader because afterfire is NOT part of the bridge's
+// SimulationConfig — it is applied to the simulator after creation via
+// SimulatorFactory::configureAfterfire(), so the CLI carries it alongside the
+// SimulationConfig rather than inside it. Printing it here keeps the CLI's
+// console output in one translation unit (SRP) instead of leaking std::cout
+// formatting into CLIMain.
+void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
+    if (afterfire.enabled) {
+        std::cout << "  Afterfire: " << ANSIColors::GREEN << "Enabled" << ANSIColors::RESET << "\n";
+        std::cout << "    Intensity:            " << afterfire.intensity << "\n";
+        std::cout << "    Cooldown:             " << afterfire.cooldownMs << " ms\n";
+        std::cout << "    Throttle cutoff:      " << afterfire.throttleCutoff << "\n";
+        std::cout << "    RPM min:              " << afterfire.rpmMin << "\n";
+        std::cout << "    Fuel fraction:        " << afterfire.fuelFraction << "\n";
+        std::cout << "    Probability:          " << afterfire.probability << "\n";
+        std::cout << "    Decel window:         " << afterfire.decelWindowMs << " ms\n";
+        std::cout << "    Max events per decel: " << afterfire.maxEventsPerDecel << "\n";
+        std::cout << "    RPM fall threshold:   " << afterfire.rpmFallThreshold << "\n";
+        std::cout << "    Min pop interval:     " << afterfire.globalPopIntervalMs << " ms\n";
+        std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
+        std::cout << "\n";
+    }
 }

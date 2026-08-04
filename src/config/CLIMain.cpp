@@ -42,6 +42,7 @@
 #include "engine-sim/include/simulator.h"
 #include "engine-sim/include/units.h"
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -333,6 +334,85 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
     }
 }
 
+// Roll the per-chamber afterfire counters up into one engine-level view.
+// Counters sum (an engine's pop count is the sum of its chambers'); the
+// last-event readings take the maximum, which answers "did ANY chamber reach a
+// meaningful pop, and how big was it" — the question a smoke run is asking.
+struct AfterfireSummary {
+    int totalEvents = 0;
+    int skippedCooldown = 0;
+    int skippedLowRpm = 0;
+    int skippedThrottle = 0;
+    int skippedProbability = 0;
+    int skippedMaxEvents = 0;
+    int skippedCrankAngle = 0;
+    int skippedNoOverrun = 0;
+    double peakPressure = 0.0;
+    double energyReleased = 0.0;
+    double eventRpm = 0.0;
+    double eventThrottle = 0.0;
+};
+
+AfterfireSummary summariseAfterfire(const std::vector<AfterfireDiagnostics>& chambers) {
+    AfterfireSummary summary;
+    for (const auto& chamber : chambers) {
+        summary.totalEvents += chamber.eventCount;
+        summary.skippedCooldown += chamber.skippedCooldown;
+        summary.skippedLowRpm += chamber.skippedLowRpm;
+        summary.skippedThrottle += chamber.skippedThrottle;
+        summary.skippedProbability += chamber.skippedProbability;
+        summary.skippedMaxEvents += chamber.skippedMaxEvents;
+        summary.skippedCrankAngle += chamber.skippedCrankAngle;
+        summary.skippedNoOverrun += chamber.skippedNoOverrun;
+        summary.peakPressure = std::max(summary.peakPressure, chamber.lastEventPeakPressure);
+        summary.energyReleased = std::max(summary.energyReleased, chamber.lastEventEnergyReleased);
+        summary.eventRpm = std::max(summary.eventRpm, chamber.lastEventRpm);
+        summary.eventThrottle = std::max(summary.eventThrottle, chamber.lastEventThrottle);
+    }
+    return summary;
+}
+
+// Report the afterfire counters for --afterfire-diagnostics. The skipped*
+// tallies are the point: when a run produces no pops they say WHICH gate
+// rejected every candidate (throttle too high, RPM too low, no overrun
+// detected...), which is the difference between tuning a parameter and guessing.
+//
+// getAfterfireDiagnostics() is a BridgeSimulator member rather than an
+// ISimulator one, so the cast is the seam — the same pattern (and the same
+// reason) as reconfigureGearboxProviders above. An empty vector means the
+// counters are not observable: either ATG_ENGINE_SIM_AFTERFIRE_SPIKE was not
+// compiled in (the bridge accessor is a no-op returning {}) or no engine was
+// loaded. Both cases are reported as unavailable rather than as "0 events",
+// because "0 events" would falsely imply the gates were evaluated and refused.
+void printAfterfireDiagnostics(ISimulator* simulator) {
+    auto* bridgeSimulator = dynamic_cast<BridgeSimulator*>(simulator);
+    const auto chambers = bridgeSimulator ? bridgeSimulator->getAfterfireDiagnostics()
+                                          : std::vector<AfterfireDiagnostics>{};
+
+    if (chambers.empty()) {
+        std::cout << "\nAfterfire diagnostics: unavailable"
+                  << " (no chamber counters — engine-sim built without"
+                     " ATG_ENGINE_SIM_AFTERFIRE_SPIKE, or no engine loaded)"
+                  << std::endl;
+    } else {
+        const AfterfireSummary summary = summariseAfterfire(chambers);
+        std::cout << "\nAfterfire diagnostics (" << chambers.size() << " chambers):"
+                  << "\n  events            = " << summary.totalEvents
+                  << "\n  skipped: cooldown = " << summary.skippedCooldown
+                  << ", lowRpm = " << summary.skippedLowRpm
+                  << ", throttle = " << summary.skippedThrottle
+                  << ", probability = " << summary.skippedProbability
+                  << ", maxEvents = " << summary.skippedMaxEvents
+                  << ", crankAngle = " << summary.skippedCrankAngle
+                  << ", noOverrun = " << summary.skippedNoOverrun
+                  << "\n  last event: peakPressure = " << summary.peakPressure
+                  << ", energy = " << summary.energyReleased
+                  << ", rpm = " << summary.eventRpm
+                  << ", throttle = " << summary.eventThrottle
+                  << std::endl;
+    }
+}
+
 // Print why playback stopped, based on how the session ended. Single exit point.
 void reportStopReason(const SimulationConfig& config) {
     if (config.interactive) {
@@ -366,6 +446,7 @@ int main(int argc, char* argv[]) {
         try {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
+        ShowAfterfireHeader(args.afterfire);
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
@@ -396,6 +477,21 @@ int main(int argc, char* argv[]) {
         while (result == EXIT_BUT_CONTINUE_NEXT) {
             const std::string& currentPath = paths[presetIndex];
             auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
+
+            // Afterfire: guarded exhaust pops on throttle-cut overrun. Applied
+            // directly to the simulator, NOT through SimulationConfig — the trio
+            // bridge's SimulationConfig carries no afterfire fields, so this is a
+            // post-creation configuration step alongside configureLoadTorque.
+            //
+            // Inside the preset-cycle loop on purpose: each cycle builds a fresh
+            // simulator with fresh chambers, so tuning applied once outside would
+            // be silently lost the moment the user pressed P.
+            //
+            // Unconditional: args.afterfire.enabled is false when the flag is
+            // absent, and pushing a disabled config is the explicit "off" state.
+            // BridgeSimulator::configureAfterfire warns and no-ops when
+            // ATG_ENGINE_SIM_AFTERFIRE_SPIKE was not compiled in.
+            SimulatorFactory::configureAfterfire(simulator.get(), args.afterfire, cliLogger.get());
 
             // Build SessionDependencies from the available dependencies
             SessionDependencies deps;
@@ -437,6 +533,13 @@ int main(int argc, char* argv[]) {
         // as EXIT_BUT_CONTINUE_NEXT). A null session here is a can't-happen
         // invariant violation — fail-fast rather than silently skip close().
         ASSERT(session, "session must exist after the run loop");
+
+        // --afterfire-diagnostics: report the counters accumulated during the run,
+        // read from the final session's simulator before it is closed.
+        if (args.afterfire.diagnostics) {
+            printAfterfireDiagnostics(session->getSimulator());
+        }
+
         session->close();
         }
         // Expected CLI errors: clean exit with the message. Unexpected exceptions
