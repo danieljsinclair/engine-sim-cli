@@ -84,6 +84,14 @@ add_compile_options(
 # independently via its own Makefile BEFORE this cmake configure runs.
 set(BRIDGE_USE_PREBUILT ON CACHE BOOL "Link against the pre-built static bridge archive (disable for iOS cross-build)")
 
+# Afterfire spike. MUST match how the bridge archive was built: the macro adds
+# members to CombustionChamber, and Engine::getChamber() is an inline function
+# indexing an array of them. If the CLI compiles without the macro but links an
+# archive built with it (or vice versa), chamber addressing silently diverges —
+# a layout/ODR bug, not a link error. Propagated as an INTERFACE definition on
+# the imported target below so every CLI translation unit agrees.
+option(ATG_ENGINE_SIM_AFTERFIRE_SPIKE "Enable exhaust afterfire spike (must match the bridge archive)" OFF)
+
 if(BRIDGE_USE_PREBUILT)
     # macOS: bridge builds independently via its own Makefile BEFORE cmake configure.
     if(NOT DEFINED BRIDGE_BUILD_DIR)
@@ -133,8 +141,16 @@ if(BRIDGE_USE_PREBUILT)
             "${CMAKE_SOURCE_DIR}/engine-sim-bridge/engine-sim/scripting/include"
         INTERFACE_LINK_LIBRARIES "${BRIDGE_INTERFACE_LIBS}"
     )
+
+    # An IMPORTED target carries no definitions of its own, so the macro the
+    # archive was compiled with must be re-declared here for CLI sources.
+    if(ATG_ENGINE_SIM_AFTERFIRE_SPIKE)
+        set_property(TARGET engine-sim-bridge APPEND PROPERTY
+            INTERFACE_COMPILE_DEFINITIONS ATG_ENGINE_SIM_AFTERFIRE_SPIKE)
+    endif()
 else()
-    # iOS: build bridge from source with the active toolchain.
+    # iOS: build bridge from source with the active toolchain. The bridge's own
+    # CMakeLists propagates the definition PUBLIC, so nothing extra is needed.
     add_subdirectory(engine-sim-bridge ${CMAKE_BINARY_DIR}/engine-sim-bridge)
 endif()
 
