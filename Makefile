@@ -104,7 +104,7 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .PHONY: all build clean clean-cli scrub-cli test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
-        coverage-run coverage-clean coverage-summary summary gate
+        coverage-run coverage-clean coverage-summary summary gate afterfire-smoke
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 .PHONY: build-cross-gate
 # gate MUST run its steps strictly in order: build -> test -> iOS cross ->
@@ -359,6 +359,17 @@ define run_bridge_only_stage
 		exit 1; \
 	fi
 endef
+
+# ---------------------------------------------------------------------------
+# afterfire-smoke -- non-interactive proof that exhaust pops actually fire.
+#
+# Deliberately NOT wired into `test`: the run drives a 13s telemetry trace
+# through the full physics pipeline, which takes minutes -- far too slow for the
+# inner test loop. It is an on-demand acceptance check.
+# Exit 0 = pops fired (events > 0); non-zero = no pops or setup failure.
+# ---------------------------------------------------------------------------
+afterfire-smoke:
+	@./scripts/afterfire_smoke.sh --binary $(BUILD_DIR)/engine-sim-cli
 
 test: build
 	+@if [ -f $(CLI_TEST_RESULTS) ] && \

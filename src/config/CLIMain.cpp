@@ -15,6 +15,7 @@
 #include "session/ISimulatorSession.h"
 #include "simulator/SimulatorFactory.h"
 #include "simulator/EngineSimTypes.h"
+#include "simulator/ScriptLoadHelpers.h"
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "input/KeyboardInput.h"
@@ -43,9 +44,11 @@
 #include "engine-sim/include/units.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <system_error>
 #include <vector>
 
 #include "config/KqueueSignalStopController.h"
@@ -153,9 +156,11 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     if (args.holdThrottle >= 0.0f) {
         target->setThrottle(static_cast<double>(args.holdThrottle));
     }
-    // --start: one-shot starter pulse so the CrankingController cranks the engine.
+    // --start: hold the starter switch depressed (S:1) until the engine catches,
+    // so the engine cranks and fires non-interactively instead of sitting at 0 RPM.
+    // setAutoStart() latches a held starter that the target releases once RPM is up.
     if (args.autoStart) {
-        target->setStarter();
+        target->setAutoStart();
     }
 
     // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
@@ -219,12 +224,66 @@ std::unique_ptr<presentation::IPresentation> createPresentation(const Simulation
     throw CliException("Failed to initialize presentation");
 }
 
+// Fail-fast preflight for a user-named script.
+//
+// Without this the CLI reports the first missing thing it happens to trip over,
+// deep inside the Piranha compiler or the WAV loader, in terms of a path the
+// user never typed. Checking up front lets the error name the script the user
+// asked for, the asset base derived from it, and the specific missing file.
+//
+// Two invariants, both fatal (throw CliException -> exit 1):
+//   1. the script itself exists and is readable;
+//   2. the resolved asset base actually contains sound-library/ — the WAV tree
+//      whose impulse responses every exhaust system needs. A tree without it
+//      (e.g. es_new/, which has the .mr files but an empty sound-library/)
+//      would otherwise run mute or die later with a confusing message.
+void verifyScriptRuntimeAssets(const std::string& scriptPath) {
+    namespace fs = std::filesystem;
+
+    // error_code overloads throughout: the throwing ones raise filesystem_error
+    // on ELOOP/EACCES rather than reporting "absent", which turns a bad symlink
+    // into an uncaught exception (SIGABRT) instead of a diagnosable CLI error.
+    std::error_code ec;
+    if (!fs::exists(scriptPath, ec) || ec) {
+        throw CliException("Engine script not found: " + scriptPath
+                           + (ec ? " (" + ec.message() + ")" : ""));
+    }
+
+    const std::string normalized = ScriptLoadHelpers::normalizeScriptPath(scriptPath);
+    const std::string assetBase = ScriptLoadHelpers::resolveAssetBasePath(normalized, "");
+
+    const fs::path soundLibrary = fs::path(assetBase) / "sound-library";
+    if (!fs::exists(soundLibrary, ec) || ec) {
+        throw CliException(
+            "Required audio assets not found: " + soundLibrary.string()
+            + "\n  (script: " + scriptPath + ", asset base: " + assetBase + ")"
+            + "\n  The asset base must be the directory that directly contains"
+              " 'sound-library/'. Run the engine from a tree that has the WAVs"
+              " (e.g. es/, not es_new/).");
+    }
+
+    // sound-library/ can exist but be empty — that is exactly the es_new/ case.
+    // An empty tree yields no impulse responses, i.e. a silent run, so treat it
+    // as missing rather than letting the run proceed with no audio.
+    const fs::path smooth = soundLibrary / "smooth";
+    if (fs::exists(smooth, ec) && !ec && fs::is_empty(smooth, ec) && !ec) {
+        throw CliException(
+            "Audio asset directory is empty: " + smooth.string()
+            + "\n  (script: " + scriptPath + ", asset base: " + assetBase + ")"
+            + "\n  Impulse-response WAVs are required; a run from this tree"
+              " would produce no exhaust audio.");
+    }
+}
+
 std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILogging* logger) {
     const std::string& scriptPath = args.engineConfig;
     constexpr const char* presetDir = DEFAULT_PRESET_DIR;
 
-    // .mr or .json script: run directly, no preset scan
+    // .mr or .json script: run directly, no preset scan. Preflight the runtime
+    // files first so a missing script / missing WAV tree is reported here, in
+    // the user's own terms, rather than as a late failure or a silent mute run.
     if (scriptPath.size() >= 3) {
+        verifyScriptRuntimeAssets(scriptPath);
         return {scriptPath};
     }
 
