@@ -107,7 +107,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     // the provider fires the starter on frame 0.
     if (args.liveTelemetry) {
         auto live = std::make_unique<input::LiveTelemetryProvider>(
-            std::cin, /*autoStart=*/true);
+            std::cin, /*autoStart=*/true, /*liveStream=*/true);
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
         }
