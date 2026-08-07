@@ -15,13 +15,17 @@ function not_shell_code() {
     # Base colors (for non-branch-specific)
     bg=#123456
     fg=#ABCDEF
+    #prompt_color=#654321
 
     # master/main branch overrides
     bg.virtual-ice-twin=#114455
-    
+
     bg!engine-sim-cli.claude=#46a866
     fg!engine-sim-cli.claude=#000000
 
     bg!engine-sim-cli.esp32=#8AB857
     fg!engine-sim-cli.esp32=#222222
+
+    bg!engine-sim-cli.preset=#432344
+    fg!engine-sim-cli.preset=#000000
 }
