@@ -104,6 +104,8 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
 
+    app.add_option("--wheel-coupling", args.wheelCoupling, "Live clutch wheel-coupling mode: 'free' (default — leaves sim speed independent so the mph-vs-target diagnostic stays visible), 'pin' (mirrors replay: pins sim vehicle speed to the CSV speed) or 'torque' (MATCH mode — injects recorded motor_torque_nm at the transmission input so road speed emerges from the solver)")->capture_default_str();
+
     // Mutual exclusions
     scriptOpt->excludes(engineConfigOpt);
     connectDemoOpt->excludes(scriptOpt);

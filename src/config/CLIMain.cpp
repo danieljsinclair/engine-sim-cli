@@ -37,6 +37,7 @@
 #include "input/LiveTelemetryProvider.h"
 #include "simulator/BridgeSimulator.h"
 #include "twin/IceVehicleProfile.h"
+#include "twin/WheelCoupling.h"
 #include "twin/GearboxCsvLogger.h"
 
 #include "engine-sim/include/simulator.h"
@@ -113,6 +114,21 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         }
         // Wire --start-from time slicing + the optional gearbox logger.
         live->setStartFromS(args.replay.startFromS);
+
+        // Validate + forward the live clutch wheel-coupling mode. Must be one of
+        // the supported strategies; reject anything else rather than silently
+        // falling back to FREE (fail-fast on a typo'd mode).
+        if (args.wheelCoupling == "free") {
+            live->setWheelCouplingMode(twin::WheelCouplingMode::Free);
+        } else if (args.wheelCoupling == "pin") {
+            live->setWheelCouplingMode(twin::WheelCouplingMode::Pin);
+        } else if (args.wheelCoupling == "torque") {
+            live->setWheelCouplingMode(twin::WheelCouplingMode::Torque);
+        } else {
+            throw CliException(
+                "--wheel-coupling must be 'free', 'pin' or 'torque', got: " + args.wheelCoupling);
+        }
+
         attachGearboxLogger(*live, args.gearbox.logPath);
         ctx.provider = std::move(live);
         return ctx;
@@ -307,8 +323,24 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
     const auto* rawSim = bridgeSim->getInternalSimulator();
     const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
     const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
-    // Anticipated bad/empty-preset state (no transmission or vehicle, or a
-    // preset with no gears) — silently leave the provider's default profile.
+
+    // The LIVE path (--live-telemetry) builds its twin with a hardcoded
+    // zf8hp45 default profile. If the named .mr did NOT supply a transmission +
+    // vehicle, that default would silently drive the engine (Bug C3). Fail fast
+    // rather than hiding the geometry mismatch — determinism over silent C63.
+    if (auto* live = dynamic_cast<input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
+        (void)live;
+        if (!trans || !vehicle || trans->getGearCount() <= 0) {
+            throw CliException(
+                "Live telemetry requested but the loaded script supplies no transmission/"
+                "vehicle geometry. The auto-gearbox twin has no ratios to match against. "
+                "Add a `vehicle` + `transmission` node (or `import` a shared block such as "
+                "tesla_y_performance.mr) to the .mr. Refusing to silently fall back to zf8hp45.");
+        }
+    }
+
+    // Replay / demo paths may legitimately run on the default profile when no
+    // geometry is present (legacy scripts), so leave the provider's default.
     if (!trans || !vehicle || trans->getGearCount() <= 0) return;
 
     std::vector<double> ratios;

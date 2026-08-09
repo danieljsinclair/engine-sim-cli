@@ -40,20 +40,20 @@ std::string joinPath(const std::string& dir, const std::string& rel) {
 
 std::string ExecutablePath::directory() noexcept {
 #if defined(__APPLE__)
-    char buf[PATH_MAX];
-    uint32_t size = sizeof(buf);
-    if (_NSGetExecutablePath(buf, &size) != 0) {
+    std::vector<char> buf(PATH_MAX);
+    uint32_t size = static_cast<uint32_t>(buf.size());
+    if (_NSGetExecutablePath(buf.data(), &size) != 0) {
         // Buffer too small: size now holds the required length. Retry with a
         // larger stack buffer is not possible, so bail out gracefully.
         return "";
     }
-    return parentDir(std::string(buf));
+    return parentDir(std::string(buf.data()));
 #elif defined(__linux__)
-    char buf[PATH_MAX];
-    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    std::vector<char> buf(PATH_MAX);
+    ssize_t len = readlink("/proc/self/exe", buf.data(), buf.size() - 1);
     if (len <= 0) return "";
-    buf[len] = '\0';
-    return parentDir(std::string(buf));
+    buf[static_cast<size_t>(len)] = '\0';
+    return parentDir(std::string(buf.data()));
 #elif defined(_WIN32)
     wchar_t buf[MAX_PATH];
     DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);

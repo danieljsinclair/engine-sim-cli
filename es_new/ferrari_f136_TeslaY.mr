@@ -1,0 +1,14 @@
+import "engine_sim.mr"
+import "themes/default.mr"
+import "engines/atg-video-2/08_ferrari_f136_v8.mr"
+import "tesla_y_performance.mr"
+
+use_default_theme()
+
+// Keep the Ferrari F136 V8 engine sound, but run it on the Tesla Model Y
+// single-speed drivetrain (9.00:1 final drive, no shifting). We deliberately do
+// NOT call the imported module's `main()` node (which would apply the Mustang
+// geometry).
+set_engine(f136_v8())
+set_transmission(tesla_y_transmission())
+set_vehicle(tesla_y_vehicle())

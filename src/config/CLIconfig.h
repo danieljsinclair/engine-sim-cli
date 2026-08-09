@@ -62,6 +62,12 @@ struct CommandLineArgs {
     // so the consumer cannot tell them apart. Implies --start (fires starter on frame 0).
     bool liveTelemetry = false;  // --live-telemetry
 
+    // Live clutch wheel-coupling mode (--wheel-coupling): "free" (default — slip
+    // lock uses the actual simulated wheel speed; sim speed stays independent so
+    // the mph-vs-target diagnostic is visible) or "pin" (mirrors replay: the slip
+    // lock and the sim vehicle speed are pinned to the CSV road speed).
+    std::string wheelCoupling = "free";
+
     // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
