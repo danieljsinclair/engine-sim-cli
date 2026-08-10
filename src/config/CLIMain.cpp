@@ -328,7 +328,7 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
     // zf8hp45 default profile. If the named .mr did NOT supply a transmission +
     // vehicle, that default would silently drive the engine (Bug C3). Fail fast
     // rather than hiding the geometry mismatch — determinism over silent C63.
-    if (auto* live = dynamic_cast<input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
+    if (const auto* live = dynamic_cast<input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
         (void)live;
         if (!trans || !vehicle || trans->getGearCount() <= 0) {
             throw CliException(

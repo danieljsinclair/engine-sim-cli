@@ -3,6 +3,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -18,11 +19,11 @@ namespace cli {
 namespace {
 
 // Parent directory of `path` (no trailing slash), or "" at the filesystem root.
-std::string parentDir(const std::string& path) {
+std::string parentDir(std::string_view path) {
     const auto pos = path.find_last_of('/');
-    if (pos == std::string::npos) return "";
+    if (pos == std::string_view::npos) return "";
     if (pos == 0) return "/";
-    return path.substr(0, pos);
+    return std::string(path.substr(0, pos));
 }
 
 std::string joinPath(const std::string& dir, const std::string& rel) {
@@ -41,19 +42,18 @@ std::string joinPath(const std::string& dir, const std::string& rel) {
 std::string ExecutablePath::directory() noexcept {
 #if defined(__APPLE__)
     std::vector<char> buf(PATH_MAX);
-    uint32_t size = static_cast<uint32_t>(buf.size());
-    if (_NSGetExecutablePath(buf.data(), &size) != 0) {
+    if (auto size = static_cast<uint32_t>(buf.size()); _NSGetExecutablePath(buf.data(), &size) != 0) {
         // Buffer too small: size now holds the required length. Retry with a
         // larger stack buffer is not possible, so bail out gracefully.
         return "";
     }
-    return parentDir(std::string(buf.data()));
+    return parentDir(buf.data());
 #elif defined(__linux__)
     std::vector<char> buf(PATH_MAX);
     ssize_t len = readlink("/proc/self/exe", buf.data(), buf.size() - 1);
     if (len <= 0) return "";
     buf[static_cast<size_t>(len)] = '\0';
-    return parentDir(std::string(buf.data()));
+    return parentDir(buf.data());
 #elif defined(_WIN32)
     wchar_t buf[MAX_PATH];
     DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
@@ -81,13 +81,14 @@ std::string ExecutablePath::resolveResource(
     //    root regardless of CWD.
     if (!exeDir.empty()) {
         std::string dir = exeDir;
-        for (int depth = 0; depth < 8 && !dir.empty(); ++depth) {
+        int depth = 0;
+        while (depth < 8 && !dir.empty()) {
             const std::string candidate = joinPath(dir, relativeResourcePath);
-            std::error_code ec;
-            if (std::filesystem::exists(candidate, ec)) {
+            if (std::error_code ec; std::filesystem::exists(candidate, ec)) {
                 return candidate;
             }
             dir = parentDir(dir);
+            ++depth;
         }
     }
 
