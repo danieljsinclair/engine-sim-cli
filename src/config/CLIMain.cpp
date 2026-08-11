@@ -399,42 +399,56 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
 // meaningful pop, and how big was it" — the question a smoke run is asking.
 struct AfterfireSummary {
     int totalEvents = 0;
-    int skippedCooldown = 0;
-    int skippedLowRpm = 0;
-    int skippedThrottle = 0;
-    int skippedProbability = 0;
-    int skippedMaxEvents = 0;
-    int skippedCrankAngle = 0;
-    int skippedNoOverrun = 0;
+    int skippedTooCold = 0;
+    int skippedNoFuel = 0;
+    int skippedNoOxygen = 0;
+    int skippedNotReady = 0;
+    int misfireCycles = 0;
+    double maxIgnitionProgress = 0.0;
+    double maxRunnerTempK = 0.0;
+    double maxRawFuelFraction = 0.0;
+    double minManifoldPressurePa = 0.0;
     double peakPressure = 0.0;
     double energyReleased = 0.0;
     double eventRpm = 0.0;
-    double eventThrottle = 0.0;
+    double eventRunnerTempK = 0.0;
 };
 
 AfterfireSummary summariseAfterfire(const std::vector<AfterfireDiagnostics>& chambers) {
     AfterfireSummary summary;
     for (const auto& chamber : chambers) {
         summary.totalEvents += chamber.eventCount;
-        summary.skippedCooldown += chamber.skippedCooldown;
-        summary.skippedLowRpm += chamber.skippedLowRpm;
-        summary.skippedThrottle += chamber.skippedThrottle;
-        summary.skippedProbability += chamber.skippedProbability;
-        summary.skippedMaxEvents += chamber.skippedMaxEvents;
-        summary.skippedCrankAngle += chamber.skippedCrankAngle;
-        summary.skippedNoOverrun += chamber.skippedNoOverrun;
+        summary.skippedTooCold += chamber.skippedTooCold;
+        summary.skippedNoFuel += chamber.skippedNoFuel;
+        summary.skippedNoOxygen += chamber.skippedNoOxygen;
+        summary.skippedNotReady += chamber.skippedNotReady;
+        summary.misfireCycles += chamber.misfireCycles;
+        summary.maxIgnitionProgress = std::max(summary.maxIgnitionProgress, chamber.maxIgnitionProgress);
+        summary.maxRunnerTempK = std::max(summary.maxRunnerTempK, chamber.maxRunnerTempK);
+        summary.maxRawFuelFraction =
+            std::max(summary.maxRawFuelFraction, chamber.maxRawFuelFraction);
+        // Minimum across chambers, skipping the sentinel 0 that means "never sampled".
+        if (chamber.minManifoldPressurePa > 0.0) {
+            summary.minManifoldPressurePa = (summary.minManifoldPressurePa == 0.0)
+                ? chamber.minManifoldPressurePa
+                : std::min(summary.minManifoldPressurePa, chamber.minManifoldPressurePa);
+        }
         summary.peakPressure = std::max(summary.peakPressure, chamber.lastEventPeakPressure);
         summary.energyReleased = std::max(summary.energyReleased, chamber.lastEventEnergyReleased);
         summary.eventRpm = std::max(summary.eventRpm, chamber.lastEventRpm);
-        summary.eventThrottle = std::max(summary.eventThrottle, chamber.lastEventThrottle);
+        summary.eventRunnerTempK = std::max(summary.eventRunnerTempK, chamber.lastEventRunnerTempK);
     }
     return summary;
 }
 
 // Report the afterfire counters for --afterfire-diagnostics. The skipped*
-// tallies are the point: when a run produces no pops they say WHICH gate
-// rejected every candidate (throttle too high, RPM too low, no overrun
-// detected...), which is the difference between tuning a parameter and guessing.
+// tallies are the point: when a run produces no pops they name the PHYSICAL
+// precondition that was missing (pipe never reached auto-ignition, no unburnt
+// fuel present, no oxygen left, or reactive-but-scavenged-too-soon). Read them
+// with maxIgnitionProgress: a value near 1.0 means the charge was on the verge
+// of lighting and the pipe just needs to hold it a little longer, whereas a
+// value near 0 means the mixture was never reactive in the first place. That
+// distinction is the difference between tuning a parameter and guessing.
 //
 // getAfterfireDiagnostics() is a BridgeSimulator member rather than an
 // ISimulator one, so the cast is the seam — the same pattern (and the same
@@ -456,18 +470,20 @@ void printAfterfireDiagnostics(ISimulator* simulator) {
     } else {
         const AfterfireSummary summary = summariseAfterfire(chambers);
         std::cout << "\nAfterfire diagnostics (" << chambers.size() << " chambers):"
-                  << "\n  events            = " << summary.totalEvents
-                  << "\n  skipped: cooldown = " << summary.skippedCooldown
-                  << ", lowRpm = " << summary.skippedLowRpm
-                  << ", throttle = " << summary.skippedThrottle
-                  << ", probability = " << summary.skippedProbability
-                  << ", maxEvents = " << summary.skippedMaxEvents
-                  << ", crankAngle = " << summary.skippedCrankAngle
-                  << ", noOverrun = " << summary.skippedNoOverrun
+                  << "\n  events             = " << summary.totalEvents
+                  << "\n  not ignited: tooCold = " << summary.skippedTooCold
+                  << ", noFuel = " << summary.skippedNoFuel
+                  << ", noOxygen = " << summary.skippedNoOxygen
+                  << ", inductionIncomplete = " << summary.skippedNotReady
+                  << "\n  misfire cycles (raw fuel into exhaust) = " << summary.misfireCycles
+                  << ", min manifold pressure = " << summary.minManifoldPressurePa / 1000.0 << " kPa"
+                  << "\n  exhaust runner peaks: T = " << summary.maxRunnerTempK << " K"
+                  << ", rawFuelFraction = " << summary.maxRawFuelFraction
+                  << ", ignitionProgress = " << summary.maxIgnitionProgress
                   << "\n  last event: peakPressure = " << summary.peakPressure
                   << ", energy = " << summary.energyReleased
                   << ", rpm = " << summary.eventRpm
-                  << ", throttle = " << summary.eventThrottle
+                  << ", runnerT = " << summary.eventRunnerTempK << " K"
                   << std::endl;
     }
 }
@@ -550,7 +566,16 @@ int main(int argc, char* argv[]) {
             // absent, and pushing a disabled config is the explicit "off" state.
             // BridgeSimulator::configureAfterfire warns and no-ops when
             // ATG_ENGINE_SIM_AFTERFIRE_SPIKE was not compiled in.
-            SimulatorFactory::configureAfterfire(simulator.get(), args.afterfire, cliLogger.get());
+            //
+            // A false return means --afterfire-wav named a file or glob that
+            // matched nothing. That is a user error: continuing would run the
+            // whole simulation with the engine's default impulse response while
+            // appearing to honour the flag, so fail fast with the bad argument
+            // named rather than producing silently wrong audio.
+            if (!SimulatorFactory::configureAfterfire(simulator.get(), args.afterfire, cliLogger.get())) {
+                throw CliException("--afterfire-wav '" + args.afterfire.afterfireWavPath
+                                   + "' matched no files");
+            }
 
             // Build SessionDependencies from the available dependencies
             SessionDependencies deps;

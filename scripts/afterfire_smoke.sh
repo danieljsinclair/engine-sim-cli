@@ -27,7 +27,10 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-BINARY="build-cli/engine-sim-cli"
+# Default to the Makefile's BUILD_DIR (build/), NOT build-cli/. They can both
+# exist, and a stale build-cli/ binary silently passes this check against
+# old code — which is exactly what happened once and cost real debugging time.
+BINARY="build/engine-sim-cli"
 SCRIPT_MR="es/C63_M156_V3.mr"
 CSV="scripts/fixtures/afterfire_rev_cut.csv"
 KEEP_LOG=0
@@ -42,15 +45,16 @@ KEEP_LOG=0
 # whole point of an unattended smoke check.
 TRACE_SECONDS=13
 
-# Afterfire tuning for the smoke run. probability=1.0 makes the probability gate
-# deterministic -- the default 0.5 coin-flips each candidate, which is correct
-# for a road feel but makes a pass/fail gate flaky. rpm-min is lowered from the
-# 1800 default because the observed coast decays through the band quickly and we
-# want the whole coast eligible, not just its first moments.
+# Afterfire settings for the smoke run: the SHIPPED DEFAULTS, unmodified.
+#
+# Nothing needs relaxing any more. The model is physical -- a pop happens when a
+# misfiring (deep-vacuum) cycle pumps raw fuel into a runner that is hot enough
+# to auto-ignite it before the pipe scavenges it away -- so there is no
+# probability coin-flip to pin to 1.0 and no RPM band to widen. That makes this
+# check strictly stronger than before: it proves the effect works AS SHIPPED
+# rather than only under smoke-test-only tuning.
 AF_ARGS=(
   --enable-afterfire
-  --afterfire-probability 1.0
-  --afterfire-rpm-min 1200
   --afterfire-diagnostics
 )
 

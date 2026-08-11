@@ -95,4 +95,10 @@ void ShowAfterfireHeader(const AfterfireConfig& afterfire);
 // Returns -1.0 on invalid input.
 double parseReplayTimeToSeconds(const std::string& s);
 
+// Resolve a --afterfire-wav argument (literal path OR glob) against the
+// executable's install root, resolving only the DIRECTORY component and leaving
+// glob metacharacters in the filename intact for the bridge to expand.
+// An empty input yields an empty result ("use the engine default IR").
+std::string resolveAfterfireWavArgument(const std::string& rawPath);
+
 #endif // CLI_CONFIG_H

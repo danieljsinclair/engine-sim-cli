@@ -2,12 +2,14 @@
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
 
 #include "CLIconfig.h"
+#include "config/ExecutablePath.h"
 #include "simulation/SimulationLoop.h"
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -44,18 +46,17 @@ void printUsage(const char* progName) {
     // Defaults are read off a default-constructed AfterfireConfig rather than
     // typed in as literals, so --help can never advertise a stale number.
     const AfterfireConfig afterfireDefaults;
-    std::cout << "  --enable-afterfire   Enable guarded exhaust afterfire pops on all chambers\n";
-    std::cout << "  --afterfire-intensity <0-1>          Pop pressure intensity (default: " << afterfireDefaults.intensity << ")\n";
-    std::cout << "  --afterfire-cooldown-ms <ms>         Minimum gap between pops on one chamber (default: " << afterfireDefaults.cooldownMs << ")\n";
-    std::cout << "  --afterfire-throttle-cutoff <0-1>    Only pop below this throttle (default: " << afterfireDefaults.throttleCutoff << ")\n";
-    std::cout << "  --afterfire-rpm-min <rpm>            Only pop above this RPM (default: " << afterfireDefaults.rpmMin << ")\n";
-    std::cout << "  --afterfire-fuel-fraction <0-0.02>   Exhaust fuel fraction per pop (default: " << afterfireDefaults.fuelFraction << ")\n";
-    std::cout << "  --afterfire-probability <0-1>        Per-candidate pop probability (default: " << afterfireDefaults.probability << ")\n";
-    std::cout << "  --afterfire-decel-window-ms <ms>     Decel detection window (default: " << afterfireDefaults.decelWindowMs << ")\n";
-    std::cout << "  --afterfire-max-events-per-decel <n> Max pops per decel event (default: " << afterfireDefaults.maxEventsPerDecel << ")\n";
-    std::cout << "  --afterfire-rpm-fall-threshold <rpm> RPM drop per step that counts as overrun (default: " << afterfireDefaults.rpmFallThreshold << ")\n";
-    std::cout << "  --afterfire-pop-interval-ms <ms>     Min sim-time between any two pops (default: " << afterfireDefaults.globalPopIntervalMs << ")\n";
-    std::cout << "  --afterfire-diagnostics              Print afterfire pop/skip counters at exit\n\n";
+    std::cout << "  --enable-afterfire   Enable exhaust afterfire (auto-ignition of unburnt fuel in hot runners)\n";
+    std::cout << "  --afterfire-misfire-map-kpa <kPa>    Manifold pressure below which cycles misfire (default: " << afterfireDefaults.misfireManifoldPressurePa / 1000.0 << ")\n";
+    std::cout << "  --afterfire-ignition-delay-s <s>     Induction time at the reference temperature (default: " << afterfireDefaults.ignitionDelayRefS << ")\n";
+    std::cout << "  --afterfire-activation-temp-k <K>    Arrhenius activation temperature (default: " << afterfireDefaults.activationTempK << ")\n";
+    std::cout << "  --afterfire-ref-temp-k <K>           Reference temperature for the induction time (default: " << afterfireDefaults.refTempK << ")\n";
+    std::cout << "  --afterfire-autoignition-temp-k <K>  Auto-ignition temperature floor (default: " << afterfireDefaults.autoIgnitionTempK << ")\n";
+    std::cout << "  --afterfire-min-fuel <0-1>           Minimum runner RAW fuel mole fraction (default: " << afterfireDefaults.minRawFuelFraction << ")\n";
+    std::cout << "  --afterfire-min-oxygen <0-1>         Minimum runner O2 mole fraction (default: " << afterfireDefaults.minOxygenMoleFraction << ")\n";
+    std::cout << "  --afterfire-energy-scale <0-10>      Trim on released energy, 1 = physical (default: " << afterfireDefaults.energyScale << ")\n";
+    std::cout << "  --afterfire-wav <path|glob>        Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.\n";
+    std::cout << "  --afterfire-diagnostics              Print afterfire event/non-ignition counters at exit\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
     std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
@@ -97,32 +98,67 @@ namespace {
 // there is no CLI-side copy of the tuning values to keep in step.
 void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
     app.add_flag("--enable-afterfire", afterfire.enabled,
-                 "Enable guarded exhaust afterfire pops on all chambers");
-    app.add_option("--afterfire-intensity", afterfire.intensity,
-                   "Pop pressure intensity (0-1)")->check(CLI::Range(0.0, 1.0));
-    app.add_option("--afterfire-cooldown-ms", afterfire.cooldownMs,
-                   "Minimum gap between pops on one chamber (ms)")->check(CLI::Range(0.0, 5000.0));
-    app.add_option("--afterfire-throttle-cutoff", afterfire.throttleCutoff,
-                   "Only pop below this throttle (0-1)")->check(CLI::Range(0.0, 1.0));
-    app.add_option("--afterfire-rpm-min", afterfire.rpmMin,
-                   "Only pop above this RPM")->check(CLI::Range(0.0, 20000.0));
-    app.add_option("--afterfire-fuel-fraction", afterfire.fuelFraction,
-                   "Exhaust fuel fraction per pop (0-0.02)")->check(CLI::Range(0.0, 0.02));
-    app.add_option("--afterfire-probability", afterfire.probability,
-                   "Per-candidate pop probability (0-1)")->check(CLI::Range(0.0, 1.0));
-    app.add_option("--afterfire-decel-window-ms", afterfire.decelWindowMs,
-                   "Decel detection window (ms)")->check(CLI::Range(0.0, 10000.0));
-    app.add_option("--afterfire-max-events-per-decel", afterfire.maxEventsPerDecel,
-                   "Max pops per decel event")->check(CLI::Range(0, 20));
-    app.add_option("--afterfire-rpm-fall-threshold", afterfire.rpmFallThreshold,
-                   "RPM drop per step that counts as overrun")->check(CLI::Range(0.0, 5000.0));
-    app.add_option("--afterfire-pop-interval-ms", afterfire.globalPopIntervalMs,
-                   "Min sim-time between any two pops (ms)")->check(CLI::Range(0.0, 5000.0));
+                 "Enable exhaust afterfire (auto-ignition of unburnt fuel in hot runners)");
+    app.add_option("--afterfire-misfire-map-kpa", afterfire.misfireManifoldPressurePa,
+                   "Manifold pressure below which cycles misfire (Pa)")->check(CLI::Range(0.0, 500000.0));
+    app.add_option("--afterfire-ignition-delay-s", afterfire.ignitionDelayRefS,
+                   "Induction time at the reference temperature (s)")->check(CLI::Range(1e-6, 10.0));
+    app.add_option("--afterfire-activation-temp-k", afterfire.activationTempK,
+                   "Arrhenius activation temperature (K)")->check(CLI::Range(0.0, 100000.0));
+    app.add_option("--afterfire-ref-temp-k", afterfire.refTempK,
+                   "Reference temperature for the induction time (K)")->check(CLI::Range(1.0, 10000.0));
+    app.add_option("--afterfire-autoignition-temp-k", afterfire.autoIgnitionTempK,
+                   "Auto-ignition temperature floor (K)")->check(CLI::Range(0.0, 10000.0));
+    app.add_option("--afterfire-min-fuel", afterfire.minRawFuelFraction,
+                   "Minimum runner raw-fuel mole fraction")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--afterfire-min-oxygen", afterfire.minOxygenMoleFraction,
+                   "Minimum runner O2 mole fraction")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--afterfire-energy-scale", afterfire.energyScale,
+                   "Trim on released energy, 1 = physical")->check(CLI::Range(0.0, 10.0));
+    app.add_option("--afterfire-wav", afterfire.afterfireWavPath,
+                   "Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.");
     app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
-                 "Print afterfire pop/skip counters at exit");
+                 "Print afterfire event/non-ignition counters at exit");
 }
 
 }  // namespace
+
+// Resolve a --afterfire-wav argument to an install-root-relative location while
+// leaving any glob metacharacters in the FILENAME untouched.
+//
+// ExecutablePath::resolveResource() is a generic resource resolver: it probes
+// std::filesystem::exists() on the whole candidate. Handing it "dir/smooth_2*.wav"
+// therefore always misses (no file is literally named "smooth_2*.wav"), so it
+// falls through to its best-effort install-relative path and the glob never
+// reaches a directory that exists. Splitting the argument keeps each component
+// doing one job: ExecutablePath locates the DIRECTORY, resolveAfterfireWavPaths
+// (bridge side) expands the PATTERN within it.
+//
+// The leaf is re-appended verbatim, so a literal filename behaves exactly as
+// before and a glob is preserved for the bridge to expand.
+std::string resolveAfterfireWavArgument(const std::string& rawPath) {
+    std::string resolved;
+
+    if (!rawPath.empty()) {
+        const std::filesystem::path raw(rawPath);
+        const std::string leaf = raw.filename().string();
+
+        if (raw.has_parent_path()) {
+            const std::string parent = raw.parent_path().string();
+            // Resolve the directory only — it contains no glob characters, so
+            // the exists() probe inside resolveResource is meaningful.
+            const std::string resolvedDir = cli::ExecutablePath::resolveResource(parent);
+            resolved = (std::filesystem::path(resolvedDir) / leaf).string();
+        }
+        else {
+            // A bare filename with no directory component: resolve as-is. A glob
+            // here refers to the CWD, which resolveAfterfireWavPaths handles.
+            resolved = cli::ExecutablePath::resolveResource(rawPath);
+        }
+    }
+
+    return resolved;
+}
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     CLI::App app{"Engine Simulator CLI v2.0"};
@@ -156,7 +192,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
 
     // Mutual exclusions
-    scriptOpt->excludes(engineConfigOpt);
+    // scriptOpt->excludes(engineConfigOpt);  // Allow both --script and positional engine_config
     connectDemoOpt->excludes(scriptOpt);
     connectDemoOpt->excludes(engineConfigOpt);
     // --live-telemetry COMBINES with --script so the user can drive a NAMED
@@ -231,6 +267,16 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     }
 
     args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;
+
+    // Resolve the afterfire WAV path relative to the executable's install root
+    // (the same base the sound-library WAVs ship under), so --afterfire-wav
+    // works regardless of the caller's CWD. The bridge receives an absolute
+    // path-or-glob and expands it (glob -> pick one file) at configure time.
+    // An empty path is left empty (engine default IR is used).
+    if (!args.afterfire.afterfireWavPath.empty()) {
+        args.afterfire.afterfireWavPath =
+            resolveAfterfireWavArgument(args.afterfire.afterfireWavPath);
+    }
 
     auto fail = [&](const char* message) {
         std::cerr << message;
@@ -347,16 +393,14 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
 void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
     if (afterfire.enabled) {
         std::cout << "  Afterfire: " << ANSIColors::GREEN << "Enabled" << ANSIColors::RESET << "\n";
-        std::cout << "    Intensity:            " << afterfire.intensity << "\n";
-        std::cout << "    Cooldown:             " << afterfire.cooldownMs << " ms\n";
-        std::cout << "    Throttle cutoff:      " << afterfire.throttleCutoff << "\n";
-        std::cout << "    RPM min:              " << afterfire.rpmMin << "\n";
-        std::cout << "    Fuel fraction:        " << afterfire.fuelFraction << "\n";
-        std::cout << "    Probability:          " << afterfire.probability << "\n";
-        std::cout << "    Decel window:         " << afterfire.decelWindowMs << " ms\n";
-        std::cout << "    Max events per decel: " << afterfire.maxEventsPerDecel << "\n";
-        std::cout << "    RPM fall threshold:   " << afterfire.rpmFallThreshold << "\n";
-        std::cout << "    Min pop interval:     " << afterfire.globalPopIntervalMs << " ms\n";
+        std::cout << "    Auto-ignition temp:   " << afterfire.autoIgnitionTempK << " K\n";
+        std::cout << "    Induction time:       " << afterfire.ignitionDelayRefS * 1000.0
+                  << " ms at " << afterfire.refTempK << " K\n";
+        std::cout << "    Activation temp:      " << afterfire.activationTempK << " K\n";
+        std::cout << "    Misfire below MAP:    " << afterfire.misfireManifoldPressurePa / 1000.0 << " kPa\n";
+        std::cout << "    Min raw fuel frac:    " << afterfire.minRawFuelFraction << "\n";
+        std::cout << "    Min oxygen fraction:  " << afterfire.minOxygenMoleFraction << "\n";
+        std::cout << "    Energy scale:         " << afterfire.energyScale << "\n";
         std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
         std::cout << "\n";
     }

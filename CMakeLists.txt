@@ -142,6 +142,46 @@ if(BRIDGE_USE_PREBUILT)
         INTERFACE_LINK_LIBRARIES "${BRIDGE_INTERFACE_LIBS}"
     )
 
+    # RESILIENCE: the IMPORTED archive above is linked ORDER-ONLY by the Ninja
+    # generator (CMake's default for IMPORTED targets), so a rebuilt bridge
+    # archive (e.g. after editing engine-sim sources) does NOT relink
+    # engine-sim-cli — producing a STALE BINARY that silently omits changes.
+    # (That was the cause of a WAV-feature fix appearing to "not work" while all
+    # tests passed: the CLI-layer edits linked into the binary, the engine-sim
+    # audio edits never did.)
+    #
+    # Every obvious lever is folded into the order-only bucket for an
+    # IMPORTED-library consumer (LINK_DEPENDS, OBJECT_DEPENDS, add_dependencies,
+    # even a stamp added via target_sources) — because the archives are already
+    # known as order-only link deps, Ninja dedupes any repeat reference into
+    # order-only, and order-only edges rebuild only when a file is MISSING, never
+    # when it is NEWER.
+    #
+    # What DOES work: make the anchor a GENERATED source. A custom-command output
+    # consumed as a target source is a non-order-only compile prerequisite whose
+    # mtime is tracked, and the custom command's DEPENDS on the archives are
+    # explicit. So: archive rebuilt -> custom command reruns -> generated
+    # anchor.cpp gets a fresh mtime -> its .o is recompiled -> that .o is an
+    # explicit input to the link edge -> RELINK. The chain is real end to end.
+    set(BRIDGE_LINK_DEPENDS_FILES "${BRIDGE_STATIC_LIB}")
+    foreach(_dep ${BRIDGE_LINK_DEPS})
+        list(APPEND BRIDGE_LINK_DEPENDS_FILES "${_dep}")
+    endforeach()
+    set(BRIDGE_RELINK_ANCHOR_SRC "${CMAKE_SOURCE_DIR}/cmake/bridge_relink_anchor.cpp")
+    set(BRIDGE_RELINK_ANCHOR_GEN "${CMAKE_BINARY_DIR}/bridge_relink_anchor.cpp")
+    add_custom_command(
+        OUTPUT "${BRIDGE_RELINK_ANCHOR_GEN}"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${BRIDGE_RELINK_ANCHOR_SRC}" "${BRIDGE_RELINK_ANCHOR_GEN}"
+        DEPENDS "${BRIDGE_RELINK_ANCHOR_SRC}" ${BRIDGE_LINK_DEPENDS_FILES}
+        COMMENT "Bridge archive relink anchor (regenerated when archives change)"
+    )
+    # Compile the generated anchor into a consumer so its object — an explicit
+    # link input — ties the consumer's link edge to the archives' mtimes.
+    function(atg_link_bridge_archive target)
+        target_sources("${target}" PRIVATE "${BRIDGE_RELINK_ANCHOR_GEN}")
+    endfunction()
+
     # An IMPORTED target carries no definitions of its own, so the macro the
     # archive was compiled with must be re-declared here for CLI sources.
     if(ATG_ENGINE_SIM_AFTERFIRE_SPIKE)
@@ -185,6 +225,13 @@ target_link_libraries(engine-sim-cli
     Threads::Threads
     CLI11::CLI11
 )
+
+# Non-order-only link dependency on the bridge archive(s): relink the CLI
+# whenever any archive is rebuilt (see resilience block above). Without this the
+# IMPORTED archive is order-only and changes to engine-sim are silently absent.
+if(BRIDGE_USE_PREBUILT)
+    atg_link_bridge_archive(engine-sim-cli)
+endif()
 
 # Define BUILDING_FROM_PARENT_REPO when building bridge sources for CLI
 target_compile_definitions(engine-sim-cli PRIVATE BUILDING_FROM_PARENT_REPO)

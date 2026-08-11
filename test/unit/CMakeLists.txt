@@ -39,6 +39,11 @@ target_link_libraries(unit_tests
         CLI11::CLI11
 )
 
+# Relink when the pre-built bridge archive changes (non-order-only edge).
+if(BRIDGE_USE_PREBUILT)
+    atg_link_bridge_archive(unit_tests)
+endif()
+
 # SimulationLoop and EngineConfig are now in engine-sim-bridge library
 # (linked via target_link_libraries above)
 

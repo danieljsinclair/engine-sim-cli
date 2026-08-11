@@ -1,6 +1,8 @@
 #include "config/CLIconfig.h"
 #include "gtest/gtest.h"
 
+#include <filesystem>
+
 TEST(CommandLineParserTest, ParsesOutputPathWithoutScript) {
     const char* argv[] = {"engine-sim-cli", "recording.wav"};
     CommandLineArgs args;
@@ -176,4 +178,59 @@ TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
     CommandLineArgs args;
 
     EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
+}
+
+// ============================================================================
+// --afterfire-wav resolution
+// ============================================================================
+// The argument may be a literal path OR a glob. Resolution must locate the
+// DIRECTORY against the install root while leaving glob metacharacters in the
+// filename untouched, so the bridge can expand them against a directory that
+// actually exists. Resolving the whole string (the previous behaviour) made
+// every glob miss, because no file is literally named "smooth_2*.wav" — the
+// pattern silently degraded to the engine's default impulse response.
+
+// A glob must survive resolution intact: the '*' stays in the leaf and the
+// parent directory is resolved to somewhere that exists.
+TEST(AfterfireWavArgumentTest, GlobLeafSurvivesDirectoryResolution) {
+    const std::string resolved =
+        resolveAfterfireWavArgument("es/sound-library/smooth/smooth_2*.wav");
+
+    ASSERT_FALSE(resolved.empty());
+    const std::filesystem::path p(resolved);
+    EXPECT_EQ(p.filename().string(), "smooth_2*.wav")
+        << "the glob pattern must be preserved verbatim for the bridge to expand";
+    EXPECT_TRUE(std::filesystem::is_directory(p.parent_path()))
+        << "parent must resolve to a real directory, got: " << p.parent_path();
+}
+
+// The literal-path case must keep working — same directory resolution, and the
+// result must point at a file that exists.
+TEST(AfterfireWavArgumentTest, LiteralPathResolvesToExistingFile) {
+    const std::string resolved =
+        resolveAfterfireWavArgument("es/sound-library/smooth/smooth_20.wav");
+
+    ASSERT_FALSE(resolved.empty());
+    EXPECT_TRUE(std::filesystem::exists(resolved))
+        << "literal path should resolve to a real file, got: " << resolved;
+}
+
+// Empty means "use the engine default IR" and must stay empty — an empty string
+// is the documented sentinel, so resolution must not invent a path for it.
+TEST(AfterfireWavArgumentTest, EmptyArgumentStaysEmpty) {
+    EXPECT_TRUE(resolveAfterfireWavArgument("").empty());
+}
+
+// A non-matching glob must still resolve (to a real directory + the pattern).
+// Detecting "matched nothing" is the bridge's job at configure time; the CLI
+// resolver must not swallow it here, or fail-fast could never fire.
+TEST(AfterfireWavArgumentTest, NonMatchingGlobStillResolvesForLaterExpansion) {
+    const std::string resolved =
+        resolveAfterfireWavArgument("es/sound-library/smooth/smooth_P*.wav");
+
+    ASSERT_FALSE(resolved.empty());
+    const std::filesystem::path p(resolved);
+    EXPECT_EQ(p.filename().string(), "smooth_P*.wav");
+    EXPECT_FALSE(std::filesystem::exists(resolved))
+        << "no file matches this pattern literally; the bridge reports the miss";
 }

@@ -21,7 +21,7 @@ BUILD_PHASE0_SPIKES ?= OFF
 #   grep ATG_ENGINE_SIM_AFTERFIRE_SPIKE engine-sim-bridge/build/CMakeCache.txt).
 # Changing this does NOT invalidate an existing cache — the CMakeCache.txt rule
 # has no dependency on it. Run `rm -f $(BUILD_DIR)/CMakeCache.txt` when flipping.
-ATG_ENGINE_SIM_AFTERFIRE_SPIKE ?= OFF
+ATG_ENGINE_SIM_AFTERFIRE_SPIKE ?= ON
 # Set to 1 to allow Debug builds (needed for coverage instrumentation).
 ALLOW_DEBUG_BUILD ?= 0
 CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
