@@ -165,21 +165,6 @@ TEST(CommandLineParserTest, LiveTelemetryCombinesWithScriptToSelectEngine) {
            "instead of the alphabetical preset[0]";
 }
 
-// The positional engine_config form is NOT an engine-selection seam here
-// (output_wav is the first positional and consumes a bare argument), so it stays
-// excluded from --live-telemetry. Regression guard against re-broadening.
-TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
-    const char* argv[] = {
-        "engine-sim-cli",
-        "--live-telemetry",
-        "out.wav",
-        "C63_M156_V3.mr"
-    };
-    CommandLineArgs args;
-
-    EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
-}
-
 // ============================================================================
 // --afterfire-wav resolution
 // ============================================================================

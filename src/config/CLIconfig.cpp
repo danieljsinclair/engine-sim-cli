@@ -86,7 +86,7 @@ void printUsage(const char* progName) {
 
 // Forward declaration — defined below parseArguments.
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath,
-                 const std::string& positionalEngineConfig, double loadArg,
+                 double loadArg,
                  bool threadedFlag, bool silentFlag);
 
 namespace {
@@ -167,7 +167,6 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     double loadArg = -1.0;
     std::string scriptPath;
-    std::string positionalEngineConfig;
 
     app.add_option("--load", loadArg, "Dyno load torque percentage (engine works against this)") ->check(CLI::Range(0.0, 100.0));
     app.add_option("--output", args.outputWav, "Output WAV file path");
@@ -187,24 +186,17 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
-    auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
-
     auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
 
     app.add_option("--wheel-coupling", args.wheelCoupling, "Live clutch wheel-coupling mode: 'free' (default — leaves sim speed independent so the mph-vs-target diagnostic stays visible), 'pin' (mirrors replay: pins sim vehicle speed to the CSV speed) or 'torque' (MATCH mode — injects recorded motor_torque_nm at the transmission input so road speed emerges from the solver)")->capture_default_str();
 
     // Mutual exclusions
-    // scriptOpt->excludes(engineConfigOpt);  // Allow both --script and positional engine_config
     connectDemoOpt->excludes(scriptOpt);
-    connectDemoOpt->excludes(engineConfigOpt);
     // --live-telemetry COMBINES with --script so the user can drive a NAMED
     // engine from CSV stdin (e.g. the C63 V3). Without this, --live-telemetry is
     // locked to preset[0] (the alphabetical first preset): resolveConfigPaths only
     // scans the preset dir when engineConfig is empty, so the named .mr never
-    // loads. (The positional engine_config stays excluded — output_wav is the
-    // first positional, so a bare positional never reaches engine_config.) Live
-    // CSV is still mutually exclusive with the other input sources.
-    liveTelemetryOpt->excludes(engineConfigOpt);
+    // loads. Live CSV is still mutually exclusive with the other input sources.
     liveTelemetryOpt->excludes(connectDemoOpt);
     liveTelemetryOpt->excludes(replayTelemetryOpt);
 
@@ -235,10 +227,10 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         return false;
     }
 
-    return processArgs(args, scriptPath, positionalEngineConfig, loadArg, threadedFlag, silentFlag);
+    return processArgs(args, scriptPath, loadArg, threadedFlag, silentFlag);
 }
 
-bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag) {
+bool processArgs(CommandLineArgs& args, const std::string& scriptPath, double loadArg, bool threadedFlag, bool silentFlag) {
     args.syncPull = !threadedFlag;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) {
@@ -268,7 +260,7 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         args.gearbox.logPath = buf.c_str();
     }
 
-    args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;
+    args.engineConfig = scriptPath;
 
     // Resolve the afterfire WAV path relative to the executable's install root
     // (the same base the sound-library WAVs ship under), so --afterfire-wav
