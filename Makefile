@@ -11,6 +11,17 @@
 BUILD_DIR ?= build
 BUILD_TYPE ?= RelWithDebInfo
 BUILD_PHASE0_SPIKES ?= OFF
+# Afterfire spike (exhaust pops on throttle-cut overrun), needed by
+# --enable-afterfire. MUST match the setting the bridge archive was built with:
+# the macro adds members to CombustionChamber (sizeof 664 -> 904 bytes measured
+# on arm64) and Engine::getChamber() is an inline function indexing an array of
+# them, so a mismatch mis-addresses chambers silently — it is NOT a link error.
+# Forwarded to the CLI cmake configure below; the bridge half is configured by
+# engine-sim-bridge's own build (verify with:
+#   grep ATG_ENGINE_SIM_AFTERFIRE_SPIKE engine-sim-bridge/build/CMakeCache.txt).
+# Changing this does NOT invalidate an existing cache — the CMakeCache.txt rule
+# has no dependency on it. Run `rm -f $(BUILD_DIR)/CMakeCache.txt` when flipping.
+ATG_ENGINE_SIM_AFTERFIRE_SPIKE ?= ON
 # Set to 1 to allow Debug builds (needed for coverage instrumentation).
 ALLOW_DEBUG_BUILD ?= 0
 CTEST_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -93,7 +104,7 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .PHONY: all build clean clean-cli scrub-cli test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
-        coverage-run coverage-clean coverage-summary summary gate
+        coverage-run coverage-clean coverage-summary summary gate afterfire-smoke
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 .PHONY: build-cross-gate
 # gate MUST run its steps strictly in order: build -> test -> iOS cross ->
@@ -234,6 +245,7 @@ $(BUILD_DIR)/CMakeCache.txt: check-submodule
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 		-DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) \
+		-DATG_ENGINE_SIM_AFTERFIRE_SPIKE=$(ATG_ENGINE_SIM_AFTERFIRE_SPIKE) \
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
 		..
@@ -347,6 +359,17 @@ define run_bridge_only_stage
 		exit 1; \
 	fi
 endef
+
+# ---------------------------------------------------------------------------
+# afterfire-smoke -- non-interactive proof that exhaust pops actually fire.
+#
+# Deliberately NOT wired into `test`: the run drives a 13s telemetry trace
+# through the full physics pipeline, which takes minutes -- far too slow for the
+# inner test loop. It is an on-demand acceptance check.
+# Exit 0 = pops fired (events > 0); non-zero = no pops or setup failure.
+# ---------------------------------------------------------------------------
+afterfire-smoke:
+	@./scripts/afterfire_smoke.sh --binary $(BUILD_DIR)/engine-sim-cli
 
 test: build
 	+@if [ -f $(CLI_TEST_RESULTS) ] && \

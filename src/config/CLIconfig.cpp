@@ -2,12 +2,14 @@
 // Extracted from engine_sim_cli.cpp for SOLID SRP compliance
 
 #include "CLIconfig.h"
+#include "config/ExecutablePath.h"
 #include "simulation/SimulationLoop.h"
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -40,7 +42,21 @@ void printUsage(const char* progName) {
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
     std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n";
     std::cout << "  --diagnostic-frames  Show per-frame audio buffer timing line (req=/got=/took=/room=)\n";
-    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n\n";
+    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n";
+    // Defaults are read off a default-constructed AfterfireConfig rather than
+    // typed in as literals, so --help can never advertise a stale number.
+    const AfterfireConfig afterfireDefaults;
+    std::cout << "  --enable-afterfire   Enable exhaust afterfire (auto-ignition of unburnt fuel in hot runners)\n";
+    std::cout << "  --afterfire-misfire-map-kpa <kPa>    Manifold pressure below which cycles misfire (default: " << afterfireDefaults.misfireManifoldPressurePa / 1000.0 << ")\n";
+    std::cout << "  --afterfire-ignition-delay-s <s>     Induction time at the reference temperature (default: " << afterfireDefaults.ignitionDelayRefS << ")\n";
+    std::cout << "  --afterfire-activation-temp-k <K>    Arrhenius activation temperature (default: " << afterfireDefaults.activationTempK << ")\n";
+    std::cout << "  --afterfire-ref-temp-k <K>           Reference temperature for the induction time (default: " << afterfireDefaults.refTempK << ")\n";
+    std::cout << "  --afterfire-autoignition-temp-k <K>  Auto-ignition temperature floor (default: " << afterfireDefaults.autoIgnitionTempK << ")\n";
+    std::cout << "  --afterfire-min-fuel <0-1>           Minimum runner RAW fuel mole fraction (default: " << afterfireDefaults.minRawFuelFraction << ")\n";
+    std::cout << "  --afterfire-min-oxygen <0-1>         Minimum runner O2 mole fraction (default: " << afterfireDefaults.minOxygenMoleFraction << ")\n";
+    std::cout << "  --afterfire-energy-scale <0-10>      Trim on released energy, 1 = physical (default: " << afterfireDefaults.energyScale << ")\n";
+    std::cout << "  --afterfire-wav <path|glob>        Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.\n";
+    std::cout << "  --afterfire-diagnostics              Print afterfire event/non-ignition counters at exit\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
     std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
@@ -72,6 +88,77 @@ void printUsage(const char* progName) {
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath,
                  const std::string& positionalEngineConfig, double loadArg,
                  bool threadedFlag, bool silentFlag);
+
+namespace {
+
+// Register the afterfire flag and its tuning options against the bridge's
+// AfterfireConfig. Extracted so parseArguments keeps a single responsibility
+// (assemble the parser) rather than also owning one subsystem's tuning surface;
+// the options bind directly to the struct that is handed to the factory, so
+// there is no CLI-side copy of the tuning values to keep in step.
+void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
+    app.add_flag("--enable-afterfire", afterfire.enabled,
+                 "Enable exhaust afterfire (auto-ignition of unburnt fuel in hot runners)");
+    app.add_option("--afterfire-misfire-map-kpa", afterfire.misfireManifoldPressurePa,
+                   "Manifold pressure below which cycles misfire (Pa)")->check(CLI::Range(0.0, 500000.0));
+    app.add_option("--afterfire-ignition-delay-s", afterfire.ignitionDelayRefS,
+                   "Induction time at the reference temperature (s)")->check(CLI::Range(1e-6, 10.0));
+    app.add_option("--afterfire-activation-temp-k", afterfire.activationTempK,
+                   "Arrhenius activation temperature (K)")->check(CLI::Range(0.0, 100000.0));
+    app.add_option("--afterfire-ref-temp-k", afterfire.refTempK,
+                   "Reference temperature for the induction time (K)")->check(CLI::Range(1.0, 10000.0));
+    app.add_option("--afterfire-autoignition-temp-k", afterfire.autoIgnitionTempK,
+                   "Auto-ignition temperature floor (K)")->check(CLI::Range(0.0, 10000.0));
+    app.add_option("--afterfire-min-fuel", afterfire.minRawFuelFraction,
+                   "Minimum runner raw-fuel mole fraction")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--afterfire-min-oxygen", afterfire.minOxygenMoleFraction,
+                   "Minimum runner O2 mole fraction")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--afterfire-energy-scale", afterfire.energyScale,
+                   "Trim on released energy, 1 = physical")->check(CLI::Range(0.0, 10.0));
+    app.add_option("--afterfire-wav", afterfire.afterfireWavPath,
+                   "Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.");
+    app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
+                 "Print afterfire event/non-ignition counters at exit");
+}
+
+}  // namespace
+
+// Resolve a --afterfire-wav argument to an install-root-relative location while
+// leaving any glob metacharacters in the FILENAME untouched.
+//
+// ExecutablePath::resolveResource() is a generic resource resolver: it probes
+// std::filesystem::exists() on the whole candidate. Handing it "dir/smooth_2*.wav"
+// therefore always misses (no file is literally named "smooth_2*.wav"), so it
+// falls through to its best-effort install-relative path and the glob never
+// reaches a directory that exists. Splitting the argument keeps each component
+// doing one job: ExecutablePath locates the DIRECTORY, resolveAfterfireWavPaths
+// (bridge side) expands the PATTERN within it.
+//
+// The leaf is re-appended verbatim, so a literal filename behaves exactly as
+// before and a glob is preserved for the bridge to expand.
+std::string resolveAfterfireWavArgument(const std::string& rawPath) {
+    std::string resolved;
+
+    if (!rawPath.empty()) {
+        const std::filesystem::path raw(rawPath);
+        const std::string leaf = raw.filename().string();
+
+        if (raw.has_parent_path()) {
+            const std::string parent = raw.parent_path().string();
+            // Resolve the directory only — it contains no glob characters, so
+            // the exists() probe inside resolveResource is meaningful.
+            const std::string resolvedDir = cli::ExecutablePath::resolveResource(parent);
+            resolved = (std::filesystem::path(resolvedDir) / leaf).string();
+        }
+        else {
+            // A bare filename with no directory component: resolve as-is. A glob
+            // here refers to the CWD, which resolveAfterfireWavPaths handles.
+            resolved = cli::ExecutablePath::resolveResource(rawPath);
+        }
+    }
+
+    return resolved;
+}
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     CLI::App app{"Engine Simulator CLI v2.0"};
@@ -107,7 +194,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--wheel-coupling", args.wheelCoupling, "Live clutch wheel-coupling mode: 'free' (default — leaves sim speed independent so the mph-vs-target diagnostic stays visible), 'pin' (mirrors replay: pins sim vehicle speed to the CSV speed) or 'torque' (MATCH mode — injects recorded motor_torque_nm at the transmission input so road speed emerges from the solver)")->capture_default_str();
 
     // Mutual exclusions
-    scriptOpt->excludes(engineConfigOpt);
+    // scriptOpt->excludes(engineConfigOpt);  // Allow both --script and positional engine_config
     connectDemoOpt->excludes(scriptOpt);
     connectDemoOpt->excludes(engineConfigOpt);
     // --live-telemetry COMBINES with --script so the user can drive a NAMED
@@ -137,6 +224,8 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
                  "Show per-frame audio buffer timing line (req=/got=/took=/room=)");
     app.add_flag("--diagnostic-freq", args.diagnostics.freq,
                  "Show per-frame update-call frequency line (calls=/need/kfps)");
+
+    addAfterfireOptions(app, args.afterfire);
 
     try {
         app.parse(argc, argv);
@@ -180,6 +269,16 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     }
 
     args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;
+
+    // Resolve the afterfire WAV path relative to the executable's install root
+    // (the same base the sound-library WAVs ship under), so --afterfire-wav
+    // works regardless of the caller's CWD. The bridge receives an absolute
+    // path-or-glob and expands it (glob -> pick one file) at configure time.
+    // An empty path is left empty (engine default IR is used).
+    if (!args.afterfire.afterfireWavPath.empty()) {
+        args.afterfire.afterfireWavPath =
+            resolveAfterfireWavArgument(args.afterfire.afterfireWavPath);
+    }
 
     auto fail = [&](const char* message) {
         std::cerr << message;
@@ -282,4 +381,29 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     std::cout << "  Pre-fill: " << config.preFillMs << "ms\n";
     std::cout << "  Gearbox: " << (config.autoGearbox ? "Auto" : "Manual") << "\n";
     std::cout << "\n";
+}
+
+// ============================================================================
+// Afterfire banner
+// ============================================================================
+// Separate from ShowConfigHeader because afterfire is NOT part of the bridge's
+// SimulationConfig — it is applied to the simulator after creation via
+// SimulatorFactory::configureAfterfire(), so the CLI carries it alongside the
+// SimulationConfig rather than inside it. Printing it here keeps the CLI's
+// console output in one translation unit (SRP) instead of leaking std::cout
+// formatting into CLIMain.
+void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
+    if (afterfire.enabled) {
+        std::cout << "  Afterfire: " << ANSIColors::GREEN << "Enabled" << ANSIColors::RESET << "\n";
+        std::cout << "    Auto-ignition temp:   " << afterfire.autoIgnitionTempK << " K\n";
+        std::cout << "    Induction time:       " << afterfire.ignitionDelayRefS * 1000.0
+                  << " ms at " << afterfire.refTempK << " K\n";
+        std::cout << "    Activation temp:      " << afterfire.activationTempK << " K\n";
+        std::cout << "    Misfire below MAP:    " << afterfire.misfireManifoldPressurePa / 1000.0 << " kPa\n";
+        std::cout << "    Min raw fuel frac:    " << afterfire.minRawFuelFraction << "\n";
+        std::cout << "    Min oxygen fraction:  " << afterfire.minOxygenMoleFraction << "\n";
+        std::cout << "    Energy scale:         " << afterfire.energyScale << "\n";
+        std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
+        std::cout << "\n";
+    }
 }

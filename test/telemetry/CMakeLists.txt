@@ -13,6 +13,11 @@ target_link_libraries(telemetry_isp_tests
         Threads::Threads
 )
 
+# Relink when the pre-built bridge archive changes (non-order-only edge).
+if(BRIDGE_USE_PREBUILT)
+    atg_link_bridge_archive(telemetry_isp_tests)
+endif()
+
 target_include_directories(telemetry_isp_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/engine-sim-bridge/include

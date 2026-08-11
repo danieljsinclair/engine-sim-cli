@@ -15,6 +15,7 @@
 #include "session/ISimulatorSession.h"
 #include "simulator/SimulatorFactory.h"
 #include "simulator/EngineSimTypes.h"
+#include "simulator/ScriptLoadHelpers.h"
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "input/KeyboardInput.h"
@@ -43,9 +44,12 @@
 #include "engine-sim/include/simulator.h"
 #include "engine-sim/include/units.h"
 
+#include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <system_error>
 #include <vector>
 
 #include "config/KqueueSignalStopController.h"
@@ -168,9 +172,11 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     if (args.holdThrottle >= 0.0f) {
         target->setThrottle(static_cast<double>(args.holdThrottle));
     }
-    // --start: one-shot starter pulse so the CrankingController cranks the engine.
+    // --start: hold the starter switch depressed (S:1) until the engine catches,
+    // so the engine cranks and fires non-interactively instead of sitting at 0 RPM.
+    // setAutoStart() latches a held starter that the target releases once RPM is up.
     if (args.autoStart) {
-        target->setStarter();
+        target->setAutoStart();
     }
 
     // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
@@ -234,12 +240,66 @@ std::unique_ptr<presentation::IPresentation> createPresentation(const Simulation
     throw CliException("Failed to initialize presentation");
 }
 
+// Fail-fast preflight for a user-named script.
+//
+// Without this the CLI reports the first missing thing it happens to trip over,
+// deep inside the Piranha compiler or the WAV loader, in terms of a path the
+// user never typed. Checking up front lets the error name the script the user
+// asked for, the asset base derived from it, and the specific missing file.
+//
+// Two invariants, both fatal (throw CliException -> exit 1):
+//   1. the script itself exists and is readable;
+//   2. the resolved asset base actually contains sound-library/ — the WAV tree
+//      whose impulse responses every exhaust system needs. A tree without it
+//      (e.g. es_new/, which has the .mr files but an empty sound-library/)
+//      would otherwise run mute or die later with a confusing message.
+void verifyScriptRuntimeAssets(const std::string& scriptPath) {
+    namespace fs = std::filesystem;
+
+    // error_code overloads throughout: the throwing ones raise filesystem_error
+    // on ELOOP/EACCES rather than reporting "absent", which turns a bad symlink
+    // into an uncaught exception (SIGABRT) instead of a diagnosable CLI error.
+    std::error_code ec;
+    if (!fs::exists(scriptPath, ec) || ec) {
+        throw CliException("Engine script not found: " + scriptPath
+                           + (ec ? " (" + ec.message() + ")" : ""));
+    }
+
+    const std::string normalized = ScriptLoadHelpers::normalizeScriptPath(scriptPath);
+    const std::string assetBase = ScriptLoadHelpers::resolveAssetBasePath(normalized, "");
+
+    const fs::path soundLibrary = fs::path(assetBase) / "sound-library";
+    if (!fs::exists(soundLibrary, ec) || ec) {
+        throw CliException(
+            "Required audio assets not found: " + soundLibrary.string()
+            + "\n  (script: " + scriptPath + ", asset base: " + assetBase + ")"
+            + "\n  The asset base must be the directory that directly contains"
+              " 'sound-library/'. Run the engine from a tree that has the WAVs"
+              " (e.g. es/, not es_new/).");
+    }
+
+    // sound-library/ can exist but be empty — that is exactly the es_new/ case.
+    // An empty tree yields no impulse responses, i.e. a silent run, so treat it
+    // as missing rather than letting the run proceed with no audio.
+    const fs::path smooth = soundLibrary / "smooth";
+    if (fs::exists(smooth, ec) && !ec && fs::is_empty(smooth, ec) && !ec) {
+        throw CliException(
+            "Audio asset directory is empty: " + smooth.string()
+            + "\n  (script: " + scriptPath + ", asset base: " + assetBase + ")"
+            + "\n  Impulse-response WAVs are required; a run from this tree"
+              " would produce no exhaust audio.");
+    }
+}
+
 std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILogging* logger) {
     const std::string& scriptPath = args.engineConfig;
     constexpr const char* presetDir = DEFAULT_PRESET_DIR;
 
-    // .mr or .json script: run directly, no preset scan
+    // .mr or .json script: run directly, no preset scan. Preflight the runtime
+    // files first so a missing script / missing WAV tree is reported here, in
+    // the user's own terms, rather than as a late failure or a silent mute run.
     if (scriptPath.size() >= 3) {
+        verifyScriptRuntimeAssets(scriptPath);
         return {scriptPath};
     }
 
@@ -365,6 +425,101 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
     }
 }
 
+// Roll the per-chamber afterfire counters up into one engine-level view.
+// Counters sum (an engine's pop count is the sum of its chambers'); the
+// last-event readings take the maximum, which answers "did ANY chamber reach a
+// meaningful pop, and how big was it" — the question a smoke run is asking.
+struct AfterfireSummary {
+    int totalEvents = 0;
+    int skippedTooCold = 0;
+    int skippedNoFuel = 0;
+    int skippedNoOxygen = 0;
+    int skippedNotReady = 0;
+    int misfireCycles = 0;
+    double maxIgnitionProgress = 0.0;
+    double maxRunnerTempK = 0.0;
+    double maxRawFuelFraction = 0.0;
+    double minManifoldPressurePa = 0.0;
+    double peakPressure = 0.0;
+    double energyReleased = 0.0;
+    double eventRpm = 0.0;
+    double eventRunnerTempK = 0.0;
+};
+
+AfterfireSummary summariseAfterfire(const std::vector<AfterfireDiagnostics>& chambers) {
+    AfterfireSummary summary;
+    for (const auto& chamber : chambers) {
+        summary.totalEvents += chamber.eventCount;
+        summary.skippedTooCold += chamber.skippedTooCold;
+        summary.skippedNoFuel += chamber.skippedNoFuel;
+        summary.skippedNoOxygen += chamber.skippedNoOxygen;
+        summary.skippedNotReady += chamber.skippedNotReady;
+        summary.misfireCycles += chamber.misfireCycles;
+        summary.maxIgnitionProgress = std::max(summary.maxIgnitionProgress, chamber.maxIgnitionProgress);
+        summary.maxRunnerTempK = std::max(summary.maxRunnerTempK, chamber.maxRunnerTempK);
+        summary.maxRawFuelFraction =
+            std::max(summary.maxRawFuelFraction, chamber.maxRawFuelFraction);
+        // Minimum across chambers, skipping the sentinel 0 that means "never sampled".
+        if (chamber.minManifoldPressurePa > 0.0) {
+            summary.minManifoldPressurePa = (summary.minManifoldPressurePa == 0.0)
+                ? chamber.minManifoldPressurePa
+                : std::min(summary.minManifoldPressurePa, chamber.minManifoldPressurePa);
+        }
+        summary.peakPressure = std::max(summary.peakPressure, chamber.lastEventPeakPressure);
+        summary.energyReleased = std::max(summary.energyReleased, chamber.lastEventEnergyReleased);
+        summary.eventRpm = std::max(summary.eventRpm, chamber.lastEventRpm);
+        summary.eventRunnerTempK = std::max(summary.eventRunnerTempK, chamber.lastEventRunnerTempK);
+    }
+    return summary;
+}
+
+// Report the afterfire counters for --afterfire-diagnostics. The skipped*
+// tallies are the point: when a run produces no pops they name the PHYSICAL
+// precondition that was missing (pipe never reached auto-ignition, no unburnt
+// fuel present, no oxygen left, or reactive-but-scavenged-too-soon). Read them
+// with maxIgnitionProgress: a value near 1.0 means the charge was on the verge
+// of lighting and the pipe just needs to hold it a little longer, whereas a
+// value near 0 means the mixture was never reactive in the first place. That
+// distinction is the difference between tuning a parameter and guessing.
+//
+// getAfterfireDiagnostics() is a BridgeSimulator member rather than an
+// ISimulator one, so the cast is the seam — the same pattern (and the same
+// reason) as reconfigureGearboxProviders above. An empty vector means the
+// counters are not observable: either ATG_ENGINE_SIM_AFTERFIRE_SPIKE was not
+// compiled in (the bridge accessor is a no-op returning {}) or no engine was
+// loaded. Both cases are reported as unavailable rather than as "0 events",
+// because "0 events" would falsely imply the gates were evaluated and refused.
+void printAfterfireDiagnostics(ISimulator* simulator) {
+    auto* bridgeSimulator = dynamic_cast<BridgeSimulator*>(simulator);
+    const auto chambers = bridgeSimulator ? bridgeSimulator->getAfterfireDiagnostics()
+                                          : std::vector<AfterfireDiagnostics>{};
+
+    if (chambers.empty()) {
+        std::cout << "\nAfterfire diagnostics: unavailable"
+                  << " (no chamber counters — engine-sim built without"
+                     " ATG_ENGINE_SIM_AFTERFIRE_SPIKE, or no engine loaded)"
+                  << std::endl;
+    } else {
+        const AfterfireSummary summary = summariseAfterfire(chambers);
+        std::cout << "\nAfterfire diagnostics (" << chambers.size() << " chambers):"
+                  << "\n  events             = " << summary.totalEvents
+                  << "\n  not ignited: tooCold = " << summary.skippedTooCold
+                  << ", noFuel = " << summary.skippedNoFuel
+                  << ", noOxygen = " << summary.skippedNoOxygen
+                  << ", inductionIncomplete = " << summary.skippedNotReady
+                  << "\n  misfire cycles (raw fuel into exhaust) = " << summary.misfireCycles
+                  << ", min manifold pressure = " << summary.minManifoldPressurePa / 1000.0 << " kPa"
+                  << "\n  exhaust runner peaks: T = " << summary.maxRunnerTempK << " K"
+                  << ", rawFuelFraction = " << summary.maxRawFuelFraction
+                  << ", ignitionProgress = " << summary.maxIgnitionProgress
+                  << "\n  last event: peakPressure = " << summary.peakPressure
+                  << ", energy = " << summary.energyReleased
+                  << ", rpm = " << summary.eventRpm
+                  << ", runnerT = " << summary.eventRunnerTempK << " K"
+                  << std::endl;
+    }
+}
+
 // Print why playback stopped, based on how the session ended. Single exit point.
 void reportStopReason(const SimulationConfig& config) {
     if (config.interactive) {
@@ -398,6 +553,7 @@ int main(int argc, char* argv[]) {
         try {
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
+        ShowAfterfireHeader(args.afterfire);
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
@@ -428,6 +584,30 @@ int main(int argc, char* argv[]) {
         while (result == EXIT_BUT_CONTINUE_NEXT) {
             const std::string& currentPath = paths[presetIndex];
             auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
+
+            // Afterfire: guarded exhaust pops on throttle-cut overrun. Applied
+            // directly to the simulator, NOT through SimulationConfig — the trio
+            // bridge's SimulationConfig carries no afterfire fields, so this is a
+            // post-creation configuration step alongside configureLoadTorque.
+            //
+            // Inside the preset-cycle loop on purpose: each cycle builds a fresh
+            // simulator with fresh chambers, so tuning applied once outside would
+            // be silently lost the moment the user pressed P.
+            //
+            // Unconditional: args.afterfire.enabled is false when the flag is
+            // absent, and pushing a disabled config is the explicit "off" state.
+            // BridgeSimulator::configureAfterfire warns and no-ops when
+            // ATG_ENGINE_SIM_AFTERFIRE_SPIKE was not compiled in.
+            //
+            // A false return means --afterfire-wav named a file or glob that
+            // matched nothing. That is a user error: continuing would run the
+            // whole simulation with the engine's default impulse response while
+            // appearing to honour the flag, so fail fast with the bad argument
+            // named rather than producing silently wrong audio.
+            if (!SimulatorFactory::configureAfterfire(simulator.get(), args.afterfire, cliLogger.get())) {
+                throw CliException("--afterfire-wav '" + args.afterfire.afterfireWavPath
+                                   + "' matched no files");
+            }
 
             // Build SessionDependencies from the available dependencies
             SessionDependencies deps;
@@ -469,6 +649,13 @@ int main(int argc, char* argv[]) {
         // as EXIT_BUT_CONTINUE_NEXT). A null session here is a can't-happen
         // invariant violation — fail-fast rather than silently skip close().
         ASSERT(session, "session must exist after the run loop");
+
+        // --afterfire-diagnostics: report the counters accumulated during the run,
+        // read from the final session's simulator before it is closed.
+        if (args.afterfire.diagnostics) {
+            printAfterfireDiagnostics(session->getSimulator());
+        }
+
         session->close();
         }
         // Expected CLI errors: clean exit with the message. Unexpected exceptions
