@@ -149,6 +149,9 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         replay->setStartFromS(args.replay.startFromS);
         replay->setEndAtS(args.replay.endAtS);
         validateReplayTimeSlicing(args, replay.get());
+        // Attach the gearbox decision logger when requested, so the oracle
+        // (section D: parse per-frame gear/rpm/mph) can validate replay runs.
+        attachGearboxLogger(*replay, args.gearbox.logPath);
         ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
         return ctx;
