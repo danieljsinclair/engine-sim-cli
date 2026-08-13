@@ -35,6 +35,7 @@
 #include "input/IKeyboardInput.h"
 #include "input/ReplayTelemetryProvider.h"
 #include "input/LiveTelemetryProvider.h"
+#include "input/StartStopInputAdapter.h"
 #include "simulator/BridgeSimulator.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/WheelCoupling.h"
@@ -130,7 +131,16 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         }
 
         attachGearboxLogger(*live, args.gearbox.logPath);
-        ctx.provider = std::move(live);
+
+        // OPTION A — wire the vehicle start/stop decision onto the live feed.
+        // The decorator wraps the LiveTelemetryProvider: each frame it polls the
+        // provider, runs the VehicleStartController from the upstream signal's
+        // brake + gear, and overwrites the EngineInput ignition/starterButton the
+        // SimulationLoop reads. The controller binds to an INTERNAL observer
+        // (never the real BridgeSimulator), so CrankingController remains the sole
+        // actuator authority — the adapter only flattening the decision into
+        // EngineInput. This keeps SimulationLoop and the provider untouched.
+        ctx.provider = std::make_unique<input::StartStopInputAdapter>(std::move(live));
         return ctx;
     }
 
