@@ -163,9 +163,17 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
 
 std::string ConsolePresentation::formatGearState(const EngineState& state, std::ostringstream& out) const {
     // [Gear:XMG] where X=selector, M/A=mode, G=actual gear (transmission state).
+    // A trailing brake-light flag closes the bracket: red 'B' when the vehicle
+    // brake light is on (pedal pressed), plain '-' otherwise (off or unreported).
     out << "[Gear:"
         << gearTriple(state.controls.gearSelector, state.controls.gearAutoMode, state.drivetrain.gear)
-        << "] ";
+        << " ";
+    if (state.controls.brakeLight.value_or(false)) {
+        out << ANSIColors::RED << "B" << ANSIColors::RESET;
+    } else {
+        out << "-";
+    }
+    out << "] ";
     return out.str();
 }
 
