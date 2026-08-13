@@ -79,7 +79,12 @@ INVARIANTS (each verdict-bearing; ANY fail -> gate RED for that model):
                            forward gear, non-Cranking, lasting >= TR_MIN_DUR_S
                            (1.0s), must - after a TR_GRACE_S (0.5s) response
                            grace - keep rpm >= max(2x idle, 0.7x road-implied)
-                           on every non-shift frame. A violation only counts
+                           on every non-shift frame; when road-implied is
+                           above idle (wheel-pin semantics: the engine cannot
+                           exceed what the pin allows) the bar is capped at
+                           0.95x road-implied, so pinned road-parity tracking
+                           at WOT passes while a genuinely trapped engine
+                           (far below road) still fails. A violation only counts
                            when SUSTAINED >= TR_SUSTAIN_S (0.2s) contiguously:
                            a kickdown steps road-implied up instantly and the
                            engine legitimately takes ~50ms to be dragged to the
@@ -177,6 +182,13 @@ TR_GRACE_S = float(os.environ.get("DRIVE_TR_GRACE_S", "0.5"))       # check 9
 TR_SUSTAIN_S = float(os.environ.get("DRIVE_TR_SUSTAIN_S", "0.2"))   # check 9
 TR_IDLE_FACTOR = float(os.environ.get("DRIVE_TR_IDLE_FACTOR", "2.0"))  # check 9
 TR_ROAD_FACTOR = float(os.environ.get("DRIVE_TR_ROAD_FACTOR", "0.7"))  # check 9
+# Wheel-pin semantics: with the wheels pinned to the recorded road speed the
+# engine CANNOT exceed road-implied rpm, so above idle road speed the
+# idle-flare arm is capped just under road parity (tracking the road at WOT
+# is the CORRECT pinned behavior; the 0.7x-road arm still catches a
+# genuinely trapped engine sitting far below road). Below idle road speed
+# (launch regime) the cap does not apply - WOT there must still flare.
+TR_PIN_PARITY_FACTOR = float(os.environ.get("DRIVE_TR_PIN_PARITY_FACTOR", "0.95"))  # check 9
 
 
 def die(msg: str) -> None:
@@ -504,6 +516,13 @@ def check_throttle_response(rows: list[dict], shift: set[int],
         for i, r in e:
             required = max(TR_IDLE_FACTOR * idle,
                            TR_ROAD_FACTOR * r.get("road_implied_rpm", 0.0))
+            road = r.get("road_implied_rpm", 0.0)
+            if road >= idle:
+                # Wheel-pin aware: the pin caps engine rpm at road parity, so
+                # the idle-flare arm must not demand more than the road allows
+                # (minus convergence slack). Launch regime (road < idle) keeps
+                # the uncapped flare bar.
+                required = min(required, TR_PIN_PARITY_FACTOR * road)
             if i not in shift and r["time_s"] - start_t >= TR_GRACE_S \
                     and r["rpm"] < required:
                 run.append(r)
@@ -515,8 +534,9 @@ def check_throttle_response(rows: list[dict], shift: set[int],
     detail = (f"{n_ep} sustained-WOT episode(s) >= {TR_MIN_DUR_S:.0f}s; "
               f"{len(bad_runs)} trapped-low run(s) >= {TR_SUSTAIN_S:.1f}s "
               f"(rpm < max({TR_IDLE_FACTOR:.0f}x idle, "
-              f"{TR_ROAD_FACTOR:.1f}x road-implied) after "
-              f"{TR_GRACE_S:.1f}s grace, shifts excluded)")
+              f"{TR_ROAD_FACTOR:.1f}x road-implied; above idle road speed "
+              f"the bar is pin-capped at {TR_PIN_PARITY_FACTOR:.2f}x road) "
+              f"after {TR_GRACE_S:.1f}s grace, shifts excluded)")
     samples = []
     for run in bad_runs[:3]:
         r = run[0]
@@ -596,7 +616,8 @@ def resolve_cli(cli: str) -> str:
 
 
 def run_model(cli: str, recording: str, model: str, script: str,
-              out_csv: str, bound_s: int, deterministic: bool = False) -> None:
+              out_csv: str, bound_s: int, deterministic: bool = False,
+              start_from_s: int = -1) -> None:
     cmd = [cli, "--silent", "--live-telemetry", "--wheel-coupling", "pin",
            "--coupling-model", model, "--csv-out", out_csv,
            "--script", script, "--start", "--auto"]
@@ -605,6 +626,14 @@ def run_model(cli: str, recording: str, model: str, script: str,
         # audio-callback physics clock). A full capture replays in ~1/3 the
         # wall time of the paced live path.
         cmd.append("--deterministic")
+    if start_from_s >= 0:
+        # Entry-point sweep: --start-from N begins the replay mid-recording,
+        # so the engine state machine cold-starts into a DIFFERENT operating
+        # point. The 2026-08 stall family was marginal (entry state decided
+        # life/death), so a single full-recording run is NOT coverage: the
+        # deterministic gate sweeps 0/60/95/120 to sample different entries
+        # into the same marginal windows.
+        cmd.extend(["--start-from", str(start_from_s)])
     print("CMD:", " ".join(cmd), f"< {recording}  (bound {bound_s}s)")
     killer = _which_killer()
     with open(recording, "rb") as fh:
@@ -707,6 +736,12 @@ def main() -> int:
     ap.add_argument("--score", action="append", default=[], metavar="MODEL=CSV",
                     help="score a pre-built per-frame CSV for MODEL "
                          "(repeatable). Skips running the CLI.")
+    ap.add_argument("--start-from", action="append", type=int, default=[],
+                    metavar="S", help="entry-point sweep: replay from recording "
+                    "second S (repeatable; e.g. --start-from 0 --start-from 60 "
+                    "--start-from 95 --start-from 120). Each value is run per "
+                    "model and reported as MODEL+sfS. Omit to run the full "
+                    "recording from t=0 only.")
     ap.add_argument("--idle", type=float, default=IDLE_RPM,
                     help="idle rpm for free-rev/road-implied tests (default %(default)s)")
     args = ap.parse_args()
@@ -733,10 +768,17 @@ def main() -> int:
             die(f"recording not found: {recording}")
         cli = resolve_cli(args.cli)
         tmp_dir = tempfile.mkdtemp(prefix="verify_drive_")
+        # Entry-point sweep: each --start-from value is a separate run with its
+        # own scored column (MODEL+sfS). An absent flag list runs t=0 only
+        # (the historical behavior). -1 is run_model's sentinel for "no flag".
+        sweep = args.start_from if args.start_from else [-1]
         for m in [x.strip() for x in args.models.split(",") if x.strip()]:
-            out_csv = os.path.join(tmp_dir, f"{m}.csv")
-            run_model(cli, recording, m, args.script, out_csv, args.bound_s, args.deterministic)
-            work.append((m, out_csv))
+            for sf in sweep:
+                label = m if sf < 0 else f"{m}+sf{sf}"
+                out_csv = os.path.join(tmp_dir, f"{label.replace('+', '_')}.csv")
+                run_model(cli, recording, m, args.script, out_csv,
+                          args.bound_s, args.deterministic, sf)
+                work.append((label, out_csv))
 
     try:
         results = [score(p, m, args.idle) for m, p in work]
