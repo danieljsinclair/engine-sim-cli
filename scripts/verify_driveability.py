@@ -200,6 +200,17 @@ def load_csv(path: str) -> list[dict]:
                 # partially-fed live frame can be malformed without dooming
                 # the whole run.
                 continue
+            # rpm = tach-sensor rpm (first-order, tau=0.1s — the measurement
+            # model a real ECU broadcasts). rpm_raw = raw crank rpm, present
+            # in CSVs from the sensor-fix build onward; fall back to rpm when
+            # scoring legacy CSVs that predate the column.
+            if "rpm_raw" in r:
+                try:
+                    r["rpm_raw"] = int(float(r["rpm_raw"]))
+                except (ValueError, TypeError):
+                    r["rpm_raw"] = r["rpm"]
+            else:
+                r["rpm_raw"] = r["rpm"]
             for k in ("clutch_pressure", "road_implied_rpm", "vehicle_speed_kmh",
                       "throttle_gas_pct", "sim_speed_mph"):
                 if k in r:
@@ -293,8 +304,11 @@ def check_no_oscillation(rows: list[dict], after: list[dict],
         return r.get("clutch_pressure", 0.0) >= CLUTCH_ENGAGED_FLOOR
 
     # 4a: max |Δrpm| over consecutive non-Cranking, non-shift pairs where the
-    # clutch is ENGAGED on at least one side. An open clutch means free-rev;
-    # its rpm movement is owned by the free-rev checks (5/6), not this one.
+    # clutch is ENGAGED on at least one side. Scored on RPM_RAW: a one-frame
+    # solver snap is a physics artifact and must fail this check even though
+    # a realistic tach sensor (rpm, first-order tau=0.1s) would smear it over
+    # ~0.3s. An open clutch means free-rev; its rpm movement is owned by the
+    # free-rev checks (5/6), not this one.
     max_delta = 0
     worst = None
     for i in range(1, len(rows)):
@@ -305,7 +319,7 @@ def check_no_oscillation(rows: list[dict], after: list[dict],
             continue
         if not (engaged(a) or engaged(b)):
             continue
-        d = abs(b["rpm"] - a["rpm"])
+        d = abs(b["rpm_raw"] - a["rpm_raw"])
         if d > max_delta:
             max_delta, worst = d, (a, b)
     # 4b: limit-cycle detector via reversal density, over ENGAGED frames. A
@@ -316,6 +330,10 @@ def check_no_oscillation(rows: list[dict], after: list[dict],
     # detect the cycle directly: a 1s window is a limit cycle if its rpm range >
     # OSC_LC_RANGE AND it has >= OSC_LC_MIN_REVERSALS direction changes. (Max
     # rolling std is computed and reported for diagnosis, NOT verdict-bearing.)
+    # Scored on the SENSOR rpm (rpm): 4b detects driver-perceptible cycling —
+    # what the tach shows and the ear hears — while out-of-band crank firing
+    # ripple (30-60Hz) belongs to the measurement, not the coupling. This is
+    # NOT a gate-only signal: the console tach reads the same filtered value.
     steady_idx = [i for i, r in enumerate(rows)
                   if r["engine_state"] != "Cranking" and i not in shift
                   and engaged(r)]

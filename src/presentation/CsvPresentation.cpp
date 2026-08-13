@@ -49,7 +49,7 @@ void CsvPresentation::Shutdown() {
 void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
     if (!out_.is_open()) return;
     if (!headerWritten_) {
-        out_ << "time_s,rpm,engine_state,throttle_gas_pct,brake,ignition,"
+        out_ << "time_s,rpm,rpm_raw,engine_state,throttle_gas_pct,brake,ignition,"
              << "gear_selector,gear_auto,gear_physical,"
              << "clutch_pressure,road_implied_rpm,creep_relief_fired,"
              << "vehicle_speed_kmh,target_speed_kmh,sim_speed_mph,"
@@ -63,6 +63,7 @@ void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
     out_ << std::fixed << std::setprecision(3);
     out_ << timeS << ','
          << static_cast<long long>(std::round(s.engine.rpm)) << ','
+         << static_cast<long long>(std::round(s.engine.rpmRaw)) << ','
          << phaseName(s.engine.phase) << ','
          << static_cast<int>(std::round(s.controls.throttle * 100.0)) << ','
          << std::setprecision(2) << s.controls.brakeLevel << ','

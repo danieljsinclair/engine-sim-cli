@@ -150,12 +150,19 @@ std::string ConsolePresentation::formatNameState(const EngineState& state, std::
 
 std::string ConsolePresentation::formatPedalState(const EngineState& state, std::ostringstream& out) const {
 
-    // Engine phase and Throttle + Brake
-    out << EnginePhaseName(state.engine.phase) << " [Gas: " << std::setw(3) << static_cast<int>(state.controls.throttle * 100) << "%";
+    // Engine phase and Throttle + Brake. Gas renders cyan; brake renders
+    // uncolored at 0.0 and red the moment it is applied.
+    out << EnginePhaseName(state.engine.phase)
+        << ANSIColors::CYAN << " [Gas: " << std::setw(3) << static_cast<int>(state.controls.throttle * 100) << "%"
+        << ANSIColors::RESET;
 
-    auto brakeColor = ANSIColors::getDispositionColour(state.controls.brakeLevel <= 0.0, false, state.controls.brakeLevel > 0.0);
-    out << brakeColor << " B:" << std::fixed << std::setprecision(1) << state.controls.brakeLevel << ANSIColors::RESET;
-    
+    if (state.controls.brakeLevel > 0.0) {
+        out << ANSIColors::RED << " B:" << std::fixed << std::setprecision(1)
+            << state.controls.brakeLevel << ANSIColors::RESET;
+    } else {
+        out << " B:" << std::fixed << std::setprecision(1) << state.controls.brakeLevel;
+    }
+
     out << "] ";
     return out.str();
 }
@@ -163,9 +170,12 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
 
 std::string ConsolePresentation::formatGearState(const EngineState& state, std::ostringstream& out) const {
     // [Gear:XMG] where X=selector, M/A=mode, G=actual gear (transmission state).
-    // Inline clutch readout `Cl NN%` (0% = open/relieved, 100% = locked) so a
-    // slow-speed lug / stall is visible at a glance: the creep-relief opening
-    // the clutch shows as Cl 0%, an engaged slip-lock as Cl 5-100%.
+    // Inline coupling-engagement readout, labeled by what the number IS:
+    // `TC NN%` when the torque-converter model produced it (fluid coupling
+    // engagement: 0% = decoupled, creep floor at standstill, 100% = coupled),
+    // `Cl NN%` for the clutch-map/legacy friction-clutch pressure. Either way
+    // the number is normalized coupling engagement — a slow-speed lug / stall
+    // is visible at a glance (relief opening shows 0%, engaged slip 5-100%).
     out << "[Gear:"
         << gearTriple(state.controls.gearSelector, state.controls.gearAutoMode, state.drivetrain.gear)
         << "] ";
@@ -173,7 +183,8 @@ std::string ConsolePresentation::formatGearState(const EngineState& state, std::
         const auto clutchColor = (state.drivetrain.clutchPressure <= 0.001)
             ? ANSIColors::GREEN    // relieved (open) — the engine idles decoupled
             : ANSIColors::RESET;
-        out << clutchColor << "[Cl "
+        out << clutchColor << '['
+            << (state.drivetrain.couplingIsTorqueConverter ? "TC " : "Cl ")
             << std::setw(3) << static_cast<int>(std::round(state.drivetrain.clutchPressure * 100.0))
             << "%]" << ANSIColors::RESET << " ";
     }
@@ -239,9 +250,12 @@ std::string ConsolePresentation::formatDynoState(const EngineState& state, std::
 
 std::string ConsolePresentation::formatFlowState(const EngineState& state, std::ostringstream& out) const {
 
-    // Exhaust flow (cm³/s)
-    out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8)
-        << std::setprecision(3) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
+    // Exhaust flow rate (cm³/s). exhaustFlow is a true m³/s rate (frame
+    // volume / timestep — the same normalization the oscilloscope applies),
+    // so the magnitude is now ~60x the old mislabeled per-frame volume;
+    // whole-number formatting keeps the field width stable at that scale.
+    out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(10)
+        << std::setprecision(0) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
 
     return out.str();
@@ -264,9 +278,14 @@ std::string ConsolePresentation::formatAudioState(const EngineState& state, std:
             << std::noshowpos << "ms";
     }
 
-    // Budget - always shown
-    out << " " << ANSIColors::getDispositionColour(state.audio.budgetPct < 80, state.audio.budgetPct < 100)
-        << "budget: " << std::fixed << std::setw(3) << std::setprecision(0) << state.audio.budgetPct << "%" << ANSIColors::RESET << " ";
+    // Budget — SYNC-PULL only. In THREADED mode the audio thread pulls work
+    // at its own pace from a filled buffer, so the render-budget percentage
+    // does not measure anything meaningful there; showing it misled more
+    // than it informed (user-reported).
+    if (state.audio.audioMode == "SYNC-PULL") {
+        out << " " << ANSIColors::getDispositionColour(state.audio.budgetPct < 80, state.audio.budgetPct < 100)
+            << "budget: " << std::fixed << std::setw(3) << std::setprecision(0) << state.audio.budgetPct << "%" << ANSIColors::RESET << " ";
+    }
 
     // Throughput summary - only with --diagnostic-freq
     if (config_.diagnostics.freq) {
