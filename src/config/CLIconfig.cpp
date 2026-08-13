@@ -40,13 +40,17 @@ void printUsage(const char* progName) {
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
     std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n";
     std::cout << "  --diagnostic-frames  Show per-frame audio buffer timing line (req=/got=/took=/room=)\n";
-    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n\n";
+    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n";
+    std::cout << "  --csv-out <file>     Write machine-parseable per-frame CSV (all fields: timecode, rpm,\n";
+    std::cout << "                       gas, gear, clutch%, roadImpliedRpm, creepReliefFired, torques, state)\n";
+    std::cout << "                       to <file> alongside the console line (for automated smoke-tests)\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
     std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
     std::cout << "  Default mode is sync-pull (synchronous render in audio callback)\n";
     std::cout << "  Use --threaded for cursor-chasing circular buffer mode\n";
-    std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n\n";
+    std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n";
+    std::cout << "  --live-telemetry and --interactive are mutually exclusive (CSV stdin vs keyboard)\n\n";
     std::cout << "Interactive Controls:\n";
     std::cout << "  A                      Toggle ignition on/off (starts ON)\n";
     std::cout << "  S                      Toggle starter motor on/off\n";
@@ -104,7 +108,27 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
 
-    app.add_option("--wheel-coupling", args.wheelCoupling, "Live clutch wheel-coupling mode: 'free' (default — leaves sim speed independent so the mph-vs-target diagnostic stays visible), 'pin' (mirrors replay: pins sim vehicle speed to the CSV speed) or 'torque' (MATCH mode — injects recorded motor_torque_nm at the transmission input so road speed emerges from the solver)")->capture_default_str();
+    app.add_option("--wheel-coupling", args.wheelCoupling,
+        "Live clutch wheel-coupling mode - which wheel speed drives the\n"
+        "slip math. Valid options:\n"
+        "  pin    - mirrors replay: pins sim vehicle speed to the CSV speed\n"
+        "           (DEFAULT; the road-driven path the road-test tunes against)\n"
+        "  free   - leaves sim speed independent so the mph-vs-target\n"
+        "           diagnostic stays visible\n"
+        "  torque - MATCH mode: injects recorded motor_torque_nm at the\n"
+        "           transmission input so road speed emerges from the solver")
+        ->capture_default_str();
+
+    app.add_option("--coupling-model", args.couplingModel,
+        "Live clutch coupling model - how the live twin derives the\n"
+        "engine<->drivetrain clutch pressure each frame. Valid options:\n"
+        "  torque-converter - fluid-coupling pump/turbine + TR/K curves\n"
+        "                     (DEFAULT; the chosen approach)\n"
+        "  clutch-map       - declarative smooth governor curve (never opens the\n"
+        "                     clutch, so it cannot bang-bang oscillate; fallback)\n"
+        "  legacy           - historical slip-lock + binary creep-drag relief\n"
+        "                     (the path that oscillated; kept for A/B comparison)")
+        ->capture_default_str();
 
     // Mutual exclusions
     scriptOpt->excludes(engineConfigOpt);
@@ -121,10 +145,20 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     liveTelemetryOpt->excludes(connectDemoOpt);
     liveTelemetryOpt->excludes(replayTelemetryOpt);
 
+    // --live-telemetry and --interactive are mutually exclusive: live telemetry
+    // drives the sim from a CSV stream (no keyboard input), while --interactive
+    // drives it from the keyboard. The two input sources conflict. Rejected with
+    // a clear error at parse time (CLI11's excludes emits a descriptive message).
+
     bool threadedFlag = false;
     bool silentFlag = false;
     app.add_flag("--play,--play-audio", args.playAudio, "Play audio to speakers in real-time");
-    app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
+    auto interactiveOpt = app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
+    // --live-telemetry and --interactive are mutually exclusive (declared here
+    // because interactiveOpt is created in this block; the comment above at the
+    // liveTelemetryOpt exclusions documents intent). Live CSV stdin vs keyboard
+    // input — the two input sources conflict.
+    liveTelemetryOpt->excludes(interactiveOpt);
     app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
     app.add_option("--gearbox-log", args.gearbox.logPath, "Log gearbox decisions to CSV file")->expected(0, 1);
@@ -137,6 +171,10 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
                  "Show per-frame audio buffer timing line (req=/got=/took=/room=)");
     app.add_flag("--diagnostic-freq", args.diagnostics.freq,
                  "Show per-frame update-call frequency line (calls=/need/kfps)");
+
+    app.add_option("--csv-out", args.csvOut,
+                   "Write machine-parseable per-frame CSV (all fields: timecode, rpm, gas, gear, "
+                   "clutch%, roadImplied, relief, torques, state) to <file> alongside the console line");
 
     try {
         app.parse(argc, argv);

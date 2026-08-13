@@ -20,6 +20,8 @@
 #include "input/KeyboardInput.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
+#include "presentation/CsvPresentation.h"
+#include "presentation/PresentationCollection.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
 #include <Verification.h>
@@ -38,6 +40,7 @@
 #include "simulator/BridgeSimulator.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/WheelCoupling.h"
+#include "twin/CouplingModelSelector.h"
 #include "twin/GearboxCsvLogger.h"
 
 #include "engine-sim/include/simulator.h"
@@ -127,6 +130,24 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         } else {
             throw CliException(
                 "--wheel-coupling must be 'free', 'pin' or 'torque', got: " + args.wheelCoupling);
+        }
+
+        // Validate + forward the live clutch coupling MODEL (how the clutch
+        // pressure is derived). Fail-fast on a typo'd model name (mirrors the
+        // --wheel-coupling validation above). torque-converter is the default
+        // (the chosen fluid-coupling approach); clutch-map is the smooth governor
+        // fallback; legacy is the historical bang-bang relief path (kept for A/B
+        // comparison).
+        if (args.couplingModel == "clutch-map") {
+            live->setCouplingModel(twin::CouplingModelKind::ClutchMap);
+        } else if (args.couplingModel == "torque-converter") {
+            live->setCouplingModel(twin::CouplingModelKind::TorqueConverter);
+        } else if (args.couplingModel == "legacy") {
+            live->setCouplingModel(twin::CouplingModelKind::Legacy);
+        } else {
+            throw CliException(
+                "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: "
+                + args.couplingModel);
         }
 
         attachGearboxLogger(*live, args.gearbox.logPath);
@@ -231,10 +252,18 @@ std::unique_ptr<presentation::IPresentation> createPresentation(const Simulation
     presConfig.duration = config.duration;
     presConfig.diagnostics = config.diagnostics;
 
-    if (auto pres = std::make_unique<presentation::ConsolePresentation>(); pres->Initialize(presConfig)) {
-        return pres;
+    // When --csv-out is set the Collection fans every call out to
+    // all children; the loop holds one IPresentation.
+    auto collection = std::make_unique<presentation::PresentationCollection>();
+    collection->add(std::make_unique<presentation::ConsolePresentation>());
+    if (!config.csvOutPath.empty()) {
+        collection->add(std::make_unique<presentation::CsvPresentation>(config.csvOutPath));
     }
-    throw CliException("Failed to initialize presentation");
+
+    if (!collection->Initialize(presConfig)) {
+        throw CliException("Failed to initialize presentation");
+    }
+    return collection;
 }
 
 std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILogging* logger) {
@@ -287,6 +316,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
+    config.csvOutPath = args.csvOut;
 
     // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
     // simulationFrequency: 0 means "use engine's built-in frequency" (piston engines get it from

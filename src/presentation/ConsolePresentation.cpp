@@ -163,9 +163,20 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
 
 std::string ConsolePresentation::formatGearState(const EngineState& state, std::ostringstream& out) const {
     // [Gear:XMG] where X=selector, M/A=mode, G=actual gear (transmission state).
+    // Inline clutch readout `Cl NN%` (0% = open/relieved, 100% = locked) so a
+    // slow-speed lug / stall is visible at a glance: the creep-relief opening
+    // the clutch shows as Cl 0%, an engaged slip-lock as Cl 5-100%.
     out << "[Gear:"
         << gearTriple(state.controls.gearSelector, state.controls.gearAutoMode, state.drivetrain.gear)
         << "] ";
+    if (state.drivetrain.clutchPressure >= 0.0) {
+        const auto clutchColor = (state.drivetrain.clutchPressure <= 0.001)
+            ? ANSIColors::GREEN    // relieved (open) — the engine idles decoupled
+            : ANSIColors::RESET;
+        out << clutchColor << "[Cl "
+            << std::setw(3) << static_cast<int>(std::round(state.drivetrain.clutchPressure * 100.0))
+            << "%]" << ANSIColors::RESET << " ";
+    }
     return out.str();
 }
 
