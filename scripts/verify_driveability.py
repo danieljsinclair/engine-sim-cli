@@ -53,6 +53,39 @@ INVARIANTS (each verdict-bearing; ANY fail -> gate RED for that model):
                            failure (launch does nothing). Overlaps check 5 but
                            is reported separately because it is qualitatively
                            worse.
+  7. NO_SLIP_MISMATCH       (the PROVEN blind spot in check 5) No frame in a
+                           forward gear with engine rpm > SLIP_RATIO (1.8x) the
+                           road-implied rpm AND road_implied > idle AND clutch
+                           pressure < SLIP_CLUTCH_MAX (0.15). Check 5 only
+                           caught the road-implied<idle corner; the bench
+                           evidence (7000 rpm at 16 mph, road-implied 1544,
+                           clutch 3%; 6556 at 32 mph, road-implied 2075, ratio
+                           3.2x) escaped it because road-implied was above
+                           idle. The engine turning 2-4x faster than the road
+                           implies, with the clutch effectively open at a speed
+                           where it should be transmitting, IS a free-rev
+                           whether or not the wheels happen to be rolling.
+  8. NO_CLUTCH_CHATTER      No SUSTAINED violent clutch-pressure swing run:
+                           frame-to-frame |delta pressure| > CHATTER_STEP
+                           (0.40) that is NOT explained by a gear change.
+                           Sustained = >= CHATTER_MIN_SWINGS (3) such steps
+                           within a 1s episode (a real shift produces one or
+                           two apply/release steps; chatter is a run of them -
+                           the bench saw 63%->100%->17%->83%->92%->3%->66% at
+                           cruise).
+  9. THROTTLE_RESPONSE      (the idle-at-WOT acceptance bar, quoted verbatim
+                           by the user: engine at ~idle with the pedal floored)
+                           Any maximal run of >= TR_WOT_PCT (90) throttle in a
+                           forward gear, non-Cranking, lasting >= TR_MIN_DUR_S
+                           (1.0s), must - after a TR_GRACE_S (0.5s) response
+                           grace - keep rpm >= max(2x idle, 0.7x road-implied)
+                           on every non-shift frame. A violation only counts
+                           when SUSTAINED >= TR_SUSTAIN_S (0.2s) contiguously:
+                           a kickdown steps road-implied up instantly and the
+                           engine legitimately takes ~50ms to be dragged to the
+                           new ratio, which is mechanical response lag, not a
+                           trapped engine. Shift-adjacent frames are excluded
+                           for the same reason as in check 4a.
 
 USAGE
   # Run BOTH models live over the full recording and gate (needs the CLI):
@@ -114,6 +147,36 @@ SHIFT_CLUTCH_STEP = float(os.environ.get("DRIVE_SHIFT_CLUTCH_STEP", "0.15"))
 CLUTCH_ENGAGED_FLOOR = float(os.environ.get("DRIVE_CLUTCH_ENGAGED_FLOOR", "0.03"))
 FREE_REV_RPM = int(os.environ.get("DRIVE_FREE_REV_RPM", "3000"))    # checks 5/6
 HI_THROTTLE_PCT = float(os.environ.get("DRIVE_HI_THROTTLE_PCT", "50"))  # check 6
+# check 7 (slip mismatch): engine rpm far above road-implied rpm while the
+# clutch is essentially open. Sized from the bench evidence: 7000 vs 1544
+# (ratio 4.5x) and 6556 vs 2075 (ratio 3.2x) - both way over 1.8x. A healthy
+# launch sits at stall speed (~1.5-2x road-implied only at near-zero road
+# speed, which check 5/6's road_implied<idle corner already owns); above idle
+# road-implied the engine must track the road within 1.8x whenever the clutch
+# is engaged enough to matter.
+SLIP_RATIO = float(os.environ.get("DRIVE_SLIP_RATIO", "1.8"))       # check 7
+SLIP_CLUTCH_MAX = float(os.environ.get("DRIVE_SLIP_CLUTCH_MAX", "0.15"))  # check 7
+# check 8 (clutch chatter): a violent frame-to-frame pressure swing NOT
+# explained by a gear change, sustained as a run of >= CHATTER_MIN_SWINGS
+# within CHATTER_WINDOW_S. One or two big steps is a legitimate shift
+# apply/release; a run of them is chatter (bench: 0.63->1.00->0.17->0.83->
+# 0.92->0.03->0.66 at cruise).
+CHATTER_STEP = float(os.environ.get("DRIVE_CHATTER_STEP", "0.40"))  # check 8
+CHATTER_MIN_SWINGS = int(os.environ.get("DRIVE_CHATTER_MIN_SWINGS", "3"))
+CHATTER_WINDOW_S = float(os.environ.get("DRIVE_CHATTER_WINDOW_S", "1.0"))
+# check 9 (throttle response): sustained WOT in a forward gear must load the
+# engine above idle and track the road. Sized from the user's bench anomaly:
+# ~1450 rpm (idle) for ~2s at 99% throttle with road-implied 2000+. The 2x
+# idle floor alone would let ~1900 slip through; pairing it with 0.7x
+# road-implied catches the trapped-at-stall case at any road speed. The
+# sustain threshold (0.2s) separates a trapped engine from the ~50ms
+# mechanical lag after a kickdown steps road-implied up instantly.
+TR_WOT_PCT = float(os.environ.get("DRIVE_TR_WOT_PCT", "90"))        # check 9
+TR_MIN_DUR_S = float(os.environ.get("DRIVE_TR_MIN_DUR_S", "1.0"))   # check 9
+TR_GRACE_S = float(os.environ.get("DRIVE_TR_GRACE_S", "0.5"))       # check 9
+TR_SUSTAIN_S = float(os.environ.get("DRIVE_TR_SUSTAIN_S", "0.2"))   # check 9
+TR_IDLE_FACTOR = float(os.environ.get("DRIVE_TR_IDLE_FACTOR", "2.0"))  # check 9
+TR_ROAD_FACTOR = float(os.environ.get("DRIVE_TR_ROAD_FACTOR", "0.7"))  # check 9
 
 
 def die(msg: str) -> None:
@@ -324,6 +387,128 @@ def check_no_hi_throttle_free_rev(after: list[dict], idle: float) -> dict:
                 detail=detail, samples=samples)
 
 
+def check_no_slip_mismatch(after: list[dict], idle: float) -> dict:
+    bad = [r for r in after
+           if r.get("gear_physical", 0) >= 1
+           and r.get("road_implied_rpm", 0.0) > idle
+           and r["rpm"] > SLIP_RATIO * r.get("road_implied_rpm", 0.0)
+           and r.get("clutch_pressure", 0.0) < SLIP_CLUTCH_MAX]
+    ok = not bad
+    worst_ratio = max((r["rpm"] / r["road_implied_rpm"] for r in bad), default=0.0)
+    detail = (f"{len(bad)} frames engine>{SLIP_RATIO}x road-implied with clutch<"
+              f"{SLIP_CLUTCH_MAX} while road-implied>idle({idle:.0f}); worst ratio="
+              f"{worst_ratio:.1f}x. Above idle road speed the coupling must "
+              f"transmit - a 2-4x over-rev with an open clutch is a free-rev")
+    samples = [_fmt(r) for r in sorted(bad, key=lambda x: -x["rpm"])[:6]]
+    return dict(name="NO_SLIP_MISMATCH", ok=ok, n=len(bad), detail=detail, samples=samples)
+
+
+def check_no_clutch_chatter(rows: list[dict]) -> dict:
+    # Violent pressure steps NOT explained by a gear change. NOTE: unlike the
+    # oscillation check we do NOT exclude clutch-step transients here - marking
+    # any |dp|>=0.15 as "a shift" would make this check structurally blind to
+    # exactly the chatter it exists to catch. Only an actual gear_physical
+    # change excuses a violent step.
+    violent: list[tuple[int, float]] = []  # (index, |dp|)
+    for i in range(1, len(rows)):
+        a, b = rows[i - 1], rows[i]
+        if a.get("gear_physical", 0) != b.get("gear_physical", 0):
+            continue  # a real shift: apply/release steps are legitimate
+        if a["engine_state"] == "Cranking" or b["engine_state"] == "Cranking":
+            continue
+        dp = abs(b.get("clutch_pressure", 0.0) - a.get("clutch_pressure", 0.0))
+        if dp > CHATTER_STEP:
+            violent.append((i, dp))
+    # Group violent steps into episodes: consecutive violent steps within
+    # CHATTER_WINDOW_S of each other. A run of >= CHATTER_MIN_SWINGS is chatter.
+    episodes: list[list[tuple[int, float]]] = []
+    cur: list[tuple[int, float]] = []
+    for i, dp in violent:
+        if cur and rows[i]["time_s"] - rows[cur[-1][0]]["time_s"] > CHATTER_WINDOW_S:
+            episodes.append(cur)
+            cur = []
+        cur.append((i, dp))
+    if cur:
+        episodes.append(cur)
+    chatter_eps = [e for e in episodes if len(e) >= CHATTER_MIN_SWINGS]
+    ok = not chatter_eps
+    detail = (f"{len(violent)} violent |Δpressure|>{CHATTER_STEP} steps (no gear "
+              f"change), {len(chatter_eps)} chatter episode(s) "
+              f"(>={CHATTER_MIN_SWINGS} swings within {CHATTER_WINDOW_S:.0f}s)")
+    samples = []
+    for e in chatter_eps[:3]:
+        i0 = e[0][0]
+        run = rows[i0 - 1:i0 - 1 + len(e) + 1]
+        seq = "->".join(f"{r.get('clutch_pressure', 0):.2f}" for r in run[:12])
+        if len(run) > 12:
+            seq += f"->...({len(run)} frames total)"
+        samples.append(f"chatter @t={rows[i0]['time_s']:.2f}s {len(e)} swings: {seq}")
+    return dict(name="NO_CLUTCH_CHATTER", ok=ok, n=len(chatter_eps),
+                detail=detail, samples=samples)
+
+
+def check_throttle_response(rows: list[dict], shift: set[int],
+                            idle: float) -> dict:
+    # Maximal runs of WOT + forward gear + non-Cranking. Each run lasting
+    # >= TR_MIN_DUR_S must, after the grace window, keep the engine above
+    # max(TR_IDLE_FACTOR x idle, TR_ROAD_FACTOR x road-implied) on every
+    # non-shift frame. Violations only count when sustained >= TR_SUSTAIN_S
+    # contiguously (a trapped engine sits low for seconds; mechanical
+    # response lag after a ratio change is ~3 frames).
+    episodes: list[list[tuple[int, dict]]] = []
+    cur: list[tuple[int, dict]] = []
+    for i, r in enumerate(rows):
+        if (r.get("throttle_gas_pct", 0.0) >= TR_WOT_PCT
+                and r.get("gear_physical", 0) >= 1
+                and r["engine_state"] != "Cranking"):
+            cur.append((i, r))
+        else:
+            if cur:
+                episodes.append(cur)
+                cur = []
+    if cur:
+        episodes.append(cur)
+
+    bad_runs: list[list[dict]] = []  # sustained violating runs (for samples)
+    dt = median_dt(rows)
+    n_ep = 0
+    for e in episodes:
+        if e[-1][1]["time_s"] - e[0][1]["time_s"] < TR_MIN_DUR_S:
+            continue
+        n_ep += 1
+        start_t = e[0][1]["time_s"]
+
+        def flush(run: list[dict]) -> None:
+            if len(run) * dt >= TR_SUSTAIN_S:
+                bad_runs.append(run)
+
+        run: list[dict] = []
+        for i, r in e:
+            required = max(TR_IDLE_FACTOR * idle,
+                           TR_ROAD_FACTOR * r.get("road_implied_rpm", 0.0))
+            if i not in shift and r["time_s"] - start_t >= TR_GRACE_S \
+                    and r["rpm"] < required:
+                run.append(r)
+            else:
+                flush(run)
+                run = []
+        flush(run)
+    ok = not bad_runs
+    detail = (f"{n_ep} sustained-WOT episode(s) >= {TR_MIN_DUR_S:.0f}s; "
+              f"{len(bad_runs)} trapped-low run(s) >= {TR_SUSTAIN_S:.1f}s "
+              f"(rpm < max({TR_IDLE_FACTOR:.0f}x idle, "
+              f"{TR_ROAD_FACTOR:.1f}x road-implied) after "
+              f"{TR_GRACE_S:.1f}s grace, shifts excluded)")
+    samples = []
+    for run in bad_runs[:3]:
+        r = run[0]
+        samples.append(f"trapped {run[0]['time_s']:.2f}-"
+                       f"{run[-1]['time_s']:.2f}s min rpm="
+                       f"{min(x['rpm'] for x in run)} " + _fmt(r))
+    return dict(name="THROTTLE_RESPONSE", ok=ok, n=len(bad_runs),
+                detail=detail, samples=samples)
+
+
 # ---- helpers ---------------------------------------------------------------
 def _fmt(r: dict) -> str:
     return (f"t={r['time_s']:.2f} rpm={r['rpm']} state={r['engine_state']} "
@@ -370,6 +555,9 @@ def score(path: str, model: str, idle: float) -> dict:
         check_no_oscillation(rows, after, shift),
         check_no_free_rev_in_gear(after, idle),
         check_no_hi_throttle_free_rev(after, idle),
+        check_no_slip_mismatch(after, idle),
+        check_no_clutch_chatter(rows),
+        check_throttle_response(rows, shift, idle),
     ]
     overall = all(c["ok"] for c in checks)
     return dict(model=model, path=path, rows=len(rows),
