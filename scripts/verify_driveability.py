@@ -85,7 +85,12 @@ DEFAULT_CLI = os.environ.get(
 )
 DEFAULT_SCRIPT = os.environ.get("GEARBOX_SCRIPT", "es_new/C63_TeslaY.mr")
 DEFAULT_MODELS = os.environ.get("DRIVE_MODELS", "torque-converter,clutch-map")
-DEFAULT_BOUND_S = int(os.environ.get("DRIVE_BOUND_S", "40"))
+# Default bound is sized for the FULL recording (the UpLeckHillWithKickdown
+# capture is ~159s; the CLI paces live output in real time, so reaching the
+# whole capture needs ~159s of wall clock, not the 35s a narrow test uses).
+# 200s gives margin to consume the full capture and hit EOF naturally; pass
+# --bound-s to override for shorter/longer recordings.
+DEFAULT_BOUND_S = int(os.environ.get("DRIVE_BOUND_S", "200"))
 
 IDLE_RPM = float(os.environ.get("DRIVE_IDLE_RPM", "950"))
 STALL_RPM = int(os.environ.get("DRIVE_STALL_RPM", "30"))            # check 2
@@ -400,11 +405,20 @@ def run_model(cli: str, recording: str, model: str, script: str,
             # No gtimeout/timeout: rely on the capture EOF + a manual bound.
             proc = subprocess.run(cmd, stdin=fh, stdout=subprocess.DEVNULL,
                                   stderr=subprocess.PIPE, timeout=bound_s + 15)
-    if proc.returncode not in (0, None) and not _was_killed(proc.returncode):
+    # The bound timer is EXPECTED to kill the CLI mid-stream (gtimeout -s KILL
+    # -> SIGKILL -> Python returncode -9, or gtimeout's own 124/137). Enumerating
+    # kill codes is brittle across macOS/Linux, so the success criterion is the
+    # ACTUAL one: did the CLI produce a usable CSV before it was killed? A
+    # genuine crash (positive rc) with no CSV is the only hard failure.
+    if not os.path.isfile(out_csv) or os.path.getsize(out_csv) == 0:
         sys.stderr.write(proc.stderr.decode("utf-8", "replace"))
-        die(f"CLI exited {proc.returncode} for model {model}")
-    if not os.path.isfile(out_csv):
-        die(f"--csv-out produced no file for model {model}: {out_csv}")
+        die(f"no usable CSV produced for model {model} "
+            f"(rc={proc.returncode}); the CLI crashed before writing output")
+    if proc.returncode not in (0, None) and not _was_killed(proc.returncode):
+        # CSV exists but the CLI exited with a real error code - warn but keep
+        # the CSV (partial output is still scoreable and often still useful).
+        sys.stderr.write(f"[warn] {model}: CLI rc={proc.returncode} "
+                         f"(CSV still produced with {os.path.getsize(out_csv)} bytes)\n")
 
 
 def _which_killer() -> list[str] | None:
@@ -415,9 +429,13 @@ def _which_killer() -> list[str] | None:
     return None
 
 
-def _was_killed(rc: int) -> bool:
-    # 137 = SIGKILL (gtimeout -s KILL), 124 = timeout's own kill exit.
-    return rc in (124, 137)
+def _was_killed(rc) -> bool:
+    # 137/124 = shell-reported SIGKILL / timeout kill exit; on Unix Python also
+    # reports a signal death as a NEGATIVE returncode (-9 = SIGKILL, -15 =
+    # SIGTERM). Any of these is the expected bound-timer death, not a crash.
+    if rc is None:
+        return False
+    return rc in (124, 137) or rc < 0
 
 
 # ---- reporting --------------------------------------------------------------

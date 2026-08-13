@@ -6,10 +6,22 @@ Runs the engine-sim-cli on a recording window (via --csv-out), parses the
 per-frame CSV, and asserts the driveability invariants that pin the
 "6 mph stall" regression on UpLeckHillWithKickdown (00:20-00:25):
 
+  0. RPM-NEVER-0 (hard bar, ALWAYS ON): after the cranking spin-up there must
+     be NO frame with rpm == 0, NO frame with rpm <= STALL_NEAR_ZERO_RPM (30),
+     and NO frame with engine_state == Stopped. The engine-sim bottoms at ~2-7
+     rpm while latched Stopped, so <=30 (not ==0) is the real "rpm never hits 0"
+     bar, and Stopped-latch frames are a hard fail (the structural blindness was
+     excluding them). This is the spec, not opt-in; --strict-stall is a deprecated
+     no-op. NOTE: this check only sees stalls INSIDE the --start-from/--end-at
+     window; a window that fresh-starts after a stall misses it. For the full-
+     recording, all-6-checks gate use scripts/verify_driveability.py instead.
   1. RPM FLOOR: every mid-drive frame has rpm >= RPM_THRESHOLD (default 950).
      Mid-drive excludes engine_state == Cranking, Stopped, and the first
      SKIP_S seconds of the window (cold-crank catch-up).
-  2. NO STALL: zero mid-drive frames with engine_state == Stopped or rpm == 0.
+  2. NO STALL (legacy, structural-blind): zero mid-drive frames with
+     engine_state == Stopped or rpm == 0. SUPERSEDED by invariant 0 - this one
+     excludes Stopped frames from mid-drive, so it CANNOT see a Stopped-latch
+     stall. Kept for the speed-tracking diagnostic; invariant 0 is the real gate.
   3. SPEED TRACKING: >= MPH_PASS_PCT (default 90%) of mid-drive frames have
      |sim_mph - tgt_mph| <= MPH_MAXERR (default 2 mph).
 
@@ -175,10 +187,11 @@ def main():
     ap.add_argument("--skip", type=float, default=DEFAULT_SKIP_S,
                     help="discard first N seconds of window output "
                          "(cold-crank, default %(default)s)")
-    ap.add_argument("--strict-stall", action="store_true",
-                    help="make the rpm-never-0 bar verdict-bearing for "
-                         "near-zero (<=STALL_RPM) and Stopped-latch frames "
-                         "too, not only rpm==0 (default: report-only)")
+    ap.add_argument("--strict-stall", action="store_true", default=None,
+                    help=argparse.SUPPRESS)  # DEPRECATED no-op: the rpm-never-0
+                    # / Stopped-latch / near-zero checks are ALWAYS verdict-bearing
+                    # now (spec is spec, not opt-in). Accepted only so existing
+                    # invocations don't error; it has no effect.
     ap.add_argument("--cli", default=DEFAULT_CLI,
                     help="path to engine-sim-cli binary (default %(default)s)")
     ap.add_argument("--csv-out", default=None,
@@ -288,15 +301,14 @@ def main():
                         if r.get("rpm") is not None
                         and 0 < r["rpm"] <= STALL_NEAR_ZERO_RPM]
     stopped_frames = [r for r in after_spinup if is_stopped(r)]
-    # The hard bar: literally zero rpm after the spin-up.
+    # The hard bar is ALWAYS enforced (spec is spec, not opt-in). The engine-sim
+    # bottoms at ~2-7 rpm while latched Stopped, so the bar is NOT just literal
+    # rpm==0 - it is: no zero rpm, no near-zero (<= STALL_NEAR_ZERO_RPM), and no
+    # Stopped latch, all after the cranking spin-up. (The old --strict-stall flag
+    # that gated this is now a deprecated no-op: correctness is the default.)
     rpm_never_zero_pass = len(zero_frames) == 0
-    # The practical bar: no near-zero (<= STALL_NEAR_ZERO_RPM) and no Stopped
-    # latch after the spin-up. Reported but, to match the user's literal "rpm
-    # must never hit 0" bar, only the zero_frames condition is verdict-bearing
-    # unless --strict-stall is set.
     strict_stall_pass = not near_zero_frames and not stopped_frames
-    hard_bar_pass = rpm_never_zero_pass and (strict_stall_pass if args.strict_stall
-                                             else True)
+    hard_bar_pass = rpm_never_zero_pass and strict_stall_pass
 
     # ---- Invariant 1: RPM floor -------------------------------------------
     rpm_bad = [r for r in drive if (r.get("rpm") is not None and r["rpm"] < args.rpm_threshold)]
@@ -340,18 +352,18 @@ def main():
           f"rpm-floor={args.rpm_threshold}, mph-maxerr={args.mph_maxerr}, "
           f"mph-pass%={args.mph_pass_pct})")
     print(f"  after-spinup frames scanned for rpm-never-0: {len(after_spinup)} "
-          f"(spinup ended idx={crank_end}, strict_stall={args.strict_stall})")
+          f"(spinup ended idx={crank_end}; strict checks ALWAYS ON)")
 
     # ---- Invariant 0 diagnostics: RPM-NEVER-0 (hard bar) ------------------
-    # The per-line tag reflects the FULL hard bar: with --strict-stall a
-    # Stopped-latch or near-zero dip is a failure even if rpm never reads
-    # exactly 0 (the engine-sim bottoms at ~2-7 rpm while latched Stopped, so a
-    # literal ==0 check is necessary but not sufficient).
+    # The per-line tag reflects the FULL hard bar, always enforced: a Stopped-
+    # latch or near-zero dip is a failure even if rpm never reads exactly 0 (the
+    # engine-sim bottoms at ~2-7 rpm while latched Stopped, so a literal ==0
+    # check is necessary but not sufficient).
     tag = "PASS" if hard_bar_pass else "FAIL"
     if not rpm_never_zero_pass:
         extra = "  <-- HARD-BAR VIOLATION: rpm hit 0 after the cranking spin-up"
-    elif args.strict_stall and not strict_stall_pass:
-        extra = "  <-- HARD-BAR VIOLATION (--strict-stall): Stopped-latch or near-zero stall"
+    elif not strict_stall_pass:
+        extra = "  <-- HARD-BAR VIOLATION: Stopped-latch or near-zero stall (rpm<=30)"
     else:
         extra = ""
     print(f"  [RPM!=0]    {tag}: {len(zero_frames)} zero-rpm frames "

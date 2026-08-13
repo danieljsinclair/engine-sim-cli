@@ -160,6 +160,33 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     if (!args.replay.telemetryPath.empty()) {
         auto replay = std::make_unique<input::ReplayTelemetryProvider>(
             args.replay.telemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.gearbox.automatic);
+        // Forward the coupling flags so the replay DRIVE branch exercises the SAME
+        // coupling code as the live path. Must be set BEFORE Initialize() so the
+        // twin is constructed with them (Initialize() seeds the twin from these).
+        // Validate + forward the wheel-coupling strategy (fail-fast on a typo).
+        if (args.wheelCoupling == "free") {
+            replay->setWheelCouplingMode(twin::WheelCouplingMode::Free);
+        } else if (args.wheelCoupling == "pin") {
+            replay->setWheelCouplingMode(twin::WheelCouplingMode::Pin);
+        } else if (args.wheelCoupling == "torque") {
+            replay->setWheelCouplingMode(twin::WheelCouplingMode::Torque);
+        } else {
+            throw CliException(
+                "--wheel-coupling must be 'free', 'pin' or 'torque', got: " + args.wheelCoupling);
+        }
+        // Validate + forward the coupling MODEL (fail-fast on a typo, mirroring
+        // the --wheel-coupling validation above).
+        if (args.couplingModel == "clutch-map") {
+            replay->setCouplingModel(twin::CouplingModelKind::ClutchMap);
+        } else if (args.couplingModel == "torque-converter") {
+            replay->setCouplingModel(twin::CouplingModelKind::TorqueConverter);
+        } else if (args.couplingModel == "legacy") {
+            replay->setCouplingModel(twin::CouplingModelKind::Legacy);
+        } else {
+            throw CliException(
+                "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: "
+                + args.couplingModel);
+        }
         if (!replay->Initialize()) {
             throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
@@ -460,7 +487,8 @@ int main(int argc, char* argv[]) {
         size_t presetIndex = 0;
         while (result == EXIT_BUT_CONTINUE_NEXT) {
             const std::string& currentPath = paths[presetIndex];
-            auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
+            auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get(),
+                args.couplingModel == "torque-converter");
 
             // Build SessionDependencies from the available dependencies
             SessionDependencies deps;
