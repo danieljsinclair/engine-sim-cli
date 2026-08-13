@@ -250,10 +250,12 @@ std::string ConsolePresentation::formatDynoState(const EngineState& state, std::
 
 std::string ConsolePresentation::formatFlowState(const EngineState& state, std::ostringstream& out) const {
 
-    // Exhaust flow rate (cm³/s). exhaustFlow is a true m³/s rate (frame
-    // volume / timestep — the same normalization the oscilloscope applies),
-    // so the magnitude is now ~60x the old mislabeled per-frame volume;
-    // whole-number formatting keeps the field width stable at that scale.
+    // Exhaust flow rate (cm³/s). exhaustFlow is a true m³/s rate: the frame's
+    // port-transferred VOLUME (each transfer measured at its source side's
+    // gas state) integrated over every substep, divided by the frame's
+    // simulated duration. Positive = out the exhaust port, negative =
+    // reversion (runner back into the cylinder — sustained negatives at part
+    // throttle are a real model observation, not a readout artifact).
     out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(10)
         << std::setprecision(0) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
