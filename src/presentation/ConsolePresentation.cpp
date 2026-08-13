@@ -236,14 +236,16 @@ std::string ConsolePresentation::formatTorqueState(const EngineState& state, std
 
 std::string ConsolePresentation::formatDynoState(const EngineState& state, std::ostringstream& out) const {
 
-    // Dyno load (shown when torque is being applied)
-    if (state.engine.engineTorqueNm > 0) {
-        if (state.drivetrain.dynoTargetRPM > 0) {
-            out << "[Dyno: " << static_cast<int>(state.drivetrain.dynoTargetRPM) << " RPM "
-                << static_cast<int>(state.drivetrain.dynoTorque) << " ft*lbs] ";
-        } else {
-            out << "[Load: " << static_cast<int>(state.drivetrain.dynoTorque) << " ft*lbs] ";
-        }
+    // Dyno load. Shown only when the dyno is actually applying torque: the
+    // previous gate keyed on ENGINE torque, so every non-dyno run printed a
+    // dead "[Load: 0 ft*lbs]". dynoTorque is Nm internally — convert for the
+    // ft*lbs label.
+    if (state.drivetrain.dynoTargetRPM > 0) {
+        out << "[Dyno: " << static_cast<int>(state.drivetrain.dynoTargetRPM) << " RPM "
+            << static_cast<int>(state.drivetrain.dynoTorque * 0.73756) << " ft*lbs] ";
+    }
+    else if (std::abs(state.drivetrain.dynoTorque) > 0.5) {
+        out << "[Load: " << static_cast<int>(state.drivetrain.dynoTorque * 0.73756) << " ft*lbs] ";
     }
     return out.str();
 }
