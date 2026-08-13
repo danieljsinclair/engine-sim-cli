@@ -10,6 +10,7 @@
 #include "common/PresetExceptions.h"
 
 #include "strategy/IAudioBuffer.h"
+#include "hardware/NullAudioHardwareProvider.h"
 #include "telemetry/ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
 #include "session/ISimulatorSession.h"
@@ -339,6 +340,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
+    config.deterministic = args.deterministic;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
     config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
@@ -477,7 +479,8 @@ int main(int argc, char* argv[]) {
         auto paths = resolveConfigPaths(args, cliLogger.get());
 
         // Create audio buffer once (client owns for session lifetime)
-        AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+        AudioMode audioMode = config.deterministic ? AudioMode::Deterministic
+                            : (config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded);
         auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
 
         // cycle through the available engine presets unless a specific one is configured
@@ -503,7 +506,15 @@ int main(int argc, char* argv[]) {
             // still own the simulator (createSession takes it by move below).
             reconfigureGearboxProviders(simulator.get(), inputCtx);
 
-            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
+            // Deterministic mode injects the null hardware provider: no audio
+            // callback thread exists at all, so nothing wall-clocked can touch
+            // the simulation. Live default keeps the real provider.
+            std::unique_ptr<IAudioHardwareProvider> hardwareOverride;
+            if (config.deterministic) {
+                hardwareOverride = std::make_unique<NullAudioHardwareProvider>();
+            }
+            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session),
+                                    std::move(hardwareOverride));
 
             // Expose session to the signal-stop controller and keyboard provider.
             // The controller never dereferences the session from a signal handler;

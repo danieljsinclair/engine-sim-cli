@@ -34,6 +34,7 @@ void printUsage(const char* progName) {
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
+    std::cout << "  --deterministic      Headless fixed-timestep replay: reproducible per-frame output (gate/diagnosis mode)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
@@ -152,15 +153,23 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     bool threadedFlag = false;
     bool silentFlag = false;
-    app.add_flag("--play,--play-audio", args.playAudio, "Play audio to speakers in real-time");
+    auto playOpt = app.add_flag("--play,--play-audio", args.playAudio, "Play audio to speakers in real-time");
     auto interactiveOpt = app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
     // --live-telemetry and --interactive are mutually exclusive (declared here
     // because interactiveOpt is created in this block; the comment above at the
     // liveTelemetryOpt exclusions documents intent). Live CSV stdin vs keyboard
     // input — the two input sources conflict.
     liveTelemetryOpt->excludes(interactiveOpt);
-    app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
+    auto threadedOpt = app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
+    auto deterministicOpt = app.add_flag("--deterministic", args.deterministic,
+        "Headless fixed-timestep replay: physics advances on the loop thread at the "
+        "fixed update interval (no audio callback thread, no wall-clock pacing). "
+        "Identical invocations produce identical per-frame output — the reproducible "
+        "mode for gate runs and diagnosis. Implies --silent audio behavior.");
+    // Headless mode has no audio strategy choice and no speakers.
+    deterministicOpt->excludes(threadedOpt);
+    deterministicOpt->excludes(playOpt);
     app.add_option("--gearbox-log", args.gearbox.logPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
     auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox");
@@ -188,10 +197,15 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 }
 
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag) {
-    args.syncPull = !threadedFlag;
+    args.syncPull = !threadedFlag && !args.deterministic;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) {
         args.playAudio = true;
+        args.silent = true;
+    }
+    if (args.deterministic) {
+        // Headless: zero volume by construction (no audio output exists), and
+        // the deterministic strategy replaces the sync-pull/threaded choice.
         args.silent = true;
     }
 
@@ -308,7 +322,8 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     }
     std::cout << "  Interactive: " << (config.interactive ? "Yes" : "No") << "\n";
     std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";
-    std::cout << "  Audio Mode: " << (config.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)") << "\n";
+    std::cout << "  Audio Mode: " << (config.deterministic ? "Deterministic (headless fixed-timestep)"
+                              : (config.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)")) << "\n";
     std::cout << "  Volume: " << config.volume << "\n";
     if (config.volume == 0.0f) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";

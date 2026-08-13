@@ -596,10 +596,15 @@ def resolve_cli(cli: str) -> str:
 
 
 def run_model(cli: str, recording: str, model: str, script: str,
-              out_csv: str, bound_s: int) -> None:
+              out_csv: str, bound_s: int, deterministic: bool = False) -> None:
     cmd = [cli, "--silent", "--live-telemetry", "--wheel-coupling", "pin",
            "--coupling-model", model, "--csv-out", out_csv,
            "--script", script, "--start", "--auto"]
+    if deterministic:
+        # Headless fixed-timestep mode: reproducible per-frame output (no
+        # audio-callback physics clock). A full capture replays in ~1/3 the
+        # wall time of the paced live path.
+        cmd.append("--deterministic")
     print("CMD:", " ".join(cmd), f"< {recording}  (bound {bound_s}s)")
     killer = _which_killer()
     with open(recording, "rb") as fh:
@@ -685,6 +690,10 @@ def print_matrix(results: list[dict]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--deterministic", action="store_true",
+                    help="run the CLI in --deterministic mode (headless fixed-timestep, "
+                         "reproducible per-frame output). The default stays the paced live "
+                         "path the road test uses.")
     ap.add_argument("--recording", default=None,
                     help="telemetry recording CSV; if given, RUN each model live "
                          "over the full recording (needs the CLI).")
@@ -726,7 +735,7 @@ def main() -> int:
         tmp_dir = tempfile.mkdtemp(prefix="verify_drive_")
         for m in [x.strip() for x in args.models.split(",") if x.strip()]:
             out_csv = os.path.join(tmp_dir, f"{m}.csv")
-            run_model(cli, recording, m, args.script, out_csv, args.bound_s)
+            run_model(cli, recording, m, args.script, out_csv, args.bound_s, args.deterministic)
             work.append((m, out_csv))
 
     try:

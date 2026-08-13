@@ -50,6 +50,7 @@ struct CommandLineArgs {
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
     bool silent = false;         // Run full audio pipeline but with zero volume
+    bool deterministic = false;  // --deterministic: headless fixed-timestep replay (gate/diagnosis)
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
     bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
 
