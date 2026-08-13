@@ -547,6 +547,78 @@ def check_throttle_response(rows: list[dict], shift: set[int],
                 detail=detail, samples=samples)
 
 
+# Standstill idle band (check 10): during SUSTAINED standstill in gear the
+# engine must idle inside [idle-100, idle+150] and must not hunt across the
+# band edges faster than 0.5 Hz. This is the mechanical bar for the idle-hold
+# controller + creep-capacity calibration: an under-authority idle droops out
+# the bottom (the stall family), an over-scaled creep capacity or a
+# flush-happy integral produces a sawtooth that cycles the band.
+SS_MIN_SPEED_KMH = 1.0     # below this the car counts as standing still
+SS_MIN_DUR_S = 2.0         # segments shorter than this are not "sustained"
+SS_BAND_LO_OFFSET = 100.0  # band bottom = idle - 100
+SS_BAND_HI_OFFSET = 150.0  # band top  = idle + 150
+SS_IN_BAND_MIN_FRAC = 0.9  # >=90% of frames inside the band
+SS_MAX_CYCLES_HZ = 0.5     # full band-exit excursions slower than 0.5 Hz
+
+
+def check_standstill_idle_band(after: list[dict], idle: float) -> dict:
+    lo = idle - SS_BAND_LO_OFFSET
+    hi = idle + SS_BAND_HI_OFFSET
+    # Contiguous standstill-in-gear segments (Running, forward gear, ~0 speed).
+    segments: list[list[dict]] = []
+    cur: list[dict] = []
+    for r in after:
+        if (r["engine_state"] == "Running"
+                and r.get("gear_physical", 0) >= 1
+                and r.get("vehicle_speed_kmh", 0.0) < SS_MIN_SPEED_KMH):
+            cur.append(r)
+        else:
+            if cur:
+                segments.append(cur)
+            cur = []
+    if cur:
+        segments.append(cur)
+
+    bad: list[tuple[list[dict], str]] = []
+    n_sustained = 0
+    for seg in segments:
+        if seg[-1]["time_s"] - seg[0]["time_s"] < SS_MIN_DUR_S:
+            continue
+        n_sustained += 1
+        dur = seg[-1]["time_s"] - seg[0]["time_s"]
+        in_band = [lo <= r["rpm"] <= hi for r in seg]
+        frac = sum(in_band) / len(in_band) if in_band else 1.0
+        # A "cycle" = a full exit: inside -> outside -> inside again. Count
+        # outside-runs; each is one excursion across a band edge.
+        exits = 0
+        prev_outside = False
+        for v in in_band:
+            outside = not v
+            if outside and not prev_outside:
+                exits += 1
+            prev_outside = outside
+        cycles_hz = (exits / 2.0) / dur if dur > 0 else 0.0
+        if frac < SS_IN_BAND_MIN_FRAC:
+            bad.append((seg, f"in-band {frac:.0%} < "
+                             f"{SS_IN_BAND_MIN_FRAC:.0%}"))
+        elif cycles_hz > SS_MAX_CYCLES_HZ:
+            bad.append((seg, f"band cycling {cycles_hz:.2f}Hz > "
+                             f"{SS_MAX_CYCLES_HZ}Hz"))
+    ok = not bad
+    detail = (f"{n_sustained} sustained standstill segment(s) "
+              f">= {SS_MIN_DUR_S:.0f}s; {len(bad)} violation(s) "
+              f"(band [{lo:.0f},{hi:.0f}]rpm >= "
+              f"{SS_IN_BAND_MIN_FRAC:.0%} of frames, band-exit cycling < "
+              f"{SS_MAX_CYCLES_HZ}Hz)")
+    samples = []
+    for seg, why in bad[:3]:
+        r = min(seg, key=lambda x: abs(x["rpm"] - idle))
+        samples.append(f"seg {seg[0]['time_s']:.2f}-"
+                       f"{seg[-1]['time_s']:.2f}s {why} " + _fmt(r))
+    return dict(name="STANDSTILL_IDLE_BAND", ok=ok, n=len(bad),
+                detail=detail, samples=samples)
+
+
 # ---- helpers ---------------------------------------------------------------
 def _fmt(r: dict) -> str:
     return (f"t={r['time_s']:.2f} rpm={r['rpm']} state={r['engine_state']} "
@@ -596,6 +668,7 @@ def score(path: str, model: str, idle: float) -> dict:
         check_no_slip_mismatch(after, idle),
         check_no_clutch_chatter(rows),
         check_throttle_response(rows, shift, idle),
+        check_standstill_idle_band(after, idle),
     ]
     overall = all(c["ok"] for c in checks)
     return dict(model=model, path=path, rows=len(rows),
