@@ -153,9 +153,15 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
     // Engine phase and Throttle + Brake
     out << EnginePhaseName(state.engine.phase) << " [Gas: " << std::setw(3) << static_cast<int>(state.controls.throttle * 100) << "%";
 
-    auto brakeColor = ANSIColors::getDispositionColour(state.controls.brakeLevel <= 0.0, false, state.controls.brakeLevel > 0.0);
-    out << brakeColor << " B:" << std::fixed << std::setprecision(1) << state.controls.brakeLevel << ANSIColors::RESET;
-    
+    // Binary brake indicator: red 'B' when the vehicle brake is on (pedal
+    // pressed — keyboard 'B' or a brake_light=1 CSV row, same signal),
+    // plain '-' otherwise (off or unreported).
+    if (state.controls.brakeLight.value_or(false)) {
+        out << " " << ANSIColors::RED << "B" << ANSIColors::RESET;
+    } else {
+        out << " -";
+    }
+
     out << "] ";
     return out.str();
 }
@@ -163,17 +169,9 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
 
 std::string ConsolePresentation::formatGearState(const EngineState& state, std::ostringstream& out) const {
     // [Gear:XMG] where X=selector, M/A=mode, G=actual gear (transmission state).
-    // A trailing brake-light flag closes the bracket: red 'B' when the vehicle
-    // brake light is on (pedal pressed), plain '-' otherwise (off or unreported).
     out << "[Gear:"
         << gearTriple(state.controls.gearSelector, state.controls.gearAutoMode, state.drivetrain.gear)
-        << " ";
-    if (state.controls.brakeLight.value_or(false)) {
-        out << ANSIColors::RED << "B" << ANSIColors::RESET;
-    } else {
-        out << "-";
-    }
-    out << "] ";
+        << "] ";
     return out.str();
 }
 

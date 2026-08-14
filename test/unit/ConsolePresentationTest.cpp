@@ -392,3 +392,64 @@ TEST_F(ConsolePresentationTest, ShowProgress_Complete_ShowsPercentage) {
     EXPECT_NE(capture.str().find("200%"), std::string::npos)
         << "ShowProgress should show 200% when currentTime/duration = 2.0";
 }
+
+// ============================================================================
+// Brake display — single binary indicator in the Gas bracket, nothing in Gear
+// ============================================================================
+
+// Helper: render a state and return the captured output.
+static std::string renderState(ConsolePresentation& presentation, const EngineState& state) {
+    OutputCapture capture(std::cout);
+    presentation.ShowSimulatorStates(state);
+    return capture.str();
+}
+
+TEST_F(ConsolePresentationTest, BrakeOn_RedBInGasBracket) {
+    EngineState s = makeState();
+    s.controls.brakeLight = true;
+
+    const std::string out = renderState(presentation_, s);
+
+    // Red 'B' closes the Gas bracket (binary indicator, replaces the old B:0.0 numeric)
+    EXPECT_NE(out.find("% " + ANSIColors::RED + "B" + ANSIColors::RESET + "]"), std::string::npos)
+        << "Brake on must show the red B indicator inside the Gas bracket";
+    // The analog numeric must be gone entirely
+    EXPECT_EQ(out.find("B:"), std::string::npos)
+        << "No analog B:<level> numeric may appear anywhere";
+}
+
+TEST_F(ConsolePresentationTest, BrakeOff_PlainDashInGasBracket) {
+    EngineState s = makeState();
+    s.controls.brakeLight = false;
+
+    const std::string out = renderState(presentation_, s);
+
+    EXPECT_NE(out.find("% -]"), std::string::npos)
+        << "Brake off must show plain '-' inside the Gas bracket";
+    EXPECT_EQ(out.find("B:"), std::string::npos);
+}
+
+TEST_F(ConsolePresentationTest, BrakeUnreported_PlainDashInGasBracket) {
+    EngineState s = makeState();
+    s.controls.brakeLight = std::nullopt;
+
+    const std::string out = renderState(presentation_, s);
+
+    EXPECT_NE(out.find("% -]"), std::string::npos)
+        << "Unreported brake must show plain '-' (same as off)";
+}
+
+TEST_F(ConsolePresentationTest, GearBracket_HasNoBrakeIndicator) {
+    EngineState s = makeState();
+    s.controls.brakeLight = true;  // brake ON — still nothing in the Gear bracket
+
+    const std::string out = renderState(presentation_, s);
+
+    const auto start = out.find("[Gear:");
+    ASSERT_NE(start, std::string::npos);
+    const auto end = out.find("]", start);
+    ASSERT_NE(end, std::string::npos);
+    EXPECT_EQ(out.substr(start, end - start + 1),
+              "[Gear:" + gearTriple(s.controls.gearSelector, s.controls.gearAutoMode, s.drivetrain.gear) + "]")
+        << "Gear bracket must contain only the selector/mode/gear triple — no brake char";
+}
