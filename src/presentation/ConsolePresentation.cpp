@@ -262,6 +262,21 @@ std::string ConsolePresentation::formatFlowState(const EngineState& state, std::
         << std::setprecision(0) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
 
+    // Synth output level: RMS of the last rendered audio block, POST-LEVELER
+    // and PRE-VOLUME (the engine tone before the volume knob scales it), in
+    // int16 output scale. This is the honest "what you would hear at volume
+    // 1" quantity — a post-volume tap reads a flat zero on --silent benches
+    // and would hide the level collapse this field exists to expose (the
+    // quiet-WOT investigation). "-" when nothing has rendered yet.
+    if (state.engine.synthOutputRms >= 0.0) {
+        out << "[Out: " << std::fixed << std::setprecision(0) << std::setw(5)
+            << state.engine.synthOutputRms << "]";
+    }
+    else {
+        out << "[Out:     -]";
+    }
+    out << " ";
+
     return out.str();
 }
 
