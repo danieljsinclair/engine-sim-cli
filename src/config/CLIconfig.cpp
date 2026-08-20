@@ -115,6 +115,8 @@ void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
                    "Minimum runner O2 mole fraction")->check(CLI::Range(0.0, 1.0));
     app.add_option("--afterfire-energy-scale", afterfire.energyScale,
                    "Trim on released energy, 1 = physical")->check(CLI::Range(0.0, 10.0));
+    app.add_option("--afterfire-gain", afterfire.customGain,
+                   "Custom pop mix gain (default: 0.6). Scales the pop WAV relative to exhaust sound.")->check(CLI::Range(0.0, 10.0));
     app.add_option("--afterfire-wav", afterfire.afterfireWavPath,
                    "Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.");
     app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
@@ -401,6 +403,8 @@ void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
         std::cout << "    Min raw fuel frac:    " << afterfire.minRawFuelFraction << "\n";
         std::cout << "    Min oxygen fraction:  " << afterfire.minOxygenMoleFraction << "\n";
         std::cout << "    Energy scale:         " << afterfire.energyScale << "\n";
+        std::cout << "    Pop gain:             " << afterfire.customGain
+                  << " (mixes pop WAV onto exhaust; 0=off, higher=louder vs engine)\n";
         std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
         std::cout << "\n";
     }
