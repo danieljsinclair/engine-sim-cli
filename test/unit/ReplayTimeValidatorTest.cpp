@@ -28,6 +28,7 @@ public:
 
     double durationS() const override { return durationSeconds_; }
     void setEndAtS(double seconds) override { lastSetEndAtS_ = seconds; }
+    double getStartFromS() const override { return -1.0; }  // disabled
 
     double lastSetEndAtS() const { return lastSetEndAtS_; }
 

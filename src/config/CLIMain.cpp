@@ -333,14 +333,15 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.assetBasePath = "";
 
     // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
-    config.interactive = args.interactive != config.interactive ? args.interactive : config.interactive;
-    config.playAudio = args.playAudio != config.playAudio ? args.playAudio : config.playAudio;
+    config.interactive = false;
+    config.playAudio = args.playAudio;
     // Interactive mode runs until user quits (duration=0). Non-interactive defaults to 3s.
-    const double defaultDuration = config.interactive ? 0.0 : config.duration;
+    const double defaultDuration = config.interactive ? 0.0 : EngineSimDefaults::DEFAULT_DURATION_SECONDS;
     config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.deterministic = args.deterministic;
+    config.deterministicTickLock = args.deterministic;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
     config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
@@ -463,11 +464,21 @@ int main(int argc, char* argv[]) {
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
-        // --replay-telemetry: when --duration isn't given (and not interactive),
-        // default to the trace's full length so each capture just runs to its end.
         if (!config.interactive && args.duration <= 0.0) {
             if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+                // --replay-telemetry: default to the trace's full length so each
+                // capture just runs to its end.
                 config.duration = replay->durationS();
+            } else if (const auto* live = dynamic_cast<const input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
+                // --live-telemetry: the sim must run FOR AS LONG AS stdin is open
+                // and exit cleanly at real EOF (see SimulationLoop.cpp:542 IsConnected
+                // exit). A finite default duration (3s) would terminate the run
+                // prematurely — the streaming provider owns termination, not the
+                // wall-clock. duration=0 means "no time limit"; the loop then ends
+                // only when the provider reports !IsConnected(). An explicit
+                // --duration still wins (checked above, so we leave it untouched).
+                (void)live;
+                config.duration = 0.0;
             }
         }
         auto presentation = createPresentation(config);
