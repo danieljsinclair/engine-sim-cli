@@ -116,7 +116,7 @@ void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
     app.add_option("--afterfire-energy-scale", afterfire.energyScale,
                    "Trim on released energy, 1 = physical")->check(CLI::Range(0.0, 10.0));
     app.add_option("--afterfire-gain", afterfire.customGain,
-                   "Custom pop mix gain (default: 0.6). Scales the pop WAV relative to exhaust sound.")->check(CLI::Range(0.0, 10.0));
+                   "Afterfire MASTER VOLUME (default: 0.6, range 0-10). Scales the pop as a whole: 0 = silent (no physical crackle, no WAV), 1 = full physical crackle + WAV, higher = louder than physical.")->check(CLI::Range(0.0, 10.0));
     app.add_option("--afterfire-wav", afterfire.afterfireWavPath,
                    "Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.");
     app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
