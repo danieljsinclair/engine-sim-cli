@@ -34,10 +34,16 @@ public:
     void ShowProgress(double currentTime, double duration) override;
     void Update(double dt) override;
 
+    // Suppress CSV row writes (e.g. during the warm-start prefix). The file
+    // handle stays open (so the stream state is not disturbed); we only skip
+    // the row write. Re-enabling resumes writing rows mid-stream.
+    void setCsvEmissionEnabled(bool enabled) override;
+
 private:
     std::string path_;
     std::ofstream out_;
     bool headerWritten_ = false;
+    bool csvEmissionEnabled_ = true;  // toggled by setCsvEmissionEnabled()
 };
 
 } // namespace presentation

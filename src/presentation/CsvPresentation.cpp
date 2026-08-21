@@ -48,14 +48,15 @@ void CsvPresentation::Shutdown() {
 
 void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
     if (!out_.is_open()) return;
+    if (!csvEmissionEnabled_) return;
     if (!headerWritten_) {
-        out_ << "time_s,rpm,rpm_raw,engine_state,throttle_gas_pct,brake,ignition,"
-             << "gear_selector,gear_auto,gear_physical,"
-             << "clutch_pressure,road_implied_rpm,creep_relief_fired,"
-             << "vehicle_speed_kmh,target_speed_kmh,sim_speed_mph,"
-             << "engine_torque_nm,drivetrain_torque_nm,dyno_torque_nm,"
-             << "starter_engaged,exhaust_flow_cm3s,synth_out_rms\n";
-        headerWritten_ = true;
+            out_ << "time_s,rpm,rpm_raw,engine_state,throttle_gas_pct,brake,ignition,"
+                 << "gear_selector,gear_auto,gear_physical,"
+                 << "clutch_pressure,road_implied_rpm,creep_relief_fired,"
+                 << "vehicle_speed_kmh,target_speed_kmh,sim_speed_mph,"
+                 << "engine_torque_nm,drivetrain_torque_nm,dyno_torque_nm,"
+                 << "starter_engaged,exhaust_flow_cm3s,synth_out_rms\n";
+            headerWritten_ = true;
     }
     const double timeS = s.drivetrain.replayTimestampS >= 0.0
                              ? s.drivetrain.replayTimestampS
@@ -86,6 +87,10 @@ void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
          // nothing rendered yet. Same quantity as the console [Out:] field.
          << s.engine.synthOutputRms << '\n';
     out_.flush();
+}
+
+void CsvPresentation::setCsvEmissionEnabled(bool enabled) {
+    csvEmissionEnabled_ = enabled;
 }
 
 void CsvPresentation::ShowMessage(const std::string& /*message*/) {}

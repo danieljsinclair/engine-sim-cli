@@ -35,6 +35,7 @@ public:
     void ShowMessage(const std::string& message) override;
     void ShowError(const std::string& error) override;
     void ShowProgress(double currentTime, double duration) override;
+    void setCsvEmissionEnabled(bool enabled) override;
     void Update(double dt) override;
 
 private:

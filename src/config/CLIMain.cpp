@@ -152,6 +152,12 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         }
 
         attachGearboxLogger(*live, args.gearbox.logPath);
+        // Warm-boot the twin to RUNNING + warm cruise basin BEFORE the first real
+        // frame (mirrors replay's primeTwinToRunning). Without this the live twin +
+        // core start COLD and --live-telemetry --start-from blows massive negative
+        // exhaust flow (reversion). Called AFTER the coupling flags above so the
+        // twin primes with the chosen coupling (CLI sets them post-Initialize).
+        live->warmBootToRunning();
         ctx.provider = std::move(live);
         return ctx;
     }

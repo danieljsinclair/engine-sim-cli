@@ -44,6 +44,10 @@ void PresentationCollection::ShowProgress(double currentTime, double duration) {
     for (auto& c : children_) if (c) c->ShowProgress(currentTime, duration);
 }
 
+void PresentationCollection::setCsvEmissionEnabled(bool enabled) {
+    for (auto& c : children_) if (c) c->setCsvEmissionEnabled(enabled);
+}
+
 void PresentationCollection::Update(double dt) {
     for (auto& c : children_) if (c) c->Update(dt);
 }
