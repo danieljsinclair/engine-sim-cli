@@ -243,35 +243,38 @@ TEST(AfterfireWavArgumentTest, NonMatchingGlobStillResolvesForLaterExpansion) {
 // bind straight to the AfterfireConfig handed to SimulatorFactory::configureAfterfire,
 // so what the parser writes is what the chamber receives.
 
-// The default must stay SuppressWhilePlaying: it is what makes a frequently
-// popping engine read as discrete cracks instead of a continuous buzz. Exposing
-// the choice must not change which mode you get by not choosing.
-TEST(AfterfirePopOverlapArgsTest, DefaultsToSuppressWhilePlaying) {
+// The default must be SumOnTop (blend). Overlap handling is a safety net, not
+// the fix — constantly overlapping pops are a per-vehicle physics tuning problem
+// — so the default layers events rather than discarding them. Suppression is
+// reachable only by asking for it.
+TEST(AfterfirePopOverlapArgsTest, DefaultsToSumOnTop) {
     const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire"};
     CommandLineArgs args;
 
     ASSERT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
-    EXPECT_EQ(args.afterfire.popOverlapMode, AfterfirePopOverlap::SuppressWhilePlaying);
-}
-
-TEST(AfterfirePopOverlapArgsTest, SumSelectsLayeredMode) {
-    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
-                          "--afterfire-pop-overlap", "sum"};
-    CommandLineArgs args;
-
-    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
     EXPECT_EQ(args.afterfire.popOverlapMode, AfterfirePopOverlap::SumOnTop);
 }
 
-// The word "suppress" must be accepted explicitly, not merely be the default —
-// a user pinning the default in a script should not hit a parse error.
-TEST(AfterfirePopOverlapArgsTest, SuppressIsAcceptedExplicitly) {
+// The opt-out must actually be reachable from the command line: this is the only
+// way to get suppression now that it is no longer the default.
+TEST(AfterfirePopOverlapArgsTest, SuppressSelectsTheOptOutMode) {
     const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
                           "--afterfire-pop-overlap", "suppress"};
     CommandLineArgs args;
 
     ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
     EXPECT_EQ(args.afterfire.popOverlapMode, AfterfirePopOverlap::SuppressWhilePlaying);
+}
+
+// The word "sum" must be accepted explicitly, not merely be the default — a user
+// pinning the default in a script should not hit a parse error.
+TEST(AfterfirePopOverlapArgsTest, SumIsAcceptedExplicitly) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-overlap", "sum"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.afterfire.popOverlapMode, AfterfirePopOverlap::SumOnTop);
 }
 
 // An unrecognised mode must FAIL rather than silently fall back to the default:

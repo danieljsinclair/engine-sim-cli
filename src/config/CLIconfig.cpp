@@ -95,7 +95,7 @@ void printUsage(const char* progName) {
     std::cout << "  --afterfire-min-oxygen <0-1>         Minimum runner O2 mole fraction (default: " << afterfireDefaults.minOxygenMoleFraction << ")\n";
     std::cout << "  --afterfire-energy-scale <0-10>      Trim on released energy, 1 = physical (default: " << afterfireDefaults.energyScale << ")\n";
     std::cout << "  --afterfire-wav <path|glob>        Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.\n";
-    std::cout << "  --afterfire-pop-overlap <suppress|sum>  Overlapping pop handling on one exhaust channel: suppress = sounding crack finishes and the new pop is dropped, sum = layered (default: "
+    std::cout << "  --afterfire-pop-overlap <sum|suppress>  Overlapping pop handling on one exhaust channel: sum = layered, suppress = sounding crack finishes and the new pop is dropped (default: "
               << popOverlapModeName(afterfireDefaults.popOverlapMode) << ")\n";
     std::cout << "  --afterfire-min-pop-interval-ms <ms>    Minimum spacing between accepted pops on one channel, 0 disables (default: "
               << afterfireDefaults.minPopIntervalMs << ")\n";
@@ -164,9 +164,10 @@ void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
                    "Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.");
     // Pop PLAYBACK behaviour (the WAV overlay), not the physics: how a pop that
     // arrives while another is still sounding on the same exhaust channel is
-    // admitted. Neither mode ever restarts a sounding pop.
+    // admitted. Neither mode ever restarts a sounding pop. Layering is the
+    // default; suppression is the opt-out (see AfterfirePopOverlap).
     app.add_option("--afterfire-pop-overlap", afterfire.popOverlapMode,
-                   "Overlapping pop handling on one exhaust channel: 'suppress' (default, let the sounding crack finish and drop the new pop) or 'sum' (layer them, both play to completion)")
+                   "Overlapping pop handling on one exhaust channel: 'sum' (default, layer them so both play to completion) or 'suppress' (let the sounding crack finish and drop the new pop)")
         ->transform(CLI::CheckedTransformer(popOverlapModeNames(), CLI::ignore_case));
     app.add_option("--afterfire-min-pop-interval-ms", afterfire.minPopIntervalMs,
                    "Minimum spacing in audio ms between ACCEPTED pops on one exhaust channel; 0 disables the floor (default: "
@@ -459,7 +460,7 @@ void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
         std::cout << "    Pop gain:             " << afterfire.customGain
                   << " (mixes pop WAV onto exhaust; 0=off, higher=louder vs engine)\n";
         std::cout << "    Pop overlap:          " << popOverlapModeName(afterfire.popOverlapMode)
-                  << " (suppress = sounding crack finishes, sum = layered)\n";
+                  << " (sum = layered, suppress = sounding crack finishes)\n";
         std::cout << "    Min pop interval:     " << afterfire.minPopIntervalMs << " ms"
                   << (afterfire.minPopIntervalMs > 0.0 ? "\n" : " (floor disabled)\n");
         std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
