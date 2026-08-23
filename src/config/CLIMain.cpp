@@ -265,8 +265,12 @@ void verifyScriptRuntimeAssets(const std::string& scriptPath) {
     // sound-library/ can exist but be empty — that is exactly the es_new/ case.
     // An empty tree yields no impulse responses, i.e. a silent run, so treat it
     // as missing rather than letting the run proceed with no audio.
+    // One `!ec` per call, not two: `ec` is reused across both probes, so a second
+    // identical check adds nothing (it re-reads the same variable the is_empty
+    // call just overwrote). exists() must succeed cleanly before is_empty() is
+    // trusted, and is_empty() must itself report no error.
     const fs::path smooth = soundLibrary / "smooth";
-    if (fs::exists(smooth, ec) && !ec && fs::is_empty(smooth, ec) && !ec) {
+    if (fs::exists(smooth, ec) && !ec && fs::is_empty(smooth, ec)) {
         throw CliException(
             "Audio asset directory is empty: " + smooth.string()
             + "\n  (script: " + scriptPath + ", asset base: " + assetBase + ")"
@@ -457,8 +461,10 @@ AfterfireSummary summariseAfterfire(const std::vector<AfterfireDiagnostics>& cha
 // compiled in (the bridge accessor is a no-op returning {}) or no engine was
 // loaded. Both cases are reported as unavailable rather than as "0 events",
 // because "0 events" would falsely imply the gates were evaluated and refused.
-void printAfterfireDiagnostics(ISimulator* simulator) {
-    auto* bridgeSimulator = dynamic_cast<BridgeSimulator*>(simulator);
+void printAfterfireDiagnostics(const ISimulator* simulator) {
+    // pointer-to-const: reading the counters is the only thing done here, and
+    // getAfterfireDiagnostics() is a const member, so nothing needs write access.
+    const auto* bridgeSimulator = dynamic_cast<const BridgeSimulator*>(simulator);
     const auto chambers = bridgeSimulator ? bridgeSimulator->getAfterfireDiagnostics()
                                           : std::vector<AfterfireDiagnostics>{};
 
@@ -485,6 +491,39 @@ void printAfterfireDiagnostics(ISimulator* simulator) {
                   << ", rpm = " << summary.eventRpm
                   << ", runnerT = " << summary.eventRunnerTempK << " K"
                   << std::endl;
+    }
+}
+
+// --replay-telemetry with no explicit --duration: run to the end of the trace.
+//
+// Extracted from main() so the "how long should this run?" decision lives in one
+// named place rather than as a nested conditional in the entry point. Only the
+// replay provider carries a trace length, so a non-replay input source leaves
+// the configured duration untouched.
+void applyReplayTraceDuration(SimulationConfig& config, const CommandLineArgs& args,
+                              const InputContext& inputCtx) {
+    const bool durationUnset = !config.interactive && args.duration <= 0.0;
+    const auto* replay = durationUnset
+        ? dynamic_cast<const input::ReplayTelemetryProvider*>(inputCtx.provider.get())
+        : nullptr;
+
+    if (replay) {
+        config.duration = replay->durationS();
+    }
+}
+
+// Publish the live session to the input providers that need to act on it (Q to
+// quit, P to cycle presets). Both casts are the same seam as
+// reconfigureGearboxProviders: setSession is a concrete-provider member, not an
+// IInputProvider one, so only the provider actually in use is told. Extracted
+// from main() because it runs on every preset-cycle iteration and its two casts
+// are one responsibility, not two steps of the entry point.
+void setSessionOnInputProviders(const InputContext& inputCtx, ISimulatorSession* session) {
+    if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) {
+        kb->setSession(session);
+    }
+    if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+        replay->setSession(session);
     }
 }
 
@@ -527,11 +566,7 @@ int main(int argc, char* argv[]) {
         auto* inputProvider = inputCtx.provider.get();
         // --replay-telemetry: when --duration isn't given (and not interactive),
         // default to the trace's full length so each capture just runs to its end.
-        if (!config.interactive && args.duration <= 0.0) {
-            if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
-                config.duration = replay->durationS();
-            }
-        }
+        applyReplayTraceDuration(config, args, inputCtx);
         auto presentation = createPresentation(config);
 
         ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
@@ -596,8 +631,7 @@ int main(int argc, char* argv[]) {
             // The controller never dereferences the session from a signal handler;
             // it stores the pointer for its reader thread to call stop() on.
             stopController->attachSession(session.get());
-            if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
-            if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
+            setSessionOnInputProviders(inputCtx, session.get());
 
             result = session->run();
             // Detach before the session may be hot-swapped/recreated next loop

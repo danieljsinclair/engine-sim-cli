@@ -234,3 +234,94 @@ TEST(AfterfireWavArgumentTest, NonMatchingGlobStillResolvesForLaterExpansion) {
     EXPECT_FALSE(std::filesystem::exists(resolved))
         << "no file matches this pattern literally; the bridge reports the miss";
 }
+
+// ============================================================================
+// --afterfire-pop-overlap / --afterfire-min-pop-interval-ms
+// ============================================================================
+// Pop PLAYBACK behaviour (the WAV overlay), not the physics: how a pop arriving
+// while another is still sounding on the same exhaust channel is admitted. These
+// bind straight to the AfterfireConfig handed to SimulatorFactory::configureAfterfire,
+// so what the parser writes is what the chamber receives.
+
+// The default must stay SuppressWhilePlaying: it is what makes a frequently
+// popping engine read as discrete cracks instead of a continuous buzz. Exposing
+// the choice must not change which mode you get by not choosing.
+TEST(AfterfirePopOverlapArgsTest, DefaultsToSuppressWhilePlaying) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.afterfire.popOverlapMode, AfterfirePopOverlap::SuppressWhilePlaying);
+}
+
+TEST(AfterfirePopOverlapArgsTest, SumSelectsLayeredMode) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-overlap", "sum"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.afterfire.popOverlapMode, AfterfirePopOverlap::SumOnTop);
+}
+
+// The word "suppress" must be accepted explicitly, not merely be the default —
+// a user pinning the default in a script should not hit a parse error.
+TEST(AfterfirePopOverlapArgsTest, SuppressIsAcceptedExplicitly) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-overlap", "suppress"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.afterfire.popOverlapMode, AfterfirePopOverlap::SuppressWhilePlaying);
+}
+
+// An unrecognised mode must FAIL rather than silently fall back to the default:
+// a typo that quietly ran the other mode would be indistinguishable from a
+// tuning result.
+TEST(AfterfirePopOverlapArgsTest, UnknownModeIsRejected) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-overlap", "layered"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(6, const_cast<char**>(argv), args));
+}
+
+// The inter-pop floor default must match the mixer's, since that is the value
+// the chamber uses when the flag is absent.
+TEST(AfterfirePopOverlapArgsTest, MinPopIntervalDefaultsToMixerDefault) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.afterfire.minPopIntervalMs,
+                     DEFAULT_AFTERFIRE_MIN_POP_INTERVAL_MS);
+}
+
+TEST(AfterfirePopOverlapArgsTest, MinPopIntervalOverrideIsParsed) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-min-pop-interval-ms", "12.5"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.afterfire.minPopIntervalMs, 12.5);
+}
+
+// 0 is a MEANINGFUL value ("no floor"), not a missing-argument sentinel, so it
+// must pass the range check and survive into the config rather than being
+// replaced by the default.
+TEST(AfterfirePopOverlapArgsTest, MinPopIntervalZeroDisablesTheFloor) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-min-pop-interval-ms", "0"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.afterfire.minPopIntervalMs, 0.0);
+}
+
+// A negative interval is meaningless; the range check must reject it.
+TEST(AfterfirePopOverlapArgsTest, NegativeMinPopIntervalIsRejected) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-min-pop-interval-ms", "-5"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(6, const_cast<char**>(argv), args));
+}

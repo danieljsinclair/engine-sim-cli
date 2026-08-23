@@ -7,10 +7,12 @@
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -18,6 +20,43 @@
 // ============================================================================
 // Command Line Parsing
 // ============================================================================
+
+namespace {
+
+// Accepted --afterfire-pop-overlap values. A CLI::CheckedTransformer over this
+// map gives the flag a NAMED domain: the parser rejects anything else with the
+// valid words listed, so the numeric enum values never appear on the command
+// line. Order matches the enum.
+// std::less<> (transparent): lets lookups compare against a string_view or a
+// literal without constructing a std::string key for the comparison.
+using PopOverlapModeMap = std::map<std::string, AfterfirePopOverlap, std::less<>>;
+
+const PopOverlapModeMap& popOverlapModeNames() {
+    static const PopOverlapModeMap names{
+        {"suppress", AfterfirePopOverlap::SuppressWhilePlaying},
+        {"sum",      AfterfirePopOverlap::SumOnTop},
+    };
+    return names;
+}
+
+// Reverse lookup for display (--help default, run banner). Reads the SAME map the
+// parser uses, so the word printed is always a word the parser accepts — there is
+// no second table to drift. Falls back to the numeric value if a mode is ever
+// added to the enum without a name (visible, rather than silently mislabelled).
+std::string popOverlapModeName(AfterfirePopOverlap mode) {
+    std::string name = "unknown(" + std::to_string(static_cast<int>(mode)) + ")";
+
+    const auto& names = popOverlapModeNames();
+    if (const auto match = std::find_if(names.begin(), names.end(),
+            [mode](const auto& entry) { return entry.second == mode; });
+        match != names.end()) {
+        name = match->first;
+    }
+
+    return name;
+}
+
+}  // namespace
 
 void printUsage(const char* progName) {
     std::cout << "Engine Simulator CLI v2.0\n";
@@ -56,6 +95,10 @@ void printUsage(const char* progName) {
     std::cout << "  --afterfire-min-oxygen <0-1>         Minimum runner O2 mole fraction (default: " << afterfireDefaults.minOxygenMoleFraction << ")\n";
     std::cout << "  --afterfire-energy-scale <0-10>      Trim on released energy, 1 = physical (default: " << afterfireDefaults.energyScale << ")\n";
     std::cout << "  --afterfire-wav <path|glob>        Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.\n";
+    std::cout << "  --afterfire-pop-overlap <suppress|sum>  Overlapping pop handling on one exhaust channel: suppress = sounding crack finishes and the new pop is dropped, sum = layered (default: "
+              << popOverlapModeName(afterfireDefaults.popOverlapMode) << ")\n";
+    std::cout << "  --afterfire-min-pop-interval-ms <ms>    Minimum spacing between accepted pops on one channel, 0 disables (default: "
+              << afterfireDefaults.minPopIntervalMs << ")\n";
     std::cout << "  --afterfire-diagnostics              Print afterfire event/non-ignition counters at exit\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
@@ -119,6 +162,16 @@ void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
                    "Afterfire MASTER VOLUME (default: 0.6, range 0-10). Scales the pop as a whole: 0 = silent (no physical crackle, no WAV), 1 = full physical crackle + WAV, higher = louder than physical.")->check(CLI::Range(0.0, 10.0));
     app.add_option("--afterfire-wav", afterfire.afterfireWavPath,
                    "Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.");
+    // Pop PLAYBACK behaviour (the WAV overlay), not the physics: how a pop that
+    // arrives while another is still sounding on the same exhaust channel is
+    // admitted. Neither mode ever restarts a sounding pop.
+    app.add_option("--afterfire-pop-overlap", afterfire.popOverlapMode,
+                   "Overlapping pop handling on one exhaust channel: 'suppress' (default, let the sounding crack finish and drop the new pop) or 'sum' (layer them, both play to completion)")
+        ->transform(CLI::CheckedTransformer(popOverlapModeNames(), CLI::ignore_case));
+    app.add_option("--afterfire-min-pop-interval-ms", afterfire.minPopIntervalMs,
+                   "Minimum spacing in audio ms between ACCEPTED pops on one exhaust channel; 0 disables the floor (default: "
+                       + std::to_string(DEFAULT_AFTERFIRE_MIN_POP_INTERVAL_MS) + ")")
+        ->check(CLI::Range(0.0, 5000.0));
     app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
                  "Print afterfire event/non-ignition counters at exit");
 }
@@ -405,6 +458,10 @@ void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
         std::cout << "    Energy scale:         " << afterfire.energyScale << "\n";
         std::cout << "    Pop gain:             " << afterfire.customGain
                   << " (mixes pop WAV onto exhaust; 0=off, higher=louder vs engine)\n";
+        std::cout << "    Pop overlap:          " << popOverlapModeName(afterfire.popOverlapMode)
+                  << " (suppress = sounding crack finishes, sum = layered)\n";
+        std::cout << "    Min pop interval:     " << afterfire.minPopIntervalMs << " ms"
+                  << (afterfire.minPopIntervalMs > 0.0 ? "\n" : " (floor disabled)\n");
         std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
         std::cout << "\n";
     }
