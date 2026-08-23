@@ -90,3 +90,35 @@ TEST(InteractiveModeState, ConnectDemo_OverridesDuration) {
     auto args = parseArgv({"--connect-demo", "--duration", "5"});
     EXPECT_TRUE(args.interactive);
 }
+
+// ============================================================================
+// --replay-telemetry without --duration is a BOUNDED run, not interactive
+// ============================================================================
+//
+// Regression: the trace bounds a replay, so no --duration must NOT mean "run
+// until the user quits". Interactive here suppressed the trace-length default
+// in applyReplayTraceDuration (which requires !interactive), so the run span
+// forever on the trace's final row instead of exiting at the end of the trace.
+// The path is never opened during parsing, so a nonexistent name is fine.
+
+TEST(InteractiveModeState, ReplayTelemetryNoDuration_IsNotInteractive) {
+    auto args = parseArgv({"--replay-telemetry", "capture.csv"});
+    EXPECT_FALSE(args.interactive)
+        << "A replay trace bounds its own run: without --duration it must stay "
+           "non-interactive so the trace length can bound it";
+}
+
+// An explicit --interactive is still honoured for a replay: the user asking to
+// drive the session by hand outranks the bounded-batch default.
+TEST(InteractiveModeState, ReplayTelemetryWithInteractiveFlag_StaysInteractive) {
+    auto args = parseArgv({"--replay-telemetry", "capture.csv", "--interactive"});
+    EXPECT_TRUE(args.interactive)
+        << "An explicit --interactive must override the replay batch default";
+}
+
+// An explicit --duration on a replay is still a bounded, non-interactive run —
+// the new replay branch must not disturb the pre-existing duration behaviour.
+TEST(InteractiveModeState, ReplayTelemetryWithDuration_IsNotInteractive) {
+    auto args = parseArgv({"--replay-telemetry", "capture.csv", "--duration", "2"});
+    EXPECT_FALSE(args.interactive);
+}

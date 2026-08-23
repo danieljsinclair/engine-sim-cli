@@ -407,6 +407,7 @@ struct AfterfireSummary {
     int skippedNoFuel = 0;
     int skippedNoOxygen = 0;
     int skippedNotReady = 0;
+    int skippedThrottle = 0;
     int misfireCycles = 0;
     double maxIgnitionProgress = 0.0;
     double maxRunnerTempK = 0.0;
@@ -426,6 +427,7 @@ AfterfireSummary summariseAfterfire(const std::vector<AfterfireDiagnostics>& cha
         summary.skippedNoFuel += chamber.skippedNoFuel;
         summary.skippedNoOxygen += chamber.skippedNoOxygen;
         summary.skippedNotReady += chamber.skippedNotReady;
+        summary.skippedThrottle += chamber.skippedThrottle;
         summary.misfireCycles += chamber.misfireCycles;
         summary.maxIgnitionProgress = std::max(summary.maxIgnitionProgress, chamber.maxIgnitionProgress);
         summary.maxRunnerTempK = std::max(summary.maxRunnerTempK, chamber.maxRunnerTempK);
@@ -454,6 +456,12 @@ AfterfireSummary summariseAfterfire(const std::vector<AfterfireDiagnostics>& cha
 // value near 0 means the mixture was never reactive in the first place. That
 // distinction is the difference between tuning a parameter and guessing.
 //
+// skippedThrottle is reported separately because it is not a physical
+// precondition at all: it counts cycles where the pedal never fell below the
+// overrun cutoff, so the gate refused before any chemistry was considered. A
+// run with events = 0 and a large skippedThrottle means the input never
+// commanded a lift — read it BEFORE concluding anything about the physics.
+//
 // getAfterfireDiagnostics() is a BridgeSimulator member rather than an
 // ISimulator one, so the cast is the seam — the same pattern (and the same
 // reason) as reconfigureGearboxProviders above. An empty vector means the
@@ -481,6 +489,7 @@ void printAfterfireDiagnostics(const ISimulator* simulator) {
                   << ", noFuel = " << summary.skippedNoFuel
                   << ", noOxygen = " << summary.skippedNoOxygen
                   << ", inductionIncomplete = " << summary.skippedNotReady
+                  << "\n  not overrun: throttle not cut = " << summary.skippedThrottle
                   << "\n  misfire cycles (raw fuel into exhaust) = " << summary.misfireCycles
                   << ", min manifold pressure = " << summary.minManifoldPressurePa / 1000.0 << " kPa"
                   << "\n  exhaust runner peaks: T = " << summary.maxRunnerTempK << " K"

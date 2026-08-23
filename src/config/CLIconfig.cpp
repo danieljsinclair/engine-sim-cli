@@ -301,7 +301,14 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     }
 
     // Default to interactive mode unless --duration is given.
-    if (args.duration <= 0.0) {
+    //
+    // --replay-telemetry is the exception: the trace itself bounds the run, so a
+    // replay without --duration is a bounded batch job, not an open-ended
+    // session. Forcing interactive=true here would suppress the trace-length
+    // default in applyReplayTraceDuration (which requires !interactive) and
+    // leave the run spinning on the trace's last row forever. An explicit
+    // --interactive still wins, because CLI11 has already set the flag by now.
+    if (args.duration <= 0.0 && args.replay.telemetryPath.empty()) {
         args.interactive = true;
     }
 
