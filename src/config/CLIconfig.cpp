@@ -99,7 +99,7 @@ void printUsage(const char* progName) {
               << popOverlapModeName(afterfireDefaults.popOverlapMode) << ")\n";
     std::cout << "  --afterfire-min-pop-interval-ms <ms>    Minimum spacing between accepted pops on one channel, 0 disables (default: "
               << afterfireDefaults.minPopIntervalMs << ")\n";
-    std::cout << "  --afterfire-pop-decay-divisor <n>       Added pop decay, tau = length/n; 0 = none. Only shapes UNSHAPED pops - a self-decaying custom WAV is never decayed twice (default: "
+    std::cout << "  --afterfire-pop-decay-divisor <n>       0 = play the pop WAV as-is (default); >0 adds an exponential decay tail (tau = length/n) for troughs between synth pops (default: "
               << afterfireDefaults.popDecayDivisor << ")\n";
     std::cout << "  --afterfire-diagnostics              Print afterfire event/non-ignition counters at exit\n\n";
     std::cout << "NOTES:\n";
@@ -175,13 +175,13 @@ void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
                    "Minimum spacing in audio ms between ACCEPTED pops on one exhaust channel; 0 disables the floor (default: "
                        + std::to_string(DEFAULT_AFTERFIRE_MIN_POP_INTERVAL_MS) + ")")
         ->check(CLI::Range(0.0, 5000.0));
-    // Added-decay shaping for the pop overlay. Only reaches an UNSHAPED pop: an
-    // already self-decaying custom WAV is never decayed a second time (that
-    // double-decay buried every crack after the first), so this is the knob for the
-    // synth/flat case. 0 is a meaningful value, not a sentinel — it disables the
-    // added decay outright.
+    // OPT-IN shaping for the pop overlay, OFF by default: a pop WAV is already a
+    // recording of a bang, so by default it plays as stored (full duration, correct
+    // rate, own shape). Imposing an envelope on an already-shaped sample multiplies
+    // the two and buries every crack after the first. Raise it for a SYNTHESISED or
+    // flat pop, which needs the decay to read as a crack with troughs between pops.
     app.add_option("--afterfire-pop-decay-divisor", afterfire.popDecayDivisor,
-                   "Added exponential decay applied to a pop, as a divisor of its length (tau = length/n); 0 = no added decay, larger = decays faster. Only shapes pops that are not already self-decaying - a real backfire WAV keeps its own shape regardless (default: "
+                   "0 = play the pop WAV as-is, full duration and own shape (default); >0 adds an exponential decay tail (tau = length/n, larger = faster) to create troughs between synth pops (default: "
                        + std::to_string(DEFAULT_AFTERFIRE_POP_DECAY_DIVISOR) + ")")
         ->check(CLI::Range(0.0, 1000.0));
     app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
@@ -483,8 +483,8 @@ void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
                   << (afterfire.minPopIntervalMs > 0.0 ? "\n" : " (floor disabled)\n");
         std::cout << "    Pop decay divisor:    " << afterfire.popDecayDivisor
                   << (afterfire.popDecayDivisor > 0.0
-                          ? " (unshaped pops only; a self-decaying WAV keeps its own shape)\n"
-                          : " (no added decay)\n");
+                          ? " (adds a decay tail for troughs between pops)\n"
+                          : " (off: pop WAV plays as-is)\n");
         std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
         std::cout << "\n";
     }

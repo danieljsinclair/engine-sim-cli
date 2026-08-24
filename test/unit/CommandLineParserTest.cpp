@@ -364,17 +364,40 @@ TEST(AfterfirePopDecayArgsTest, DivisorOverrideIsParsed) {
     EXPECT_DOUBLE_EQ(args.afterfire.popDecayDivisor, 1.5);
 }
 
-// 0 is a MEANINGFUL value ("no added decay"), not a missing-argument sentinel, so
-// it must pass the range check and survive into the config rather than being
-// replaced by the default. This is the value a user reaches for when a pop is
-// being over-shaped, so it must actually be reachable.
-TEST(AfterfirePopDecayArgsTest, ZeroDivisorDisablesTheAddedDecay) {
+// The DEFAULT must be OFF (0): a pop WAV plays as stored. Asserted as a named
+// constant rather than as the literal 0 so it cannot drift from the documented
+// "passthrough by default" contract without this test failing too.
+TEST(AfterfirePopDecayArgsTest, DefaultIsNoAddedDecay) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_NEAR(args.afterfire.popDecayDivisor, 0.0, 1e-9)
+        << "the afterfire pop decay is no longer off by default — a pop WAV would be "
+           "re-decayed instead of playing as stored";
+}
+
+// 0 is still a MEANINGFUL value, not a missing-argument sentinel, so it must pass
+// the range check and survive into the config. This is the value a user specifies
+// explicitly to be unambiguous that the pop plays as stored.
+TEST(AfterfirePopDecayArgsTest, ZeroDivisorIsAccepted) {
     const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
                           "--afterfire-pop-decay-divisor", "0"};
     CommandLineArgs args;
 
     ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
     EXPECT_DOUBLE_EQ(args.afterfire.popDecayDivisor, 0.0);
+}
+
+// The classic opt-in value (3) must reach the config, so the "add a decay tail for
+// synth pops" path is reachable from the command line — not merely the default.
+TEST(AfterfirePopDecayArgsTest, OptInDivisorThreeIsParsed) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-decay-divisor", "3"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.afterfire.popDecayDivisor, 3.0);
 }
 
 // A negative divisor is meaningless (it would AMPLIFY the pop exponentially rather
