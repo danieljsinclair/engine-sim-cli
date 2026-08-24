@@ -328,3 +328,62 @@ TEST(AfterfirePopOverlapArgsTest, NegativeMinPopIntervalIsRejected) {
 
     EXPECT_FALSE(parseArguments(6, const_cast<char**>(argv), args));
 }
+
+// ============================================================================
+// --afterfire-pop-decay-divisor
+// ============================================================================
+// The added exponential decay applied to a pop on playback (tau = length/n).
+// It binds straight to the AfterfireConfig handed to
+// SimulatorFactory::configureAfterfire, so what the parser writes is what the
+// chamber receives.
+//
+// SCOPE, because it is easy to misread this flag: it only ever shapes an UNSHAPED
+// pop. A custom WAV that already decays by itself (any real backfire recording) is
+// never decayed a second time whatever this is set to — applying the envelope on
+// top of an already-shaped sample buried every crack after the first. That
+// conditionality lives in the mixer and is pinned by the engine-sim
+// AfterfirePopDecay tests; these tests pin only that the VALUE arrives intact.
+
+// The default must match the mixer's, since that is the value the chamber uses
+// when the flag is absent. A stale default here would silently reshape every pop.
+TEST(AfterfirePopDecayArgsTest, DivisorDefaultsToMixerDefault) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.afterfire.popDecayDivisor,
+                     DEFAULT_AFTERFIRE_POP_DECAY_DIVISOR);
+}
+
+TEST(AfterfirePopDecayArgsTest, DivisorOverrideIsParsed) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-decay-divisor", "1.5"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.afterfire.popDecayDivisor, 1.5);
+}
+
+// 0 is a MEANINGFUL value ("no added decay"), not a missing-argument sentinel, so
+// it must pass the range check and survive into the config rather than being
+// replaced by the default. This is the value a user reaches for when a pop is
+// being over-shaped, so it must actually be reachable.
+TEST(AfterfirePopDecayArgsTest, ZeroDivisorDisablesTheAddedDecay) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-decay-divisor", "0"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.afterfire.popDecayDivisor, 0.0);
+}
+
+// A negative divisor is meaningless (it would AMPLIFY the pop exponentially rather
+// than decay it, growing without bound to the end of the sample), so the range
+// check must reject it rather than let it through to the audio path.
+TEST(AfterfirePopDecayArgsTest, NegativeDivisorIsRejected) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-pop-decay-divisor", "-2"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(6, const_cast<char**>(argv), args));
+}

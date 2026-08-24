@@ -99,6 +99,8 @@ void printUsage(const char* progName) {
               << popOverlapModeName(afterfireDefaults.popOverlapMode) << ")\n";
     std::cout << "  --afterfire-min-pop-interval-ms <ms>    Minimum spacing between accepted pops on one channel, 0 disables (default: "
               << afterfireDefaults.minPopIntervalMs << ")\n";
+    std::cout << "  --afterfire-pop-decay-divisor <n>       Added pop decay, tau = length/n; 0 = none. Only shapes UNSHAPED pops - a self-decaying custom WAV is never decayed twice (default: "
+              << afterfireDefaults.popDecayDivisor << ")\n";
     std::cout << "  --afterfire-diagnostics              Print afterfire event/non-ignition counters at exit\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
@@ -173,6 +175,15 @@ void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
                    "Minimum spacing in audio ms between ACCEPTED pops on one exhaust channel; 0 disables the floor (default: "
                        + std::to_string(DEFAULT_AFTERFIRE_MIN_POP_INTERVAL_MS) + ")")
         ->check(CLI::Range(0.0, 5000.0));
+    // Added-decay shaping for the pop overlay. Only reaches an UNSHAPED pop: an
+    // already self-decaying custom WAV is never decayed a second time (that
+    // double-decay buried every crack after the first), so this is the knob for the
+    // synth/flat case. 0 is a meaningful value, not a sentinel — it disables the
+    // added decay outright.
+    app.add_option("--afterfire-pop-decay-divisor", afterfire.popDecayDivisor,
+                   "Added exponential decay applied to a pop, as a divisor of its length (tau = length/n); 0 = no added decay, larger = decays faster. Only shapes pops that are not already self-decaying - a real backfire WAV keeps its own shape regardless (default: "
+                       + std::to_string(DEFAULT_AFTERFIRE_POP_DECAY_DIVISOR) + ")")
+        ->check(CLI::Range(0.0, 1000.0));
     app.add_flag("--afterfire-diagnostics", afterfire.diagnostics,
                  "Print afterfire event/non-ignition counters at exit");
 }
@@ -470,6 +481,10 @@ void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
                   << " (sum = layered, suppress = sounding crack finishes)\n";
         std::cout << "    Min pop interval:     " << afterfire.minPopIntervalMs << " ms"
                   << (afterfire.minPopIntervalMs > 0.0 ? "\n" : " (floor disabled)\n");
+        std::cout << "    Pop decay divisor:    " << afterfire.popDecayDivisor
+                  << (afterfire.popDecayDivisor > 0.0
+                          ? " (unshaped pops only; a self-decaying WAV keeps its own shape)\n"
+                          : " (no added decay)\n");
         std::cout << "    Diagnostics:          " << (afterfire.diagnostics ? "Yes" : "No") << "\n";
         std::cout << "\n";
     }
