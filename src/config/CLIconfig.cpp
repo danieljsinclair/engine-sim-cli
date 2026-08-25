@@ -76,6 +76,7 @@ void printUsage(const char* progName) {
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
+    std::cout << "  --engine-volume <0-1> Engine MASTER VOLUME: scales the engine exhaust (default: " << EngineSimDefaults::DEFAULT_HARDWARE_VOLUME << ", independent of --afterfire-gain)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
@@ -95,6 +96,7 @@ void printUsage(const char* progName) {
     std::cout << "  --afterfire-min-oxygen <0-1>         Minimum runner O2 mole fraction (default: " << afterfireDefaults.minOxygenMoleFraction << ")\n";
     std::cout << "  --afterfire-energy-scale <0-10>      Trim on released energy, 1 = physical (default: " << afterfireDefaults.energyScale << ")\n";
     std::cout << "  --afterfire-wav <path|glob>        Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.\n";
+    std::cout << "  --afterfire-wav-only                 Play ONLY the pop WAV: suppress the PHYSICAL crackle (exhaust-runner pressure spike) but still fire the event and the WAV. Needs --afterfire-wav to be audible (default: off)\n";
     std::cout << "  --afterfire-pop-overlap <sum|suppress>  Overlapping pop handling on one exhaust channel: sum = layered, suppress = sounding crack finishes and the new pop is dropped (default: "
               << popOverlapModeName(afterfireDefaults.popOverlapMode) << ")\n";
     std::cout << "  --afterfire-min-pop-interval-ms <ms>    Minimum spacing between accepted pops on one channel, 0 disables (default: "
@@ -164,6 +166,14 @@ void addAfterfireOptions(CLI::App& app, AfterfireConfig& afterfire) {
                    "Afterfire MASTER VOLUME (default: 0.6, range 0-10). Scales the pop as a whole: 0 = silent (no physical crackle, no WAV), 1 = full physical crackle + WAV, higher = louder than physical.")->check(CLI::Range(0.0, 10.0));
     app.add_option("--afterfire-wav", afterfire.afterfireWavPath,
                    "Custom afterfire pop WAV file or glob (e.g. es/sound-library/new/*.wav). Default: engine default.");
+    // ISOLATION SWITCH, opt-in: the physical crackle IS the honest afterfire, so
+    // suppressing it is never the default. It withholds the combustion energy from
+    // the exhaust runner so no pressure spike (and therefore no physical crackle)
+    // forms, while the WAV overlay still plays on every event. The event stream is
+    // otherwise identical, which is what makes it usable as a diagnostic: if a pop
+    // still sounds wrong with this on, the WAV is the culprit, not the physics.
+    app.add_flag("--afterfire-wav-only", afterfire.wavOnly,
+                 "Play ONLY the pop WAV on an afterfire: suppress the PHYSICAL crackle (the exhaust-runner pressure spike) while still firing the event and the WAV overlay. Requires --afterfire-wav to be audible at all. Diagnostic for isolating whether an unwanted crackle is the physics or the sample.");
     // Pop PLAYBACK behaviour (the WAV overlay), not the physics: how a pop that
     // arrives while another is still sounding on the same exhaust channel is
     // admitted. Neither mode ever restarts a sounding pop. Layering is the
@@ -243,6 +253,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--synth-latency", args.audio.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
+    app.add_option("--engine-volume", args.engineVolume, "Engine MASTER VOLUME (default: " + std::to_string(EngineSimDefaults::DEFAULT_HARDWARE_VOLUME) + ", range 0-1). Scales the engine exhaust independently of the afterfire pops (which are governed by --afterfire-gain)")->check(CLI::Range(0.0f, 1.0f));
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
@@ -477,6 +488,11 @@ void ShowAfterfireHeader(const AfterfireConfig& afterfire) {
         std::cout << "    Energy scale:         " << afterfire.energyScale << "\n";
         std::cout << "    Pop gain:             " << afterfire.customGain
                   << " (mixes pop WAV onto exhaust; 0=off, higher=louder vs engine)\n";
+        std::cout << "    Physical crackle:     "
+                  << (afterfire.wavOnly
+                          ? "Suppressed (WAV overlay only: no runner pressure spike)"
+                          : "On (runner pressure spike + WAV overlay)")
+                  << "\n";
         std::cout << "    Pop overlap:          " << popOverlapModeName(afterfire.popOverlapMode)
                   << " (sum = layered, suppress = sounding crack finishes)\n";
         std::cout << "    Min pop interval:     " << afterfire.minPopIntervalMs << " ms"
