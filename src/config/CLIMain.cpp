@@ -10,6 +10,7 @@
 #include "common/PresetExceptions.h"
 
 #include "strategy/IAudioBuffer.h"
+#include "hardware/NullAudioHardwareProvider.h"
 #include "telemetry/ITelemetryProvider.h"
 #include "simulation/SimulationLoop.h"
 #include "session/ISimulatorSession.h"
@@ -20,6 +21,8 @@
 #include "input/KeyboardInput.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
+#include "presentation/CsvPresentation.h"
+#include "presentation/PresentationCollection.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
 #include <Verification.h>
@@ -38,6 +41,7 @@
 #include "simulator/BridgeSimulator.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/WheelCoupling.h"
+#include "twin/CouplingModelSelector.h"
 #include "twin/GearboxCsvLogger.h"
 
 #include "engine-sim/include/simulator.h"
@@ -129,7 +133,31 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
                 "--wheel-coupling must be 'free', 'pin' or 'torque', got: " + args.wheelCoupling);
         }
 
+        // Validate + forward the live clutch coupling MODEL (how the clutch
+        // pressure is derived). Fail-fast on a typo'd model name (mirrors the
+        // --wheel-coupling validation above). torque-converter is the default
+        // (the chosen fluid-coupling approach); clutch-map is the smooth governor
+        // fallback; legacy is the historical bang-bang relief path (kept for A/B
+        // comparison).
+        if (args.couplingModel == "clutch-map") {
+            live->setCouplingModel(twin::CouplingModelKind::ClutchMap);
+        } else if (args.couplingModel == "torque-converter") {
+            live->setCouplingModel(twin::CouplingModelKind::TorqueConverter);
+        } else if (args.couplingModel == "legacy") {
+            live->setCouplingModel(twin::CouplingModelKind::Legacy);
+        } else {
+            throw CliException(
+                "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: "
+                + args.couplingModel);
+        }
+
         attachGearboxLogger(*live, args.gearbox.logPath);
+        // Warm-boot the twin to RUNNING + warm cruise basin BEFORE the first real
+        // frame (mirrors replay's primeTwinToRunning). Without this the live twin +
+        // core start COLD and --live-telemetry --start-from blows massive negative
+        // exhaust flow (reversion). Called AFTER the coupling flags above so the
+        // twin primes with the chosen coupling (CLI sets them post-Initialize).
+        live->warmBootToRunning();
         ctx.provider = std::move(live);
         return ctx;
     }
@@ -139,6 +167,33 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     if (!args.replay.telemetryPath.empty()) {
         auto replay = std::make_unique<input::ReplayTelemetryProvider>(
             args.replay.telemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.gearbox.automatic);
+        // Forward the coupling flags so the replay DRIVE branch exercises the SAME
+        // coupling code as the live path. Must be set BEFORE Initialize() so the
+        // twin is constructed with them (Initialize() seeds the twin from these).
+        // Validate + forward the wheel-coupling strategy (fail-fast on a typo).
+        if (args.wheelCoupling == "free") {
+            replay->setWheelCouplingMode(twin::WheelCouplingMode::Free);
+        } else if (args.wheelCoupling == "pin") {
+            replay->setWheelCouplingMode(twin::WheelCouplingMode::Pin);
+        } else if (args.wheelCoupling == "torque") {
+            replay->setWheelCouplingMode(twin::WheelCouplingMode::Torque);
+        } else {
+            throw CliException(
+                "--wheel-coupling must be 'free', 'pin' or 'torque', got: " + args.wheelCoupling);
+        }
+        // Validate + forward the coupling MODEL (fail-fast on a typo, mirroring
+        // the --wheel-coupling validation above).
+        if (args.couplingModel == "clutch-map") {
+            replay->setCouplingModel(twin::CouplingModelKind::ClutchMap);
+        } else if (args.couplingModel == "torque-converter") {
+            replay->setCouplingModel(twin::CouplingModelKind::TorqueConverter);
+        } else if (args.couplingModel == "legacy") {
+            replay->setCouplingModel(twin::CouplingModelKind::Legacy);
+        } else {
+            throw CliException(
+                "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: "
+                + args.couplingModel);
+        }
         if (!replay->Initialize()) {
             throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
@@ -149,6 +204,9 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         replay->setStartFromS(args.replay.startFromS);
         replay->setEndAtS(args.replay.endAtS);
         validateReplayTimeSlicing(args, replay.get());
+        // Attach the gearbox decision logger when requested, so the oracle
+        // (section D: parse per-frame gear/rpm/mph) can validate replay runs.
+        attachGearboxLogger(*replay, args.gearbox.logPath);
         ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
         return ctx;
@@ -228,10 +286,18 @@ std::unique_ptr<presentation::IPresentation> createPresentation(const Simulation
     presConfig.duration = config.duration;
     presConfig.diagnostics = config.diagnostics;
 
-    if (auto pres = std::make_unique<presentation::ConsolePresentation>(); pres->Initialize(presConfig)) {
-        return pres;
+    // When --csv-out is set the Collection fans every call out to
+    // all children; the loop holds one IPresentation.
+    auto collection = std::make_unique<presentation::PresentationCollection>();
+    collection->add(std::make_unique<presentation::ConsolePresentation>());
+    if (!config.csvOutPath.empty()) {
+        collection->add(std::make_unique<presentation::CsvPresentation>(config.csvOutPath));
     }
-    throw CliException("Failed to initialize presentation");
+
+    if (!collection->Initialize(presConfig)) {
+        throw CliException("Failed to initialize presentation");
+    }
+    return collection;
 }
 
 std::vector<std::string> resolveConfigPaths(const CommandLineArgs& args, ILogging* logger) {
@@ -273,17 +339,20 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.assetBasePath = "";
 
     // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
-    config.interactive = args.interactive != config.interactive ? args.interactive : config.interactive;
-    config.playAudio = args.playAudio != config.playAudio ? args.playAudio : config.playAudio;
+    config.interactive = false;
+    config.playAudio = args.playAudio;
     // Interactive mode runs until user quits (duration=0). Non-interactive defaults to 3s.
-    const double defaultDuration = config.interactive ? 0.0 : config.duration;
+    const double defaultDuration = config.interactive ? 0.0 : EngineSimDefaults::DEFAULT_DURATION_SECONDS;
     config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
+    config.deterministic = args.deterministic;
+    config.deterministicTickLock = args.deterministic;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;
     config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
+    config.csvOutPath = args.csvOut;
 
     // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
     // simulationFrequency: 0 means "use engine's built-in frequency" (piston engines get it from
@@ -401,11 +470,21 @@ int main(int argc, char* argv[]) {
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
-        // --replay-telemetry: when --duration isn't given (and not interactive),
-        // default to the trace's full length so each capture just runs to its end.
         if (!config.interactive && args.duration <= 0.0) {
             if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
+                // --replay-telemetry: default to the trace's full length so each
+                // capture just runs to its end.
                 config.duration = replay->durationS();
+            } else if (const auto* live = dynamic_cast<const input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
+                // --live-telemetry: the sim must run FOR AS LONG AS stdin is open
+                // and exit cleanly at real EOF (see SimulationLoop.cpp:542 IsConnected
+                // exit). A finite default duration (3s) would terminate the run
+                // prematurely — the streaming provider owns termination, not the
+                // wall-clock. duration=0 means "no time limit"; the loop then ends
+                // only when the provider reports !IsConnected(). An explicit
+                // --duration still wins (checked above, so we leave it untouched).
+                (void)live;
+                config.duration = 0.0;
             }
         }
         auto presentation = createPresentation(config);
@@ -417,7 +496,14 @@ int main(int argc, char* argv[]) {
         auto paths = resolveConfigPaths(args, cliLogger.get());
 
         // Create audio buffer once (client owns for session lifetime)
-        AudioMode audioMode = config.syncPull ? AudioMode::SyncPull : AudioMode::Threaded;
+        AudioMode audioMode;
+        if (config.deterministic) {
+            audioMode = AudioMode::Deterministic;
+        } else if (config.syncPull) {
+            audioMode = AudioMode::SyncPull;
+        } else {
+            audioMode = AudioMode::Threaded;
+        }
         auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
 
         // cycle through the available engine presets unless a specific one is configured
@@ -427,7 +513,8 @@ int main(int argc, char* argv[]) {
         size_t presetIndex = 0;
         while (result == EXIT_BUT_CONTINUE_NEXT) {
             const std::string& currentPath = paths[presetIndex];
-            auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get());
+            auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get(),
+                args.couplingModel == "torque-converter");
 
             // Build SessionDependencies from the available dependencies
             SessionDependencies deps;
@@ -442,7 +529,15 @@ int main(int argc, char* argv[]) {
             // still own the simulator (createSession takes it by move below).
             reconfigureGearboxProviders(simulator.get(), inputCtx);
 
-            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session));
+            // Deterministic mode injects the null hardware provider: no audio
+            // callback thread exists at all, so nothing wall-clocked can touch
+            // the simulation. Live default keeps the real provider.
+            std::unique_ptr<IAudioHardwareProvider> hardwareOverride;
+            if (config.deterministic) {
+                hardwareOverride = std::make_unique<NullAudioHardwareProvider>();
+            }
+            session = createSession(config, currentPath, std::move(simulator), deps, std::move(session),
+                                    std::move(hardwareOverride));
 
             // Expose session to the signal-stop controller and keyboard provider.
             // The controller never dereferences the session from a signal handler;

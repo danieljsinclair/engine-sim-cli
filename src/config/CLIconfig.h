@@ -50,6 +50,7 @@ struct CommandLineArgs {
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
     bool silent = false;         // Run full audio pipeline but with zero volume
+    bool deterministic = false;  // --deterministic: headless fixed-timestep replay (gate/diagnosis)
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
     bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
 
@@ -62,15 +63,30 @@ struct CommandLineArgs {
     // so the consumer cannot tell them apart. Implies --start (fires starter on frame 0).
     bool liveTelemetry = false;  // --live-telemetry
 
-    // Live clutch wheel-coupling mode (--wheel-coupling): "free" (default — slip
-    // lock uses the actual simulated wheel speed; sim speed stays independent so
-    // the mph-vs-target diagnostic is visible) or "pin" (mirrors replay: the slip
-    // lock and the sim vehicle speed are pinned to the CSV road speed).
-    std::string wheelCoupling = "free";
+    // Live clutch wheel-coupling mode (--wheel-coupling): "pin" (default —
+    // mirrors replay: the slip lock and the sim vehicle speed are pinned to the
+    // CSV road speed; this is the road-driven path the road-test tunes against),
+    // "free" (slip lock uses the actual simulated wheel speed; sim speed stays
+    // independent so the mph-vs-target diagnostic is visible), or "torque".
+    std::string wheelCoupling = "pin";
+
+    // Coupling MODEL (--coupling-model): how the live clutch pressure is derived.
+    // "torque-converter" (default — fluid-coupling pump/turbine + TR/K curves, the
+    // chosen approach), "clutch-map" (declarative smooth governor curve; never
+    // opens the clutch, so no bang-bang oscillation — fallback for comparison), or
+    // "legacy" (historical slip-lock + binary creep-drag relief, the path that
+    // oscillated, kept for A/B comparison).
+    std::string couplingModel = "torque-converter";
 
     // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
+
+    // Machine-parseable CSV output alongside the console line. One row per frame
+    // with all per-frame fields (timecode, rpm, gas, gear, clutch%, roadImplied,
+    // relief, torques, state). Empty = no CSV. For automated smoke-tests /
+    // lug-stall spelunking without grepping color-coded console text.
+    std::string csvOut;
 };
 
 // ============================================================================
