@@ -16,6 +16,7 @@ add_executable(unit_tests
     ISimulatorTest.cpp
     ANSIColorsTest.cpp
     CLIMainTest.cpp
+    CLIMainS3776S1820Test.cpp
     ReplayTimeValidatorTest.cpp
     ExecutablePathTest.cpp
     # Required support code

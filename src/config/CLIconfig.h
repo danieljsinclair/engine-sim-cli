@@ -7,6 +7,7 @@
 #include <string>
 #include "simulator/EngineSimTypes.h"
 #include "io/IPresentation.h"  // DiagnosticOutputFilter
+#include "common/TimeParser.h"
 
 // Forward declarations
 class SimulationConfig;
@@ -45,7 +46,8 @@ struct CommandLineArgs {
     double duration = 0.0;        // 0-sentinel, resolved by bridge/SimulationConfig
     double targetLoad = -1.0;     // -1 = no dyno, 0.0-1.0 = load torque fraction
     bool interactive = false;
-    bool playAudio = false;
+    bool interactiveExplicit = false;  // true only when --interactive passed on CLI (vs defaulted because no --duration)
+    bool playAudio = true;  // Audio playback is the default (only --deterministic suppresses it via null provider)
     bool connectDemo = false;      // Run VirtualICE twin demo with automatic gearbox
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
@@ -98,7 +100,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
 void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion);
 
 // Parse a time string (plain seconds "30.5", mm:ss "1:30.5", or hh:mm:ss "0:01:30.5") into seconds.
-// Returns -1.0 on invalid input.
-double parseReplayTimeToSeconds(const std::string& s);
+// Returns -1.0 on invalid input. Shared bridge version — see common/TimeParser.h.
+inline double parseReplayTimeToSeconds(const std::string& s) {
+    return engine_sim_bridge::parseTimecodeToSeconds(s);
+}
 
 #endif // CLI_CONFIG_H

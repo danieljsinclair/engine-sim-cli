@@ -19,6 +19,7 @@
 #include "io/IInputProvider.h"
 #include "input/KeyboardInputProvider.h"
 #include "input/KeyboardInput.h"
+#include "input/OverlayInputProvider.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
 #include "presentation/CsvPresentation.h"
@@ -158,6 +159,28 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         // exhaust flow (reversion). Called AFTER the coupling flags above so the
         // twin primes with the chosen coupling (CLI sets them post-Initialize).
         live->warmBootToRunning();
+        // Overlay mode: keyboard overlay on live/replay CSV input.
+        // Only when --interactive was EXPLICITLY passed (not defaulted because
+        // no --duration): otherwise every live run without --duration would try
+        // to build an overlay and double-init stdin. The overlay wraps the SAME
+        // live provider created above (it owns the stdin stream) — we must not
+        // create a second LiveTelemetryProvider on std::cin.
+        if (args.interactiveExplicit) {
+            auto kb = std::make_unique<::KeyboardInput>();
+            auto target_ov = std::make_unique<input::EngineInputTarget>();
+            target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
+            if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
+            if (args.autoStart) target_ov->setStarter();
+            auto overlay = std::make_unique<input::OverlayInputProvider>(
+                std::move(live), std::move(kb), target_ov.get());
+            if (!overlay->Initialize()) {
+                throw CliException("Failed to initialize overlay provider: " + overlay->GetLastError());
+            }
+            ctx.target = std::move(target_ov);
+            ctx.provider = std::move(overlay);
+            return ctx;
+        }
+
         ctx.provider = std::move(live);
         return ctx;
     }
@@ -362,6 +385,16 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
         config.engineConfig.simulationFrequency = args.audio.simulationFrequency;
     }
     config.engineConfig.targetSynthesizerLatency = (args.audio.synthLatency > 0.0) ? args.audio.synthLatency : config.engineConfig.targetSynthesizerLatency;
+
+    // Paced-replay mode: the sim is paced to a recording (deterministic replay,
+    // or live/replay telemetry whose warm-start prefix steps the full sim on the
+    // loop thread) rather than free-running real-time audio. Disable the
+    // audio-latency substep governor in the engine-sim core so the per-frame
+    // step count is deterministic and the warm-start can't tip into the
+    // reversion (negative-exhaust-flow) attractor. Free-running audio mode
+    // (interactive/threaded) keeps the governor for latency tracking.
+    config.engineConfig.pacedReplay =
+        args.deterministic || args.liveTelemetry || !args.replay.telemetryPath.empty();
 
     // Gearbox mode: --auto enables automatic gearbox, default is manual
     config.autoGearbox = args.gearbox.automatic;

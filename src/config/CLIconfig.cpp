@@ -25,7 +25,7 @@ void printUsage(const char* progName) {
     std::cout << "  --script <path>      Path to engine config (.mr script or .json preset)\n";
     std::cout << "  --load <0-100>       Dyno load torque percentage (engine works against this)\n";
     std::cout << "  --interactive        Enable interactive keyboard control\n";
-    std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
+
     std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --connect-demo       Run VirtualICE twin demo (gearbox mode per --auto/--manual)\n";
@@ -51,7 +51,7 @@ void printUsage(const char* progName) {
     std::cout << "  Default mode is sync-pull (synchronous render in audio callback)\n";
     std::cout << "  Use --threaded for cursor-chasing circular buffer mode\n";
     std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n";
-    std::cout << "  --live-telemetry and --interactive are mutually exclusive (CSV stdin vs keyboard)\n\n";
+    std::cout << "  --live-telemetry can be combined with --interactive (keyboard overlay on CSV stdin)\n\n";
     std::cout << "Interactive Controls:\n";
     std::cout << "  A                      Toggle ignition on/off (starts ON)\n";
     std::cout << "  S                      Toggle starter motor on/off\n";
@@ -66,17 +66,18 @@ void printUsage(const char* progName) {
     std::cout << "  P                      Cycle to next engine preset (in .json preset mode)\n";
     std::cout << "  Q/ESC                  Quit\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << progName << " --interactive --play              # Cycle presets, interactive\n";
-    std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive --play\n";
-    std::cout << "  " << progName << " --sine --interactive --play\n";
-    std::cout << "  " << progName << " --load 75 --play                   # Default presets with load\n";
+    std::cout << "  " << progName << " --interactive              # Cycle presets, interactive\n";
+    std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive\n";
+    std::cout << "  " << progName << " --sine --interactive\n";
+    std::cout << "  " << progName << " --load 75                   # Default presets with load\n";
     std::cout << "  " << progName << " --live-telemetry --script C63_M156_V3.mr --silent < recording.csv  # Drive a named engine from CSV\n";
 }
 
 // Forward declaration — defined below parseArguments.
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath,
                  const std::string& positionalEngineConfig, double loadArg,
-                 bool threadedFlag, bool silentFlag);
+                 bool threadedFlag, bool silentFlag,
+                 bool interactiveExplicit = false);
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     CLI::App app{"Engine Simulator CLI v2.0"};
@@ -146,22 +147,18 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     liveTelemetryOpt->excludes(connectDemoOpt);
     liveTelemetryOpt->excludes(replayTelemetryOpt);
 
-    // --live-telemetry and --interactive are mutually exclusive: live telemetry
-    // drives the sim from a CSV stream (no keyboard input), while --interactive
-    // drives it from the keyboard. The two input sources conflict. Rejected with
-    // a clear error at parse time (CLI11's excludes emits a descriptive message).
-
+    // --live-telemetry can be combined with --interactive (keyboard overlay
+    // on CSV stdin). No real conflict: overlay applies keyboard overrides
+    // over the live CSV input source.
+    // --interactive can be combined with --live-telemetry or --replay-telemetry
+    // (keyboard overlay on CSV/replay). The overlay activates only when combined.
     bool threadedFlag = false;
     bool silentFlag = false;
-    auto playOpt = app.add_flag("--play,--play-audio", args.playAudio, "Play audio to speakers in real-time");
-    auto interactiveOpt = app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
-    // --live-telemetry and --interactive are mutually exclusive (declared here
-    // because interactiveOpt is created in this block; the comment above at the
-    // liveTelemetryOpt exclusions documents intent). Live CSV stdin vs keyboard
-    // input — the two input sources conflict.
-    liveTelemetryOpt->excludes(interactiveOpt);
-    auto threadedOpt = app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
+    bool interactiveExplicit = false;
+    auto interactiveOpt = app.add_flag("--interactive", interactiveExplicit, "Enable interactive keyboard control (can be combined with --live-telemetry or --replay-telemetry for overlay)");
+    // No mutual exclusion: keyboard overlay on live/replay CSV is allowed.
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
+    auto threadedOpt = app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     auto deterministicOpt = app.add_flag("--deterministic", args.deterministic,
         "Headless fixed-timestep replay: physics advances on the loop thread at the "
         "fixed update interval (no audio callback thread, no wall-clock pacing). "
@@ -169,7 +166,6 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "mode for gate runs and diagnosis. Implies --silent audio behavior.");
     // Headless mode has no audio strategy choice and no speakers.
     deterministicOpt->excludes(threadedOpt);
-    deterministicOpt->excludes(playOpt);
     app.add_option("--gearbox-log", args.gearbox.logPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
     auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox");
@@ -193,10 +189,10 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         return false;
     }
 
-    return processArgs(args, scriptPath, positionalEngineConfig, loadArg, threadedFlag, silentFlag);
+    return processArgs(args, scriptPath, positionalEngineConfig, loadArg, threadedFlag, silentFlag, interactiveExplicit);
 }
 
-bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag) {
+bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag, bool interactiveExplicit) {
     args.syncPull = !threadedFlag && !args.deterministic;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) {
@@ -209,10 +205,17 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         args.silent = true;
     }
 
-    // Default to interactive mode unless --duration is given.
+    // Default to interactive mode unless --duration is given. This is the
+    // "open-ended run" default (no duration = run until quit). It is NOT the
+    // same as an explicit --interactive (keyboard overlay): the overlay path in
+    // CLIMain only activates when the user passed --interactive on the command
+    // line (interactiveExplicit), not when we defaulted here. Without that
+    // distinction, every live/replay run without --duration would try to build
+    // an overlay provider and fail (double-init on stdin).
     if (args.duration <= 0.0) {
         args.interactive = true;
     }
+    args.interactiveExplicit = interactiveExplicit;
 
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
@@ -257,46 +260,6 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     }
 
     return true;
-}
-
-// ============================================================================
-// Time string parsing
-// ============================================================================
-double parseReplayTimeToSeconds(const std::string& s) {
-    if (s.empty()) return -1.0;
-
-    // Reject trailing/leading colons (std::getline silently drops empty tokens
-    // at the ends, so "01:" would parse as ["01"] — treat as invalid).
-    if (s.front() == ':' || s.back() == ':') return -1.0;
-
-    std::vector<std::string> parts;
-    std::stringstream ss(s);
-    std::string part;
-    while (std::getline(ss, part, ':')) {
-        parts.push_back(part);
-    }
-
-    try {
-        if (parts.size() == 1) {
-            return std::stod(parts[0]);
-        }
-        if (parts.size() == 2) {
-            return std::stod(parts[0]) * 60.0 + std::stod(parts[1]);
-        }
-        if (parts.size() == 3) {
-            return std::stod(parts[0]) * 3600.0
-                 + std::stod(parts[1]) * 60.0
-                 + std::stod(parts[2]);
-        }
-    } catch (const std::invalid_argument&) {
-        // std::stod: token isn't a number.
-        return -1.0;
-    } catch (const std::out_of_range&) {
-        // std::stod: token parses but the value is out of double range.
-        return -1.0;
-    }
-
-    return -1.0;
 }
 
 // ============================================================================
