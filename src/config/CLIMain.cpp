@@ -363,8 +363,16 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
     config.interactive = false;
     config.playAudio = args.playAudio;
-    // Interactive mode runs until user quits (duration=0). Non-interactive defaults to 3s.
-    const double defaultDuration = config.interactive ? 0.0 : EngineSimDefaults::DEFAULT_DURATION_SECONDS;
+    // Duration semantics: interactive mode and both telemetry variants
+    // (--live-telemetry stdin CSV, --replay-telemetry file CSV) are driven by
+    // the CSV input / --end-at, NOT by --duration. So duration defaults to 0
+    // (run until CSV ends or user quits) for those modes. Only a bare
+    // (non-interactive, non-telemetry) run defaults to the 3s preset.
+    const bool telemetryDriven = args.liveTelemetry || !args.replay.telemetryPath.empty();
+    const double defaultDuration =
+        (config.interactive || telemetryDriven)
+            ? 0.0
+            : EngineSimDefaults::DEFAULT_DURATION_SECONDS;
     config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
     config.volume = args.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
