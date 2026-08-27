@@ -308,6 +308,9 @@ define run_bridge_stage
 		bridge_end=$$(date +%s); \
 		bridge_elapsed=$$((bridge_end - bridge_start)); \
 		echo "=== [engine-sim-cli] $(2) FAILED ($${bridge_elapsed}s) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] FAILURES:\033[0m\n'; \
+		-grep -E "(FAILED|Failed [0-9]+ tests)" engine-sim-bridge/$(BUILD_DIR)/test-summary.log 2>/dev/null | head -30; \
+		-grep -E "^\[[ ]*FAILED" engine-sim-bridge/$(BUILD_DIR)/Testing/Temporary/LastTest.log 2>/dev/null | head -30; \
 		total_end=$$(date +%s); \
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: $(3)=$${bridge_elapsed}s cli=SKIPPED total=$${total_elapsed}s ==="; \
@@ -333,6 +336,9 @@ define run_cli_stage
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: $(1)=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
 		echo "=== [engine-sim-cli] SUMMARY: FAIL ($(2)) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] FAILURES:\033[0m\n'; \
+		-grep -E "(FAILED|Failed [0-9]+ tests)" ../test.log 2>/dev/null | head -30; \
+		-grep -E "^\[[ ]*FAILED" ../test.log 2>/dev/null | head -30; \
 		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
 		exit 1; \
 	fi

@@ -159,27 +159,6 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         // exhaust flow (reversion). Called AFTER the coupling flags above so the
         // twin primes with the chosen coupling (CLI sets them post-Initialize).
         live->warmBootToRunning();
-        // Overlay mode: keyboard overlay on live/replay CSV input.
-        // Only when --interactive was EXPLICITLY passed (not defaulted because
-        // no --duration): otherwise every live run without --duration would try
-        // to build an overlay and double-init stdin. The overlay wraps the SAME
-        // live provider created above (it owns the stdin stream) — we must not
-        // create a second LiveTelemetryProvider on std::cin.
-        if (args.interactiveExplicit) {
-            auto kb = std::make_unique<::KeyboardInput>();
-            auto target_ov = std::make_unique<input::EngineInputTarget>();
-            target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
-            if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
-            if (args.autoStart) target_ov->setStarter();
-            auto overlay = std::make_unique<input::OverlayInputProvider>(
-                std::move(live), std::move(kb), target_ov.get());
-            if (!overlay->Initialize()) {
-                throw CliException("Failed to initialize overlay provider: " + overlay->GetLastError());
-            }
-            ctx.target = std::move(target_ov);
-            ctx.provider = std::move(overlay);
-            return ctx;
-        }
 
         ctx.provider = std::move(live);
         return ctx;
@@ -227,6 +206,26 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         replay->setStartFromS(args.replay.startFromS);
         replay->setEndAtS(args.replay.endAtS);
         validateReplayTimeSlicing(args, replay.get());
+
+        // Overlay mode: keyboard overlay on replay CSV file input. Replay reads
+        // from a file (not stdin), so --interactive is compatible: keyboard
+        // overrides throttle/gear/brake on top of the CSV-driven replay. Only
+        // when --interactive was EXPLICITLY passed (not defaulted because no
+        // --duration).
+        if (args.interactiveExplicit) {
+            auto target_ov = std::make_unique<input::EngineInputTarget>();
+            target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
+            if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
+            if (args.autoStart) target_ov->setStarter();
+            auto overlay = std::make_unique<input::OverlayInputProvider>(
+                std::move(replay), std::move(kb), target_ov.get());
+            if (!overlay->Initialize()) {
+                throw CliException("Failed to initialize overlay provider: " + overlay->GetLastError());
+            }
+            ctx.target = std::move(target_ov);
+            ctx.provider = std::move(overlay);
+            return ctx;
+        }
         // Attach the gearbox decision logger when requested, so the oracle
         // (section D: parse per-frame gear/rpm/mph) can validate replay runs.
         attachGearboxLogger(*replay, args.gearbox.logPath);

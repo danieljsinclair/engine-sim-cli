@@ -147,16 +147,15 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     liveTelemetryOpt->excludes(connectDemoOpt);
     liveTelemetryOpt->excludes(replayTelemetryOpt);
 
-    // --live-telemetry can be combined with --interactive (keyboard overlay
-    // on CSV stdin). No real conflict: overlay applies keyboard overrides
-    // over the live CSV input source.
-    // --interactive can be combined with --live-telemetry or --replay-telemetry
-    // (keyboard overlay on CSV/replay). The overlay activates only when combined.
     bool threadedFlag = false;
     bool silentFlag = false;
     bool interactiveExplicit = false;
-    auto interactiveOpt = app.add_flag("--interactive", interactiveExplicit, "Enable interactive keyboard control (can be combined with --live-telemetry or --replay-telemetry for overlay)");
-    // No mutual exclusion: keyboard overlay on live/replay CSV is allowed.
+    auto interactiveOpt = app.add_flag("--interactive", interactiveExplicit, "Enable interactive keyboard control (can be combined with --replay-telemetry for keyboard overlay on file replay)");
+    // --live-telemetry reads CSV from stdin, so --interactive (keyboard) is
+    // incompatible — the keyboard can't read stdin that the CSV is consuming.
+    // Keep them mutually exclusive. --replay-telemetry (file-based) CAN combine
+    // with --interactive for keyboard overlay (handled in CLIMain).
+    liveTelemetryOpt->excludes(interactiveOpt);
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
     auto threadedOpt = app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     auto deterministicOpt = app.add_flag("--deterministic", args.deterministic,
