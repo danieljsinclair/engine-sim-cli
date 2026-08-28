@@ -207,12 +207,12 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         replay->setEndAtS(args.replay.endAtS);
         validateReplayTimeSlicing(args, replay.get());
 
-        // Overlay mode: keyboard overlay on replay CSV file input. Replay reads
-        // from a file (not stdin), so --interactive is compatible: keyboard
-        // overrides throttle/gear/brake on top of the CSV-driven replay. Only
-        // when --interactive was EXPLICITLY passed (not defaulted because no
-        // --duration).
-        if (args.interactiveExplicit) {
+        // For replay + manual mode, build an overlay even without --interactive
+        // so that [ / ] gear-shift keys work. The overlay requires a target.
+        bool useOverlay = args.interactiveExplicit ||
+            (!args.replay.telemetryPath.empty() && args.gearbox.manual);
+
+        if (useOverlay) {
             auto target_ov = std::make_unique<input::EngineInputTarget>();
             target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
             if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
