@@ -410,3 +410,189 @@ TEST(AfterfirePopDecayArgsTest, NegativeDivisorIsRejected) {
 
     EXPECT_FALSE(parseArguments(6, const_cast<char**>(argv), args));
 }
+
+// ============================================================================
+// --engine-volume
+// ============================================================================
+// The engine master volume knob lives at SimulationConfig.volume and scales the
+// engine exhaust (BridgeSimulator::convertInt16ToStereoFloat + the hardware
+// provider), independently of --afterfire-gain. The flag binds straight to that
+// field via a sentinel (-1.0f = unset), so what the parser writes is what the
+// bridge receives. These tests pin that the VALUE arrives intact and that the
+// range check rejects out-of-range values. The actual audio scaling is exercised
+// elsewhere (bridge unit tests / WAV RMS), not here.
+
+// When the flag is absent the sentinel survives, so CreateSimulationConfig leaves
+// the bridge default (DEFAULT_HARDWARE_VOLUME) untouched — behaviour-neutral.
+TEST(EngineVolumeArgsTest, DefaultsToUnsetSentinel) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_FLOAT_EQ(args.engineVolume, -1.0f);
+}
+
+// An explicit value must reach the field, so the user can dial the engine down
+// without touching the pops.
+TEST(EngineVolumeArgsTest, ExplicitOverrideIsParsed) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--engine-volume", "0.2"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_FLOAT_EQ(args.engineVolume, 0.2f);
+}
+
+// 0 is a MEANINGFUL value (engine muted but pops still governed by
+// --afterfire-gain), not a missing-argument sentinel, so it must pass the range
+// check and survive into the field rather than being replaced by the default.
+TEST(EngineVolumeArgsTest, ZeroIsParsedAsMute) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--engine-volume", "0"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_FLOAT_EQ(args.engineVolume, 0.0f);
+}
+
+// Above 1.0 the engine cannot get louder than full scale, so the range check
+// must reject it (the parser must FAIL, not clamp silently).
+TEST(EngineVolumeArgsTest, OverRangeIsRejected) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--engine-volume", "2"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(5, const_cast<char**>(argv), args));
+}
+
+// Negative volume is meaningless; the range check must reject it.
+TEST(EngineVolumeArgsTest, NegativeIsRejected) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--engine-volume", "-1"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(5, const_cast<char**>(argv), args));
+}
+
+// ============================================================================
+// --afterfire-wav-only
+// ============================================================================
+// The ISOLATION switch. It binds straight to the AfterfireConfig handed to
+// SimulatorFactory::configureAfterfire, so what the parser writes is what every
+// chamber receives (pinned by AfterfireBridgeTest.WavOnlyReachesEveryChamber).
+//
+// WHAT IT DOES, because the name alone is easy to misread: it suppresses the
+// PHYSICAL crackle — the exhaust-runner pressure spike the synthesizer reads —
+// while still firing the afterfire event and still playing the WAV overlay. It is
+// NOT a mute, and it does NOT gate the event. The audible behaviour is pinned by
+// the engine-sim AfterfireWavOnly tests; these tests pin only that the flag
+// parses and that the VALUE arrives intact.
+
+// OFF by default: the physical crackle IS the honest afterfire (a real backfire is
+// the pipe reacting to a pressure spike), so suppressing it must be opt-in. A
+// default flipped here would quietly change every existing user's sound.
+TEST(AfterfireWavOnlyArgsTest, DefaultsToOff) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.afterfire.wavOnly)
+        << "the physical afterfire crackle is suppressed by default — wav-only must "
+           "be opt-in";
+}
+
+// Absent even the afterfire flag, the field must still read false: the parser must
+// not invent a value for a subsystem the user never enabled.
+TEST(AfterfireWavOnlyArgsTest, DefaultsToOffWithoutAfterfireEnabled) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.afterfire.wavOnly);
+}
+
+// The explicit flag must set the field — otherwise the diagnostic cannot be
+// reached from the command line at all.
+TEST(AfterfireWavOnlyArgsTest, ExplicitFlagIsParsed) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-wav-only"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.afterfire.wavOnly);
+}
+
+// It must COEXIST with --enable-afterfire rather than being mutually exclusive:
+// wav-only is a modifier on an enabled afterfire, not an alternative to it. A
+// chamber with afterfire disabled never fires an event, so the flag alone would be
+// inert — both must survive parsing together.
+TEST(AfterfireWavOnlyArgsTest, CoexistsWithEnableAfterfire) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-wav-only"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.afterfire.enabled)
+        << "--afterfire-wav-only must not disable or displace --enable-afterfire";
+    EXPECT_TRUE(args.afterfire.wavOnly);
+}
+
+// The intended real-world invocation: wav-only alongside a custom WAV. Without a
+// WAV there is nothing left to hear once the physical crackle is suppressed, so
+// this combination must parse and both values must arrive.
+TEST(AfterfireWavOnlyArgsTest, CoexistsWithACustomWav) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-wav-only", "--afterfire-wav", "pops/*.wav"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(7, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.afterfire.wavOnly);
+    EXPECT_FALSE(args.afterfire.afterfireWavPath.empty())
+        << "the custom WAV must survive alongside --afterfire-wav-only, or the "
+           "isolation leaves nothing audible";
+}
+
+// It must not disturb the other afterfire tuning values: it gates one term in the
+// energy path and nothing else, so the gain (and the rest of the config) must come
+// through untouched.
+TEST(AfterfireWavOnlyArgsTest, DoesNotDisturbTheAfterfireGain) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-wav-only", "--afterfire-gain", "0.8"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(7, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.afterfire.wavOnly);
+    EXPECT_DOUBLE_EQ(args.afterfire.customGain, 0.8);
+}
+
+// It is a FLAG, not an option: it consumes NO value. Registered as add_option by
+// mistake it would silently swallow the following token, so a trailing filename
+// would be eaten and a following flag would be misparsed as this one's argument.
+//
+// Asserted via where the trailing token actually LANDS: this parser has a
+// positional output_wav (CLIconfig.cpp), so a bare token after a value-less flag
+// must arrive there. If the flag consumed it instead, outputWav would be empty.
+// (Asserting a parse FAILURE here would be wrong — the positional makes the
+// command line legal, and it is legal for every other flag too.)
+TEST(AfterfireWavOnlyArgsTest, ConsumesNoValueSoATrailingTokenReachesThePositional) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-wav-only", "out.wav"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.afterfire.wavOnly);
+    EXPECT_EQ(args.outputWav, "out.wav")
+        << "--afterfire-wav-only swallowed the following token, so it is bound as "
+           "an option taking a value rather than as a flag";
+}
+
+// The same property where it actually bites: a flag that took a value would eat
+// the NEXT FLAG and silently drop its effect. Both flags must survive adjacency
+// in either order.
+TEST(AfterfireWavOnlyArgsTest, DoesNotSwallowAFollowingFlag) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "1", "--enable-afterfire",
+                          "--afterfire-wav-only", "--afterfire-diagnostics"};
+    CommandLineArgs args;
+
+    ASSERT_TRUE(parseArguments(6, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.afterfire.wavOnly);
+    EXPECT_TRUE(args.afterfire.diagnostics)
+        << "--afterfire-wav-only consumed the following flag instead of standing "
+           "alone as a value-less flag";
+}
