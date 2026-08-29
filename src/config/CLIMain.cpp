@@ -331,9 +331,9 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // ENGINE-TERM volume only — config.engineConfig.engineVolume, which
     // BridgeSimulator::initAudioConfig lands on Synthesizer::AudioParameters
     // .volume, the gain applied to the leveled engine exhaust BEFORE the
-    // afterfire pop is summed. The two OUTER output gains stay at their
-    // defaults; both scale the ALREADY-SUMMED engine+pop mix, so zeroing
-    // either would mute the pops too (that is --silent's job, not this flag's):
+    // afterfire pop is summed. Neither knob may ride the OUTER output gains,
+    // which scale the ALREADY-SUMMED engine+pop mix, so zeroing one of those
+    // mutes the pops too (that is --silent's job, not this flag's):
     //   * config.volume              -> hardware speaker master (SimulationLoop)
     //   * config.engineConfig.volume -> final int16->float conversion gain
     //     (BridgeSimulator::renderOnDemand/readAudioBuffer — speaker AND
@@ -347,7 +347,16 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
         // the right channel of the summed mix leaking at half gain into the
         // --output WAV (the left channel alone was zeroed pre-fix).
         config.engineConfig.convolutionLevel = 0.0f;
-    } else if (args.engineVolume >= 0.0f) {
+    } else {
+        // Unity on the final conversion stage. The bridge's ISimulatorConfig
+        // default there is 0.5; letting it stand would attenuate the WHOLE mix
+        // (engine and pops alike) by 6 dB vs. the CLI's long-standing output
+        // level, which always drove this stage. Per-source loudness is decided
+        // by --engine-volume and --afterfire-gain; the outer stages are
+        // pass-through.
+        config.engineConfig.volume = 1.0f;
+    }
+    if (args.engineVolume >= 0.0f) {
         config.engineConfig.engineVolume = args.engineVolume;
     }
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;

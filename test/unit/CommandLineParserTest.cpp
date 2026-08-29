@@ -419,7 +419,9 @@ TEST(AfterfirePopDecayArgsTest, NegativeDivisorIsRejected) {
 // Synthesizer::AudioParameters.volume — the gain applied to the engine exhaust
 // BEFORE the afterfire pop is summed, so 0 mutes the engine and leaves the pops
 // audible. It does not touch the outer output masters (SimulationConfig.volume /
-// ISimulatorConfig.volume), which scale the already-summed engine+pop mix.
+// ISimulatorConfig.volume), which scale the already-summed engine+pop mix;
+// CreateSimulationConfig pins ISimulatorConfig.volume to unity for output-level
+// parity, independent of the flag's value.
 // The flag binds to the args field via a sentinel (-1.0f = unset), so what the
 // parser writes is what CreateSimulationConfig sees. These tests pin that the
 // VALUE arrives intact and that the range check rejects out-of-range values.
