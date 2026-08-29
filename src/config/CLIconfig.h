@@ -57,12 +57,16 @@ struct CommandLineArgs {
     GearboxArgs gearbox;
     AudioTimingArgs audio;
 
-    // Engine master volume (the existing SimulationConfig.volume knob, which
-    // scales the engine exhaust via BridgeSimulator/synthesizer and the hardware
-    // provider). -1.0f is the "unset" sentinel: when absent, the bridge default
-    // (DEFAULT_HARDWARE_VOLUME) is left untouched, so behaviour is unchanged.
-    // --silent still forces 0.0 regardless of this value.
-    float engineVolume = -1.0f;  // -1 sentinel; 0..1 sets the engine master volume
+    // Engine-TERM volume: carried by ISimulatorConfig::engineVolume, which
+    // BridgeSimulator lands on Synthesizer::AudioParameters.volume — the gain
+    // applied to the engine exhaust BEFORE the afterfire pop is summed. It does
+    // NOT touch the outer output masters (SimulationConfig.volume = hardware
+    // speaker, ISimulatorConfig.volume = int16->float conversion gain), because
+    // both of those scale the already-summed engine+pop mix. -1.0f is the
+    // "unset" sentinel: when absent, the bridge default (DEFAULT_ENGINE_VOLUME)
+    // is left untouched, so behaviour is unchanged. --silent still forces 0.0
+    // on the outer masters regardless of this value.
+    float engineVolume = -1.0f;  // -1 sentinel; 0..1 scales the engine exhaust only
 
     // Afterfire (--enable-afterfire and the --afterfire-* tuning params).
     //

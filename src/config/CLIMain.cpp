@@ -326,24 +326,29 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // Interactive mode runs until user quits (duration=0). Non-interactive defaults to 3s.
     const double defaultDuration = config.interactive ? 0.0 : config.duration;
     config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
-    // Engine master volume: --silent forces 0.0 (full pipeline, muted) and wins
-    // over --engine-volume. When --engine-volume is given (>= 0.0), it overrides
-    // the bridge default; -1.0 sentinel leaves the default untouched so omitting
+    // Engine volume: --silent forces 0.0 (full pipeline, muted) and wins over
+    // --engine-volume. When --engine-volume is given (>= 0.0), it drives the
+    // ENGINE-TERM volume only — config.engineConfig.engineVolume, which
+    // BridgeSimulator::initAudioConfig lands on Synthesizer::AudioParameters
+    // .volume, the gain applied to the leveled engine exhaust BEFORE the
+    // afterfire pop is summed. The two OUTER output gains stay at their
+    // defaults; both scale the ALREADY-SUMMED engine+pop mix, so zeroing
+    // either would mute the pops too (that is --silent's job, not this flag's):
+    //   * config.volume              -> hardware speaker master (SimulationLoop)
+    //   * config.engineConfig.volume -> final int16->float conversion gain
+    //     (BridgeSimulator::renderOnDemand/readAudioBuffer — speaker AND
+    //     --output WAV paths)
+    // -1.0 sentinel leaves the engine-term default (1.0) untouched so omitting
     // the flag is behaviour-neutral.
-    //
-    // The knob is carried by TWO fields that must stay in sync:
-    //   * config.volume (outer)      -> drives the hardware speaker gain only
-    //   * config.engineConfig.volume (inner, ISimulatorConfig) -> the value
-    //     renderOnDemand() actually multiplies into the engine/WAV buffer
-    // Both are set here so the flag controls engine loudness on every sink
-    // (speaker AND --output WAV), and the banner (which reads the outer field)
-    // agrees with what is heard/written.
     if (args.silent) {
         config.volume = 0.0f;
         config.engineConfig.volume = 0.0f;
+        // The conversion's RIGHT-channel gain must zero too, or --silent leaves
+        // the right channel of the summed mix leaking at half gain into the
+        // --output WAV (the left channel alone was zeroed pre-fix).
+        config.engineConfig.convolutionLevel = 0.0f;
     } else if (args.engineVolume >= 0.0f) {
-        config.volume = args.engineVolume;
-        config.engineConfig.volume = args.engineVolume;
+        config.engineConfig.engineVolume = args.engineVolume;
     }
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.targetLoad = args.targetLoad != config.targetLoad ? args.targetLoad : config.targetLoad;

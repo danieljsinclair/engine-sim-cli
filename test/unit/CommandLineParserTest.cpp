@@ -414,16 +414,20 @@ TEST(AfterfirePopDecayArgsTest, NegativeDivisorIsRejected) {
 // ============================================================================
 // --engine-volume
 // ============================================================================
-// The engine master volume knob lives at SimulationConfig.volume and scales the
-// engine exhaust (BridgeSimulator::convertInt16ToStereoFloat + the hardware
-// provider), independently of --afterfire-gain. The flag binds straight to that
-// field via a sentinel (-1.0f = unset), so what the parser writes is what the
-// bridge receives. These tests pin that the VALUE arrives intact and that the
-// range check rejects out-of-range values. The actual audio scaling is exercised
-// elsewhere (bridge unit tests / WAV RMS), not here.
+// The engine-TERM volume knob: CreateSimulationConfig carries it on
+// ISimulatorConfig::engineVolume, which BridgeSimulator lands on
+// Synthesizer::AudioParameters.volume — the gain applied to the engine exhaust
+// BEFORE the afterfire pop is summed, so 0 mutes the engine and leaves the pops
+// audible. It does not touch the outer output masters (SimulationConfig.volume /
+// ISimulatorConfig.volume), which scale the already-summed engine+pop mix.
+// The flag binds to the args field via a sentinel (-1.0f = unset), so what the
+// parser writes is what CreateSimulationConfig sees. These tests pin that the
+// VALUE arrives intact and that the range check rejects out-of-range values.
+// The actual audio scaling is exercised elsewhere (bridge unit tests / WAV
+// RMS), not here.
 
 // When the flag is absent the sentinel survives, so CreateSimulationConfig leaves
-// the bridge default (DEFAULT_HARDWARE_VOLUME) untouched — behaviour-neutral.
+// the bridge default (DEFAULT_ENGINE_VOLUME) untouched — behaviour-neutral.
 TEST(EngineVolumeArgsTest, DefaultsToUnsetSentinel) {
     const char* argv[] = {"engine-sim-cli", "--duration", "1"};
     CommandLineArgs args;

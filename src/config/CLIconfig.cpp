@@ -76,7 +76,7 @@ void printUsage(const char* progName) {
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
-    std::cout << "  --engine-volume <0-1> Engine MASTER VOLUME: scales the engine exhaust (default: " << EngineSimDefaults::DEFAULT_HARDWARE_VOLUME << ", independent of --afterfire-gain)\n";
+    std::cout << "  --engine-volume <0-1> Engine-TERM VOLUME: scales the engine exhaust only — afterfire pops stay audible at 0 (default: " << EngineSimDefaults::DEFAULT_ENGINE_VOLUME << ", independent of --afterfire-gain)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
@@ -253,7 +253,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--synth-latency", args.audio.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
-    app.add_option("--engine-volume", args.engineVolume, "Engine MASTER VOLUME (default: " + std::to_string(EngineSimDefaults::DEFAULT_HARDWARE_VOLUME) + ", range 0-1). Scales the engine exhaust independently of the afterfire pops (which are governed by --afterfire-gain)")->check(CLI::Range(0.0f, 1.0f));
+    app.add_option("--engine-volume", args.engineVolume, "Engine-TERM volume (default: " + std::to_string(EngineSimDefaults::DEFAULT_ENGINE_VOLUME) + ", range 0-1). Scales the engine exhaust only: at 0 the engine is silent but the afterfire pops (governed by --afterfire-gain) stay audible")->check(CLI::Range(0.0f, 1.0f));
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
@@ -454,6 +454,10 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";
     std::cout << "  Audio Mode: " << (config.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)") << "\n";
     std::cout << "  Volume: " << config.volume << "\n";
+    // Engine-TERM volume: scales the engine exhaust only; the afterfire pops do
+    // not pass through it, so 0 here silences the engine and keeps the pops.
+    std::cout << "  Engine Volume: " << config.engineConfig.engineVolume
+              << " (engine exhaust only; pops unaffected)\n";
     if (config.volume == 0.0f) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";
     }
