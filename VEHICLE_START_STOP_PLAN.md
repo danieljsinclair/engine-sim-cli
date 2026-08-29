@@ -1,13 +1,20 @@
 # Vehicle-Driven Start/Stop (VehicleStart API) — Implementation Plan
 
-Repo: `~/vscode/engine-sim-app/engine-sim-cli` (submodule, branch `feat/startStop` @ 06ee40a)
-Bridge submodule: `engine-sim-bridge`, branch `feat/startStop` @ df32804 (DRY rework — see below)
+Repo: `~/vscode/engine-sim-app/engine-sim-cli` (submodule, branch `feat/startStop` @ this commit)
+Bridge submodule: `engine-sim-bridge`, branch `feat/startStop` @ 7a83baf (phase-2 semantics fixes — see below)
 
 > **Doc status:** refreshed 2026-08-14 to reflect the **brake-light architecture** discovery.
 > The earlier version of this doc predates it: it assumed a readable `DI_brakePedalState`
 > level and a `brake_percent` CSV column, with door-open as the preferred stop signal.
 > All of that is superseded below. Sections carried over unchanged (signal evidence,
 > test matrix) are marked **[unchanged]**.
+>
+> **Phase-2 refresh (2026-08-29):** the three semantics gaps found by phase-1 E2E on the
+> real captures are fixed in bridge `7a83baf` and reflected below — twin self-start (the
+> twin now defaults ignition OFF and takes the level from the controller via
+> `IVehicleControlSink`), the drive-since-start stop gate (the deferred PARK-after-motion
+> item, resolved via gear history), and latch release on brake release ALONE. Door/exit-
+> vehicle remains unwired in v1 by design (see the door section).
 
 ## Goal
 
@@ -15,7 +22,8 @@ When running `--live-telemetry` against the real car, the engine-sim's ignition 
 starter are driven by the car's own signals instead of the UI:
 
 - **START** — brake-light on, OR forward/reverse gear selected (not P)
-- **STOP**  — brake-light on AND PARK together
+- **STOP**  — brake-light on AND PARK together, only after a drive gear (D/R) has been
+  selected since the current engine run started (drive-since-start gate — see Rules)
 - **Crank aesthetic** — gear-initiated start is **instant** (starter + ignition same
   frame); brake-initiated start engages the starter immediately and ignites after a
   tunable delay (default 0.5 s, per-vehicle later). Selecting D/R while the delay is
@@ -99,28 +107,56 @@ not pedal position. **Brake level is therefore not readable from our tap**, whic
 **To resolve:** a capture with the door-event times written down, then correlate
 transitions against those timestamps. Not a wiring problem — a ground-truth problem.
 
+**Phase-1 E2E confirmation (2026-08-29):** neither real capture (coldStart,
+UpLeckHillWithKickdown) carries **any 0x311 frames at all**, and the bridge ships
+**no door seam** (`door_open` is decoded by vehicle-sim but nothing in the bridge
+consumes it). Door/exit-vehicle therefore remains **unwired in v1 by design** — it
+stays a documented future seam; do not implement it on the strength of these
+captures.
+
 Rejected after investigation: `DI_gearRequest` (not on our tap — DI powertrain
 bus only), `0x229 GearLever` (level-held; no repeat-press event exists),
 throttle-blank-as-sleep (no such edge occurs in 1.6M frames).
 
-## Design — two bits, no state machine
+## Design — two bits and a gate bit, no state machine
 
 ```
 engineOn   : has the sim been started
 stopLatch  : set when a P+B stop fires; blocks restart until brake releases
+driveSinceStart : a drive gear (D/R) has been selected during the current engine run
+                 (seeded by a gear-initiated start; reset by every stop and new run)
 ```
 
 Rules (evaluated per frame in `VehicleStartController::update` from the canonical
 `brakeLight` boolean + `gearSelector`):
 
 ```
-if (brake && gear == PARK)             -> ignition off, stopLatch = true
+if (brake && gear == PARK && driveSinceStart)
+                                       -> ignition off, stopLatch = true
 else if (stopLatch && !brake)          -> stopLatch = false            [release]
 else if (!engineOn && !stopLatch && (brake || gear == D/R)) -> VehicleStart()
 ```
 
 `stopLatch` is required: without it, holding the brake after a P+B stop
 immediately re-satisfies the START condition and restarts the engine underfoot.
+
+**Release is brake release ALONE** (`stopLatch && !brake`) — NOT "brake released AND
+out of a drive gear". While a drive gear is selected, the very tick that releases the
+latch also satisfies START (gear trigger) and restarts the engine: releasing the brake
+in DRIVE is a drive-off, not a stay-off. (Phase-1's coldStart proved the stricter rule
+wrong: the brake was released while already in D, the latch never cleared, and the
+engine stayed dead for the rest of the capture.)
+
+**The drive-since-start gate** resolves the deferred *PARK-after-motion* work item
+using gear-selection history instead of motion history (no speed/odometry state
+machine). Without it, the still-held brake that just performed a brake-initiated
+start (0.5 s crank; both real captures shift P→D ~0.73 s after the ignition frame)
+satisfies `brake && PARK` on the ignition frame itself — every "brake touch starts"
+ended latched-off, seconds before the driver ever selected D. With the gate:
+brake+PARK stops only once the driver has selected D/R since the engine run started,
+which is the PARK-after-drive intent. A gear-initiated start seeds the gate (the
+selector IS in D/R), so brake+PARK right after shifting back out of gear stops as
+expected.
 
 Door is designed in as a **level inhibit** and left as a seam for when the signal
 is proven (NOT yet wired):
@@ -147,6 +183,21 @@ The twin already owns `crankingTimerS_`, `setIgnition/getIgnition` and a
 `TwinState`; `BridgeSimulator`/`ManualTwin` expose `setStarterMotor(bool)`.
 This is a sequencer over existing mechanism, not new engine behaviour.
 
+### Twin ignition authority (phase-2, bridge 7a83baf)
+
+The twin's `ignitionOn_` now **defaults OFF**: an uncommanded twin never
+self-starts. On live paths `VehicleStartController` owns EVERY start, and its
+ignition LEVEL is pushed into twin-based providers each frame through the new
+`input::IVehicleControlSink` seam (`LiveTelemetryProvider` implements it;
+`SimulationLoop::applyStartStopDecision` is the only writer). The twin gates all
+of its processing — throttle smoothing, gearbox, cranking lifecycle — on that
+level, so the push is what lets a legally started engine process throttle, and
+its absence before the first vehicle-control opinion is what stops the old
+t=0.44s self-start (UpLeckHill ran its engine before the first brake frame at
+t=10.04 s). Providers that own their ignition (demo keyboard, manual twin) and
+non-twin providers (keyboard, replay) do not implement the seam and are
+untouched.
+
 ## DRY rework — single invocation site (bridge df32804, 2026-08-14)
 
 Before this rework, start/stop was split across a `StartStopInputAdapter` plus a
@@ -172,6 +223,16 @@ The DRY rework **collapses all of that into ONE invocation site**:
 binaries): Stopped → Cranking (ignition on same frame for gear start) → Running →
 Stopping → Stopped-latched on brake-light+P. Gate 40/40 CLI + 76/76 bridge green,
 CLI Sonar 0 new issues.
+
+**Phase-2 E2E re-proof (2026-08-29, bridge 7a83baf, both real captures end to end):**
+- *coldStart*: no start before the brake; brake+P at t=1.45 s cranks 0.5 s, ignition
+  at t=1.95 s, **Running continues while brake+P is still held** (previously the
+  engine self-stopped 2 frames after ignition and stayed dead 135 s); P→D drive-off
+  runs the engine continuously until the capture's real final brake+P stop.
+- *UpLeckHill*: **no start before real input** (previously self-started at t=0.44 s);
+  first start is the instant gear start on the real P→D shift; final brake+P stops
+  same-frame and stays latched while the brake is held.
+76/76 bridge suites green, coverage 83.1%, Sonar clean.
 
 ## Work items — [status: implemented on feat/startStop]
 
@@ -227,26 +288,38 @@ bug, not a design ambiguity.
 
 - **gear-initiated start = instant** (starter + ignition same frame).
 - **brake-initiated start = 0.5 s delayed ignition** (McLaren crank aesthetic).
-- **STOP = brake + P only.** Door (unproven) and `driverPresent` (unproven) are
+- **STOP = brake + P, gated on drive-since-start** (a D/R selection in the current
+  engine run — see Rules). Door (unproven) and `driverPresent` (unproven) are
   future seams, deliberately not wired in v1.
+- **Latch release = brake release alone**; in a drive gear the same tick restarts
+  via the gear trigger (drive-off).
 - `drive_ready` (what the old `brake_percent` enum actually encoded) documented
   **YAGNI** — not wired.
 - `brake_percent` **dropped, not renamed.**
 - Display: `[Gas: 0% B/-]` (red `B`, plain `-`); no numeric `B:x.x`; no brake
   character in the Gear bracket.
 
-## Testing (TDD, test-architect authors first) — [unchanged matrix, gear case updated]
+## Testing (TDD, test-architect authors first) — [matrix updated for phase-2]
 
 Per project rules the implementer does NOT write the tests. Test scenarios:
 
 - door open while running -> ignition off  *(seam, not yet wired)*
 - door open blocks start (brake pressed with door open -> stays off)  *(seam)*
-- brake-light + PARK -> ignition off, latch set
-- latch blocks restart while brake-light held; clears on release; then brake starts
+- brake-light + PARK **with drive-since-start** -> ignition off, latch set, same frame
+- brake-light + PARK **with no drive-since-start** -> does NOT stop (incl. the
+  still-held brake that just performed the brake-initiated start: Running continues)
+- drive-since-start gate re-arms per engine run (a fresh brake-start in P cannot be
+  stopped by its own held brake until D/R is selected again)
+- latch blocks restart while brake-light held; **clears on brake release ALONE**;
+  in a drive gear the clearing tick restarts via the gear trigger (drive-off)
 - brake-light alone (no door, no latch) -> VehicleStart (0.5 s delay)
 - D or R selected -> VehicleStart **instant** (same-frame ignition); P alone does NOT start
 - crank delay: starter on at t=0, ignition still off at t=0.4, on at t=0.5 (fake clock)
 - D/R during pending delay -> ignition immediately, timer cancelled
+- twin does NOT self-start without an ignition command (any duration of valid
+  telemetry); first command starts it
+- loop commands twin ignition through `IVehicleControlSink`, and NOTHING is
+  commanded before the first vehicle-control opinion
 - manual path unaffected: setIgnitionRequested/setStarterRequested still independent
 
 Real code under test, no truisms, no live-data dependence, injected clock.
@@ -261,9 +334,13 @@ longer in the v1 start/stop path. The live brake signal uses `VCLEFT_brakeLightS
 
 ## Out of scope for v1
 
-- Door-open stop (needs proven door signal — ground-truth capture problem, not wiring).
+- Door-open stop (needs proven door signal — ground-truth capture problem, not
+  wiring; phase-1 confirmed no capture carries 0x311 and the bridge has no door
+  seam — it stays a documented future seam).
 - `driverPresent` stop (unproven).
-- PARK-after-motion redundancy (needs motion history = real state machine).
+- ~~PARK-after-motion redundancy (needs motion history = real state machine).~~
+  **Resolved in phase-2 (bridge 7a83baf)** as the drive-since-start gate —
+  gear-selection history, not motion history; see Design.
 - Driver-vs-passenger door discrimination (needs clean re-capture; nice-to-have).
 - iOS UI wiring (API shape defined here; UI work separate).
 - Aggregate-DBC generator: build-time merge from submodules with conflict=hard-error
