@@ -117,8 +117,14 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
         }
-        // Wire --start-from time slicing + the optional gearbox logger.
+        // Wire --start-from/--end-at time slicing (live = instant prime +
+        // display offset per the provider's contract) + the optional gearbox
+        // logger.
         live->setStartFromS(args.replay.startFromS);
+        live->setEndAtS(args.replay.endAtS);
+        // Relative-window sanity (start < end) shared with the replay path; the
+        // duration clamp inside is a no-op for live (durationS() < 0 = unknown).
+        validateReplayTimeSlicing(args, live.get());
 
         // Validate + forward the live clutch wheel-coupling mode. Must be one of
         // the supported strategies; reject anything else rather than silently

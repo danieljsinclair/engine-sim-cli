@@ -100,8 +100,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
     app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss)");
-    app.add_option("--end-at", args.replay.endAt, "Stop replay at this time (seconds or mm:ss)")
-        ->needs("--replay-telemetry");
+    app.add_option("--end-at", args.replay.endAt, "Stop replay/live-telemetry at this time (seconds or mm:ss); plays to input end if past it");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
     auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
