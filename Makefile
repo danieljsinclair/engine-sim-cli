@@ -534,6 +534,32 @@ $(SONAR_REPORT): $(COVERAGE_REPORT) $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES) $(
 			tail -n 20 $(BUILD_COV_DIR)/sonar-scanner.log; \
 			exit $$rc; \
 		fi
+	@echo "=== [engine-sim-cli] Waiting for SonarCloud report processing ==="
+	@# The issues/measures APIs serve the PREVIOUS analysis until server-side
+	@# post-processing of this upload finishes. Fetching immediately caches the
+	@# stale (possibly another clone's) issue set — the "open 4" false positive
+	@# of 2026-08-29 was exactly this race. Poll the scan's ce task until it
+	@# leaves PENDING/IN_PROGRESS before caching anything.
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+	task_id=$$(grep -o 'api/ce/task?id=[A-Za-z0-9]*' $(BUILD_COV_DIR)/sonar-scanner.log | head -1 | cut -d= -f2); \
+	if [ -z "$$task_id" ]; then \
+		echo "WARN: no ce task id in sonar-scanner.log; falling back to a 30s settle wait"; \
+		sleep 30; \
+	else \
+		status=""; \
+		for i in $$(seq 1 30); do \
+			status=$$(curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/ce/task?id=$$task_id" | grep -o '"status":"[A-Z]*"' | head -1 | cut -d'"' -f4); \
+			if [ "$$ce_status" = "SUCCESS" ] || [ "$$ce_status" = "FAILED" ]; then break; fi; \
+			sleep 10; \
+		done; \
+		if [ "$$ce_status" = "FAILED" ]; then \
+			echo "=== [engine-sim-cli] SonarCloud report processing FAILED (task $$task_id) ==="; \
+			exit 1; \
+		fi; \
+		if [ "$$ce_status" != "SUCCESS" ]; then \
+			echo "WARN: report still processing after 300s (status=$$ce_status); caching anyway — counts may be from the PREVIOUS scan"; \
+		fi; \
+	fi
 	@echo "=== [engine-sim-cli] Caching SonarCloud issue report ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
 	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN" \
