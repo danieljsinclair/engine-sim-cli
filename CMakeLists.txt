@@ -150,6 +150,8 @@ add_executable(engine-sim-cli
     src/config/ExecutablePath.cpp
     # Presentation layer
     src/presentation/ConsolePresentation.cpp
+    src/presentation/CsvPresentation.cpp
+    src/presentation/PresentationCollection.cpp
     # Input layer
     src/input/KeyboardInput.cpp
     # Bridge sources for connect-demo mode

@@ -93,7 +93,8 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .PHONY: all build clean clean-cli scrub-cli test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
-        coverage-run coverage-clean coverage-summary summary gate
+        coverage-run coverage-clean coverage-summary summary gate \
+        smoke-gearbox bench-gearbox
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 .PHONY: build-cross-gate
 # gate MUST run its steps strictly in order: build -> test -> iOS cross ->
@@ -307,6 +308,9 @@ define run_bridge_stage
 		bridge_end=$$(date +%s); \
 		bridge_elapsed=$$((bridge_end - bridge_start)); \
 		echo "=== [engine-sim-cli] $(2) FAILED ($${bridge_elapsed}s) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] FAILURES:\033[0m\n'; \
+		-grep -E "(FAILED|Failed [0-9]+ tests)" engine-sim-bridge/$(BUILD_DIR)/test-summary.log 2>/dev/null | head -30; \
+		-grep -E "^\[[ ]*FAILED" engine-sim-bridge/$(BUILD_DIR)/Testing/Temporary/LastTest.log 2>/dev/null | head -30; \
 		total_end=$$(date +%s); \
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: $(3)=$${bridge_elapsed}s cli=SKIPPED total=$${total_elapsed}s ==="; \
@@ -332,6 +336,9 @@ define run_cli_stage
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: $(1)=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
 		echo "=== [engine-sim-cli] SUMMARY: FAIL ($(2)) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] FAILURES:\033[0m\n'; \
+		-grep -E "(FAILED|Failed [0-9]+ tests)" ../test.log 2>/dev/null | head -30; \
+		-grep -E "^\[[ ]*FAILED" ../test.log 2>/dev/null | head -30; \
 		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
 		exit 1; \
 	fi
@@ -399,6 +406,31 @@ run: build
 run-json: build
 	./build/engine-sim-cli --interactive --play --script es/v8_gm_ls.json
 
+# --- Gearbox regression smoke + bench -----------------------------------------
+# Canonical recording + window for the "6 mph stall" regression that MUST stay
+# green. VEHICLE_SIM_CAP / RECORDING / WINDOW overrides via the env.
+VEHICLE_SIM_CAP ?= $(HOME)/vscode/escli.vehicle-sim/captures
+SMOKE_RECORDING ?= $(VEHICLE_SIM_CAP)/UpLeckHillWithKickdown_2026-08-12-133448.csv
+SMOKE_WINDOW_START ?= 00:20
+SMOKE_WINDOW_END ?= 00:25
+BENCH_RECORDING ?= $(VEHICLE_SIM_CAP)/em-dinner.csv
+
+# Gateable regression smoke: rpm>=950, no mid-drive stall, mph-tracking on the
+# 00:20-00:25 window of UpLeckHillWithKickdown (the 6 mph stall window).
+# Exits non-zero on any invariant violation. See scripts/smoke_gearbox.py.
+smoke-gearbox: build
+	@echo "=== [engine-sim-cli] smoke-gearbox: 6 mph stall regression ($(SMOKE_WINDOW_START)-$(SMOKE_WINDOW_END) on $(notdir $(SMOKE_RECORDING))) ==="
+	@echo "    invariants: rpm>=950 (mid-drive), no stall, |sim-tgt|mph<=2 for >=90%"
+	@scripts/smoke_gearbox.py "$(SMOKE_RECORDING)" \
+		--start-from $(SMOKE_WINDOW_START) --end-at $(SMOKE_WINDOW_END)
+
+# Diagnostic bench harness on em-dinner (mph MAE/worst/%>2, gear-per-speed vs
+# oracle, rpm-coupling self-calibrated K, stall). Richer detail than the smoke
+# test; same metric logic as the acceptance brief.
+bench-gearbox: build
+	@echo "=== [engine-sim-cli] bench-gearbox: diagnostic metrics on $(notdir $(BENCH_RECORDING)) ==="
+	@scripts/bench_gearbox.py replay "$(BENCH_RECORDING)"
+
 help:
 	@echo "engine-sim-cli Makefile"
 	@echo ""
@@ -420,6 +452,8 @@ help:
 	@echo "  make scrub    - Remove entire build directory (full clean)"
 	@echo "  make run      - Build and run CLI with .mr script"
 	@echo "  make run-json - Build and run CLI with JSON preset"
+	@echo "  make smoke-gearbox - Gearbox regression smoke (6 mph stall window, must stay green)"
+	@echo "  make bench-gearbox - Gearbox diagnostic bench (mph/gear/coupling/stall metrics)"
 	@echo "  make esp32    - Build ESP32 firmware"
 	@echo "  make deploy_esp32 - Flash ESP32 firmware"
 	@echo "  make run_esp32    - Build, flash, and monitor ESP32"

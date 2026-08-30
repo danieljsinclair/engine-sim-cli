@@ -153,9 +153,15 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
     // Engine phase and Throttle + Brake
     out << EnginePhaseName(state.engine.phase) << " [Gas: " << std::setw(3) << static_cast<int>(state.controls.throttle * 100) << "%";
 
-    auto brakeColor = ANSIColors::getDispositionColour(state.controls.brakeLevel <= 0.0, false, state.controls.brakeLevel > 0.0);
-    out << brakeColor << " B:" << std::fixed << std::setprecision(1) << state.controls.brakeLevel << ANSIColors::RESET;
-    
+    // Binary brake indicator: red 'B' when the vehicle brake is on (pedal
+    // pressed — keyboard 'B' or a brake_light=1 CSV row, same signal),
+    // plain '-' otherwise (off or unreported).
+    if (state.controls.brakeLight.value_or(false)) {
+        out << " " << ANSIColors::RED << "B" << ANSIColors::RESET;
+    } else {
+        out << " -";
+    }
+
     out << "] ";
     return out.str();
 }
@@ -163,9 +169,24 @@ std::string ConsolePresentation::formatPedalState(const EngineState& state, std:
 
 std::string ConsolePresentation::formatGearState(const EngineState& state, std::ostringstream& out) const {
     // [Gear:XMG] where X=selector, M/A=mode, G=actual gear (transmission state).
+    // Inline coupling-engagement readout, labeled by what the number IS:
+    // `TC NN%` when the torque-converter model produced it (fluid coupling
+    // engagement: 0% = decoupled, creep floor at standstill, 100% = coupled),
+    // `Cl NN%` for the clutch-map/legacy friction-clutch pressure. Either way
+    // the number is normalized coupling engagement — a slow-speed lug / stall
+    // is visible at a glance (relief opening shows 0%, engaged slip 5-100%).
     out << "[Gear:"
         << gearTriple(state.controls.gearSelector, state.controls.gearAutoMode, state.drivetrain.gear)
         << "] ";
+    if (state.drivetrain.clutchPressure >= 0.0) {
+        const auto clutchColor = (state.drivetrain.clutchPressure <= 0.001)
+            ? ANSIColors::GREEN    // relieved (open) — the engine idles decoupled
+            : ANSIColors::RESET;
+        out << clutchColor << '['
+            << (state.drivetrain.couplingIsTorqueConverter ? "TC " : "Cl ")
+            << std::setw(3) << static_cast<int>(std::round(state.drivetrain.clutchPressure * 100.0))
+            << "%]" << ANSIColors::RESET << " ";
+    }
     return out.str();
 }
 
@@ -214,24 +235,46 @@ std::string ConsolePresentation::formatTorqueState(const EngineState& state, std
 
 std::string ConsolePresentation::formatDynoState(const EngineState& state, std::ostringstream& out) const {
 
-    // Dyno load (shown when torque is being applied)
-    if (state.engine.engineTorqueNm > 0) {
-        if (state.drivetrain.dynoTargetRPM > 0) {
-            out << "[Dyno: " << static_cast<int>(state.drivetrain.dynoTargetRPM) << " RPM "
-                << static_cast<int>(state.drivetrain.dynoTorque) << " ft*lbs] ";
-        } else {
-            out << "[Load: " << static_cast<int>(state.drivetrain.dynoTorque) << " ft*lbs] ";
-        }
+    // Dyno load. Shown only when the dyno is actually applying torque: the
+    // previous gate keyed on ENGINE torque, so every non-dyno run printed a
+    // dead "[Load: 0 ft*lbs]". dynoTorque is Nm internally — convert for the
+    // ft*lbs label.
+    if (state.drivetrain.dynoTargetRPM > 0) {
+        out << "[Dyno: " << static_cast<int>(state.drivetrain.dynoTargetRPM) << " RPM "
+            << static_cast<int>(state.drivetrain.dynoTorque * 0.73756) << " ft*lbs] ";
+    }
+    else if (std::abs(state.drivetrain.dynoTorque) > 0.5) {
+        out << "[Load: " << static_cast<int>(state.drivetrain.dynoTorque * 0.73756) << " ft*lbs] ";
     }
     return out.str();
 }
 
 std::string ConsolePresentation::formatFlowState(const EngineState& state, std::ostringstream& out) const {
 
-    // Exhaust flow (cm³/s)
-    out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(8)
-        << std::setprecision(3) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
+    // Exhaust flow rate (cm³/s). exhaustFlow is a true m³/s rate: the frame's
+    // port-transferred VOLUME (each transfer measured at its source side's
+    // gas state) integrated over every substep, divided by the frame's
+    // simulated duration. Positive = out the exhaust port, negative =
+    // reversion (runner back into the cylinder — sustained negatives at part
+    // throttle are a real model observation, not a readout artifact).
+    out << ANSIColors::INFO << "[Flow: " << std::fixed << std::showpos << std::setw(10)
+        << std::setprecision(0) << (state.engine.exhaustFlow * 1000000.0) << std::noshowpos << " cm3/s]"
         << ANSIColors::RESET << " ";
+
+    // Synth output level: RMS of the last rendered audio block, POST-LEVELER
+    // and PRE-VOLUME (the engine tone before the volume knob scales it), in
+    // int16 output scale. This is the honest "what you would hear at volume
+    // 1" quantity — a post-volume tap reads a flat zero on --silent benches
+    // and would hide the level collapse this field exists to expose (the
+    // quiet-WOT investigation). "-" when nothing has rendered yet.
+    if (state.engine.synthOutputRms >= 0.0) {
+        out << "[Out: " << std::fixed << std::setprecision(0) << std::setw(5)
+            << state.engine.synthOutputRms << "]";
+    }
+    else {
+        out << "[Out:     -]";
+    }
+    out << " ";
 
     return out.str();
 }
@@ -253,9 +296,14 @@ std::string ConsolePresentation::formatAudioState(const EngineState& state, std:
             << std::noshowpos << "ms";
     }
 
-    // Budget - always shown
-    out << " " << ANSIColors::getDispositionColour(state.audio.budgetPct < 80, state.audio.budgetPct < 100)
-        << "budget: " << std::fixed << std::setw(3) << std::setprecision(0) << state.audio.budgetPct << "%" << ANSIColors::RESET << " ";
+    // Budget — SYNC-PULL only. In THREADED mode the audio thread pulls work
+    // at its own pace from a filled buffer, so the render-budget percentage
+    // does not measure anything meaningful there; showing it misled more
+    // than it informed (user-reported).
+    if (state.audio.audioMode == "SYNC-PULL") {
+        out << " " << ANSIColors::getDispositionColour(state.audio.budgetPct < 80, state.audio.budgetPct < 100)
+            << "budget: " << std::fixed << std::setw(3) << std::setprecision(0) << state.audio.budgetPct << "%" << ANSIColors::RESET << " ";
+    }
 
     // Throughput summary - only with --diagnostic-freq
     if (config_.diagnostics.freq) {

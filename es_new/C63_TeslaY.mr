@@ -529,11 +529,17 @@ import "tesla_y_performance.mr"
 // Multi-speed ICE gearbox on the Tesla body (MATCH-mode twin). The Tesla
 // single-speed box (add_gear(1.0)) is wrong for an ICE twin — it never shifts.
 // Use the C63's ZF8-style 7-speed ratios (4.38..0.73) so the twin SHIFTS, while
-// keeping the Tesla BODY (mass/aero/tire/diff=9.00 from tesla_y_performance.mr).
-// The 9:1 diff is correct (do NOT revert) — the gearbox ratios ride on top of
-// it. High clutch torque (12000 Nm, same as the Tesla box) so the launch
-// pressure (TorqueConverterLaunch, ~0.06 cap) can couple the engine to the
-// torque-driven rotating mass and engine RPM emerges from the balance.
+// keeping the Tesla BODY (mass/aero/tire from tesla_y_performance.mr).
+//
+// FINAL DRIVE FIX (iter2): the C63_TeslaY previously called
+// set_vehicle(tesla_y_vehicle()), whose diff_ratio is 9.00 — the Tesla EV
+// single-speed reduction. Riding the ZF8 box (1st = 4.38) on top of a 9.0 diff
+// gave an INCOHERENT overall 1st gear of 4.38 * 9.0 = 39:1 (a real C63 is
+// 4.38 * 2.82 = 12:1). The ~3.2x-too-tall final drive forced the engine to
+// ~7250 RPM at 23 mph, which is the ROOT CAUSE of the over-rev, the racing
+// sound, and the eager 3rd-gear-at-15mph behaviour. The fix keeps the Tesla
+// BODY (mass/aero/tire_radius) but uses the C63 final drive (diff_ratio 2.82)
+// so the ZF8 ratios are coherent. See node tesla_y_c63_vehicle below.
 public node tesla_y_ice_transmission {
     alias output __out:
         transmission(
@@ -548,6 +554,20 @@ public node tesla_y_ice_transmission {
         .add_gear(0.73);
 }
 
+// Tesla body (mass/aero/tire from tesla_y_performance.mr) with the C63 final
+// drive (2.82) instead of the Tesla EV 9.0. This is the root-cause fix: a
+// coherent ICE final drive so the ZF8 box's ratios are physically sensible.
+public node tesla_y_c63_vehicle {
+    alias output __out: vehicle(
+        mass: 2000.0 * units.kg,
+        drag_coefficient: 0.23,
+        cross_sectional_area: 2.496 * units.m2,
+        diff_ratio: 2.82,
+        tire_radius: 0.356 * units.m,
+        rolling_resistance: 300.0 * units.N
+    );
+}
+
 set_engine(M156())
 set_transmission(tesla_y_ice_transmission())
-set_vehicle(tesla_y_vehicle())
+set_vehicle(tesla_y_c63_vehicle())
