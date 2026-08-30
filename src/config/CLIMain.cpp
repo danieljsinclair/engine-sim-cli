@@ -174,6 +174,9 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         // twin primes with the chosen coupling (CLI sets them post-Initialize).
         live->warmBootToRunning();
 
+        // The vehicle start/stop decision is mode-agnostic: SimulationLoop runs
+        // the VehicleStartController from the canonical brakeLight + gear for
+        // every provider (live, replay, keyboard, demo). No per-mode wiring.
         ctx.provider = std::move(live);
         return ctx;
     }

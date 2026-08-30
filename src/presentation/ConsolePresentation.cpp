@@ -150,17 +150,16 @@ std::string ConsolePresentation::formatNameState(const EngineState& state, std::
 
 std::string ConsolePresentation::formatPedalState(const EngineState& state, std::ostringstream& out) const {
 
-    // Engine phase and Throttle + Brake. Gas renders cyan; brake renders
-    // uncolored at 0.0 and red the moment it is applied.
-    out << EnginePhaseName(state.engine.phase)
-        << ANSIColors::CYAN << " [Gas: " << std::setw(3) << static_cast<int>(state.controls.throttle * 100) << "%"
-        << ANSIColors::RESET;
+    // Engine phase and Throttle + Brake
+    out << EnginePhaseName(state.engine.phase) << " [Gas: " << std::setw(3) << static_cast<int>(state.controls.throttle * 100) << "%";
 
-    if (state.controls.brakeLevel > 0.0) {
-        out << ANSIColors::RED << " B:" << std::fixed << std::setprecision(1)
-            << state.controls.brakeLevel << ANSIColors::RESET;
+    // Binary brake indicator: red 'B' when the vehicle brake is on (pedal
+    // pressed — keyboard 'B' or a brake_light=1 CSV row, same signal),
+    // plain '-' otherwise (off or unreported).
+    if (state.controls.brakeLight.value_or(false)) {
+        out << " " << ANSIColors::RED << "B" << ANSIColors::RESET;
     } else {
-        out << " B:" << std::fixed << std::setprecision(1) << state.controls.brakeLevel;
+        out << " -";
     }
 
     out << "] ";

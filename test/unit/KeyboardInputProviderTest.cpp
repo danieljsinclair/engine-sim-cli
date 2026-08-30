@@ -30,11 +30,13 @@ protected:
     }
 };
 
-// Brake: pressing 'b' sets brakeLevel to 1.0 (level-triggered)
+// Brake: pressing 'b' sets brakeLevel (level-triggered, the physics control).
+// The brake LIGHT derives from it at the SimulationLoop assembly point.
 TEST_F(KeyboardInputProviderTest, BrakePress_SetsBrakeLevel) {
     rawMock_->enqueue('b');
     EngineInput input = tick();
     EXPECT_DOUBLE_EQ(input.brakeLevel, 1.0);
+    EXPECT_FALSE(input.brakeLight.has_value());
 }
 
 // Brake: releasing 'b' resets brakeLevel to 0.0 after timeout
@@ -382,10 +384,12 @@ TEST_F(EngineInputTargetTest, ReleaseDynoTorque_SetsToZero) {
     EXPECT_DOUBLE_EQ(input.dynoTorqueScale, 0.0);
 }
 
-TEST_F(EngineInputTargetTest, SetBrake_SetsLevel) {
+TEST_F(EngineInputTargetTest, SetBrake_SetsLevelNotLight) {
     target_.setBrake(0.7);
     EngineInput input = target_.buildInput();
     EXPECT_DOUBLE_EQ(input.brakeLevel, 0.7);
+    EXPECT_FALSE(input.brakeLight.has_value())
+        << "Keyboard writes the level only — the light derives in SimulationLoop";
 }
 
 TEST_F(EngineInputTargetTest, AdjustSpeed_IncrementsFromNegativeSentinel) {

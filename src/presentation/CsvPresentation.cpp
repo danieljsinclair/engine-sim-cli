@@ -68,7 +68,10 @@ void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
          << static_cast<long long>(std::round(s.engine.rpmRaw)) << ','
          << phaseName(s.engine.phase) << ','
          << static_cast<int>(std::round(s.controls.throttle * 100.0)) << ','
-         << std::setprecision(2) << s.controls.brakeLevel << ','
+         // brake: binary vehicle brake-light state (canonical brakeLight; the
+         // analog pedal level was removed with the startStop brake refactor).
+         // nullopt (unreported) renders as 0 — same as off.
+         << (s.controls.brakeLight.value_or(false) ? 1 : 0) << ','
          << (s.controls.ignition ? 1 : 0) << ','
          << s.controls.gearSelector << ','
          << (s.controls.gearAutoMode ? 1 : 0) << ','
