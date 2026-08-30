@@ -64,25 +64,25 @@ TEST(CommandLineParserTest, ConnectDemoDefaultFalse) {
 // --auto / --manual gearbox flags
 
 TEST(CommandLineParserTest, AutoFlagEnablesAutoGearbox) {
-    const char* argv[] = {"engine-sim-cli", "--play", "--silent", "--auto"};
+    const char* argv[] = {"engine-sim-cli", "--silent", "--auto"};
     CommandLineArgs args;
 
-    EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
     EXPECT_TRUE(args.gearbox.automatic);
     EXPECT_FALSE(args.gearbox.manual);
 }
 
 TEST(CommandLineParserTest, ManualFlagExplicit) {
-    const char* argv[] = {"engine-sim-cli", "--play", "--silent", "--manual"};
+    const char* argv[] = {"engine-sim-cli", "--silent", "--manual"};
     CommandLineArgs args;
 
-    EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
     EXPECT_FALSE(args.gearbox.automatic);
     EXPECT_TRUE(args.gearbox.manual);
 }
 
 TEST(CommandLineParserTest, DefaultGearboxIsManual) {
-    const char* argv[] = {"engine-sim-cli", "--play", "--silent"};
+    const char* argv[] = {"engine-sim-cli", "--silent"};
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
@@ -132,7 +132,7 @@ TEST(CommandLineParserTest, LiveTelemetryExcludesReplayTelemetry) {
     const char* argv[] = {"engine-sim-cli", "--live-telemetry", "--replay-telemetry", "trace.csv"};
     CommandLineArgs args;
 
-    EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
 }
 
 TEST(CommandLineParserTest, LiveTelemetryExcludesConnectDemo) {
@@ -166,6 +166,9 @@ TEST(CommandLineParserTest, LiveTelemetryCombinesWithScriptToSelectEngine) {
 // The positional engine_config form is NOT an engine-selection seam here
 // (output_wav is the first positional and consumes a bare argument), so it stays
 // excluded from --live-telemetry. Regression guard against re-broadening.
+// argc=4: all four argv elements are passed, so the positional engine config
+// ("C63_M156_V3.mr") is present and must be rejected by the live-telemetry
+// exclusion. (argc=3 would drop the engine config and test nothing.)
 TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
     const char* argv[] = {
         "engine-sim-cli",
@@ -176,4 +179,27 @@ TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
     CommandLineArgs args;
 
     EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
+}
+
+// --pin-tau-ms: PIN-coupling compliance time constant. Default 0 = the rigid
+// pin (bit-identical legacy behavior); the tuned road value is ~150.
+TEST(CommandLineParserTest, PinTauMsDefaultsToZero_RigidPin) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.pinTauMs, 0.0);
+}
+
+TEST(CommandLineParserTest, PinTauMsParsesExplicitValue) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--pin-tau-ms", "150"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.pinTauMs, 150.0);
+}
+
+TEST(CommandLineParserTest, PinTauMsParsesExplicitZero) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--pin-tau-ms", "0"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.pinTauMs, 0.0);
 }
