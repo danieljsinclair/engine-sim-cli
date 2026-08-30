@@ -120,6 +120,16 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "           transmission input so road speed emerges from the solver")
         ->capture_default_str();
 
+    app.add_option("--pin-tau-ms", args.pinTauMs,
+        "PIN wheel-coupling compliance in milliseconds. The road speed signal\n"
+        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0, DEFAULT)\n"
+        "teleports engine rpm between levels - the audible 'piano keys'.\n"
+        "A positive tau makes the pin chase the road-implied speed with a\n"
+        "critically-damped response; ~150 ms is the tuned road value. 0 is\n"
+        "bit-identical to the rigid pin (the regression contract). Scoped to\n"
+        "the pin target only: the gearbox shift map still sees the raw speed.")
+        ->capture_default_str();
+
     app.add_option("--coupling-model", args.couplingModel,
         "Live clutch coupling model - how the live twin derives the\n"
         "engine<->drivetrain clutch pressure each frame. Valid options:\n"

@@ -158,6 +158,14 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
                 + args.couplingModel);
         }
 
+        // Validate + forward the PIN compliance tau. Negative is a typo'd
+        // flag value - fail fast rather than silently running rigid.
+        if (args.pinTauMs < 0.0) {
+            throw CliException("--pin-tau-ms must be >= 0 (0 = rigid pin), got: "
+                               + std::to_string(args.pinTauMs));
+        }
+        live->setPinTauMs(args.pinTauMs);
+
         attachGearboxLogger(*live, args.gearbox.logPath);
         // Warm-boot the twin to RUNNING + warm cruise basin BEFORE the first real
         // frame (mirrors replay's primeTwinToRunning). Without this the live twin +
@@ -202,6 +210,13 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
                 "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: "
                 + args.couplingModel);
         }
+        // Validate + forward the PIN compliance tau BEFORE Initialize() (the
+        // replay provider stores it and seeds the twin when creating it).
+        if (args.pinTauMs < 0.0) {
+            throw CliException("--pin-tau-ms must be >= 0 (0 = rigid pin), got: "
+                               + std::to_string(args.pinTauMs));
+        }
+        replay->setPinTauMs(args.pinTauMs);
         if (!replay->Initialize()) {
             throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }

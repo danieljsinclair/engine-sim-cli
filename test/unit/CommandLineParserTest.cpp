@@ -180,3 +180,26 @@ TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
 
     EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
 }
+
+// --pin-tau-ms: PIN-coupling compliance time constant. Default 0 = the rigid
+// pin (bit-identical legacy behavior); the tuned road value is ~150.
+TEST(CommandLineParserTest, PinTauMsDefaultsToZero_RigidPin) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.pinTauMs, 0.0);
+}
+
+TEST(CommandLineParserTest, PinTauMsParsesExplicitValue) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--pin-tau-ms", "150"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.pinTauMs, 150.0);
+}
+
+TEST(CommandLineParserTest, PinTauMsParsesExplicitZero) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--pin-tau-ms", "0"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.pinTauMs, 0.0);
+}
