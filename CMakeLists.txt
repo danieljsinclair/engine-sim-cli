@@ -144,6 +144,7 @@ add_executable(engine-sim-cli
     # Config layer
     src/config/CLIconfig.cpp
     src/config/CLIMain.cpp
+    src/config/StopReasonReporter.cpp
     src/config/KqueueSignalStopController.cpp
     src/config/ReplayTimeValidator.cpp
     src/config/ANSIColors.cpp

@@ -19,7 +19,9 @@ add_executable(unit_tests
     CLIMainS3776S1820Test.cpp
     ReplayTimeValidatorTest.cpp
     ExecutablePathTest.cpp
+    StopReasonReporterTest.cpp
     # Required support code
+    ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
     ../../src/config/ReplayTimeValidator.cpp
     ../../src/config/KqueueSignalStopController.cpp

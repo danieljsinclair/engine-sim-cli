@@ -269,6 +269,13 @@ E2E re-proof is pending the owner's next road test; the unit + loop suites
 (`VehicleStartControllerTest`, `SimulationLoopVehicleControlsTest`) cover the new
 trigger matrix.
 
+**Capture-end note (2026-08-30, same branch):** end-of-input now terminates the whole
+CLI, not just the ignition: on the live stdin path the provider disconnects as soon as
+the stream and its lookahead buffer drain (owner decision — "EOF = immediate
+termination", no grace window; a start still mid-crank in the last ~0.5s of a capture
+is consciously cut short). `--end-at` runs report the bound as their stop reason
+(`StopReasonReporter`), not the full trace length.
+
 ## Work items — [status: implemented on feat/startStop]
 
 ### 1. vehicle-sim — carry the new signals  — **DONE (escli.vehicle-sim 7237c8f)**
