@@ -7,6 +7,8 @@
 #include "CLIconfig.h"
 #include "CliException.h"
 #include "ReplayTimeValidator.h"
+#include "TelemetryProviderFactory.h"
+#include "AudioModeResolver.h"
 #include "common/PresetExceptions.h"
 
 #include "strategy/IAudioBuffer.h"
@@ -26,6 +28,7 @@
 #include "presentation/PresentationCollection.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
+#include "config/StopReasonReporter.h"
 #include <Verification.h>
 
 // Bridge headers for connect-demo mode
@@ -84,6 +87,10 @@ struct InputContext {
     std::unique_ptr<::KeyboardInput> keyboard;  // owned for replay Q/P
 };
 
+// Forward declaration: the keyboard/demo fallback path, defined after
+// createInputProvider (S3776 cognitive-complexity relief).
+InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLineArgs& args);
+
 // Validate replay time-slicing args against the actual trace duration.
 // Throws CliException with a descriptive message if validation fails.
 // Extracted to ReplayTimeValidator.{h,cpp} (against IReplayTimeline) so it is
@@ -104,74 +111,62 @@ void attachGearboxLogger(Provider& provider, const std::string& logPath) {
     }
 }
 
+// Default the run duration from the provider when no --duration was given:
+// replay runs to the trace's end, live runs unbounded (0 = no time limit) until
+// stdin EOF — the streaming provider owns termination, not the wall clock.
+// Keyboard/demo keep the preset default set in CreateSimulationConfig.
+// Extracted from main() (S3776 cognitive-complexity relief).
+void applyProviderDefaultDuration(SimulationConfig& config, const CommandLineArgs& args,
+                                  const input::IInputProvider* provider) {
+    if (config.interactive || args.duration > 0.0) {
+        return;  // user-terminated run, or an explicit --duration wins
+    }
+    if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(provider)) {
+        // --replay-telemetry: default to the trace's full length so each
+        // capture just runs to its end.
+        config.duration = replay->durationS();
+    } else if (const auto* live = dynamic_cast<const input::LiveTelemetryProvider*>(provider)) {
+        // --live-telemetry: the sim runs for as long as stdin has data and
+        // exits cleanly at real EOF — the provider disconnects once the stream
+        // AND its lookahead buffer are drained (owner 2026-08-30: EOF =
+        // immediate termination — the whole CLI stops at capture end), and the
+        // loop ends on !IsConnected() (see SimulationLoop.cpp). A finite
+        // default duration (3s) would terminate the run prematurely — the
+        // streaming provider owns termination, not the wall-clock. duration=0
+        // means "no time limit"; an explicit --duration still wins (guard
+        // above), so we leave it untouched.
+        config.duration = 0.0;
+    }
+}
+
 InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
     InputContext ctx;
 
     // Live telemetry mode: read decoded CSV from stdin (vehicle-sim --stdout-csv
     // piped in), one row at a time. Live and recorded replay share the same stdin
     // CSV contract, so the consumer cannot tell them apart. --start is implicit —
-    // the provider fires the starter on frame 0.
-    if (args.liveTelemetry) {
-        auto live = std::make_unique<input::LiveTelemetryProvider>(
-            std::cin, /*autoStart=*/true, /*liveStream=*/true);
+    // the provider fires the starter on frame 0. Construction + coupling/torque
+    // flag wiring + time-slice setters live in buildTelemetryProvider
+    // (TelemetryProviderFactory.cpp); this branch owns lifecycle + run wiring.
+    if (args.twin.liveTelemetry) {
+        std::unique_ptr<input::LiveTelemetryProvider> live(
+            dynamic_cast<input::LiveTelemetryProvider*>(buildTelemetryProvider(args).release()));
+        ASSERT(live, "buildTelemetryProvider must return a LiveTelemetryProvider for --live-telemetry");
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
         }
-        // Wire --start-from/--end-at time slicing (live = instant prime +
-        // display offset per the provider's contract) + the optional gearbox
-        // logger.
-        live->setStartFromS(args.replay.startFromS);
-        live->setEndAtS(args.replay.endAtS);
         // Relative-window sanity (start < end) shared with the replay path; the
         // duration clamp inside is a no-op for live (durationS() < 0 = unknown).
         validateReplayTimeSlicing(args, live.get());
-
-        // Validate + forward the live clutch wheel-coupling mode. Must be one of
-        // the supported strategies; reject anything else rather than silently
-        // falling back to FREE (fail-fast on a typo'd mode).
-        if (args.wheelCoupling == "free") {
-            live->setWheelCouplingMode(twin::WheelCouplingMode::Free);
-        } else if (args.wheelCoupling == "pin") {
-            live->setWheelCouplingMode(twin::WheelCouplingMode::Pin);
-        } else if (args.wheelCoupling == "torque") {
-            live->setWheelCouplingMode(twin::WheelCouplingMode::Torque);
-        } else {
-            throw CliException(
-                "--wheel-coupling must be 'free', 'pin' or 'torque', got: " + args.wheelCoupling);
-        }
-
-        // Validate + forward the live clutch coupling MODEL (how the clutch
-        // pressure is derived). Fail-fast on a typo'd model name (mirrors the
-        // --wheel-coupling validation above). torque-converter is the default
-        // (the chosen fluid-coupling approach); clutch-map is the smooth governor
-        // fallback; legacy is the historical bang-bang relief path (kept for A/B
-        // comparison).
-        if (args.couplingModel == "clutch-map") {
-            live->setCouplingModel(twin::CouplingModelKind::ClutchMap);
-        } else if (args.couplingModel == "torque-converter") {
-            live->setCouplingModel(twin::CouplingModelKind::TorqueConverter);
-        } else if (args.couplingModel == "legacy") {
-            live->setCouplingModel(twin::CouplingModelKind::Legacy);
-        } else {
-            throw CliException(
-                "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: "
-                + args.couplingModel);
-        }
-
-        // Validate + forward the PIN compliance tau. Negative is a typo'd
-        // flag value - fail fast rather than silently running rigid.
-        if (args.pinTauMs < 0.0) {
-            throw CliException("--pin-tau-ms must be >= 0 (0 = rigid pin), got: "
-                               + std::to_string(args.pinTauMs));
-        }
-        live->setPinTauMs(args.pinTauMs);
 
         attachGearboxLogger(*live, args.gearbox.logPath);
         // Warm-boot the twin to RUNNING + warm cruise basin BEFORE the first real
         // frame (mirrors replay's primeTwinToRunning). Without this the live twin +
         // core start COLD and --live-telemetry --start-from blows massive negative
-        // exhaust flow (reversion). Called AFTER the coupling flags above so the
-        // twin primes with the chosen coupling (CLI sets them post-Initialize).
+        // exhaust flow (reversion). Called AFTER the coupling flags are wired —
+        // the factory applies them pre-Initialize and the provider re-applies
+        // them when Initialize() creates the twin, so the twin primes with the
+        // chosen coupling.
         live->warmBootToRunning();
 
         // The vehicle start/stop decision is mode-agnostic: SimulationLoop runs
@@ -183,60 +178,26 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
 
     // Replay mode: the telemetry CSV is the sole input source (no keyboard).
     // --start is implicit — the provider fires the starter on frame 0.
+    // Construction + coupling flags (pre-Initialize, so the twin is seeded
+    // with them — the replay DRIVE branch exercises the SAME coupling code as
+    // the live path) + time-slice setters live in buildTelemetryProvider.
     if (!args.replay.telemetryPath.empty()) {
-        auto replay = std::make_unique<input::ReplayTelemetryProvider>(
-            args.replay.telemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.gearbox.automatic);
-        // Forward the coupling flags so the replay DRIVE branch exercises the SAME
-        // coupling code as the live path. Must be set BEFORE Initialize() so the
-        // twin is constructed with them (Initialize() seeds the twin from these).
-        // Validate + forward the wheel-coupling strategy (fail-fast on a typo).
-        if (args.wheelCoupling == "free") {
-            replay->setWheelCouplingMode(twin::WheelCouplingMode::Free);
-        } else if (args.wheelCoupling == "pin") {
-            replay->setWheelCouplingMode(twin::WheelCouplingMode::Pin);
-        } else if (args.wheelCoupling == "torque") {
-            replay->setWheelCouplingMode(twin::WheelCouplingMode::Torque);
-        } else {
-            throw CliException(
-                "--wheel-coupling must be 'free', 'pin' or 'torque', got: " + args.wheelCoupling);
-        }
-        // Validate + forward the coupling MODEL (fail-fast on a typo, mirroring
-        // the --wheel-coupling validation above).
-        if (args.couplingModel == "clutch-map") {
-            replay->setCouplingModel(twin::CouplingModelKind::ClutchMap);
-        } else if (args.couplingModel == "torque-converter") {
-            replay->setCouplingModel(twin::CouplingModelKind::TorqueConverter);
-        } else if (args.couplingModel == "legacy") {
-            replay->setCouplingModel(twin::CouplingModelKind::Legacy);
-        } else {
-            throw CliException(
-                "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: "
-                + args.couplingModel);
-        }
-        // Validate + forward the PIN compliance tau BEFORE Initialize() (the
-        // replay provider stores it and seeds the twin when creating it).
-        if (args.pinTauMs < 0.0) {
-            throw CliException("--pin-tau-ms must be >= 0 (0 = rigid pin), got: "
-                               + std::to_string(args.pinTauMs));
-        }
-        replay->setPinTauMs(args.pinTauMs);
+        std::unique_ptr<input::ReplayTelemetryProvider> replay(
+            dynamic_cast<input::ReplayTelemetryProvider*>(buildTelemetryProvider(args).release()));
+        ASSERT(replay, "buildTelemetryProvider must return a ReplayTelemetryProvider for --replay-telemetry");
         if (!replay->Initialize()) {
             throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
         // Wire Q/P keyboard for replay mode (same pattern as the keyboard path).
         auto kb = std::make_unique<::KeyboardInput>();
         replay->setKeyboardInput(kb.get());
-        // Wire time slicing and validate against trace duration.
-        replay->setStartFromS(args.replay.startFromS);
-        replay->setEndAtS(args.replay.endAtS);
+        // Validate time slicing against the parsed trace duration.
         validateReplayTimeSlicing(args, replay.get());
 
         // For replay + manual mode, build an overlay even without --interactive
         // so that [ / ] gear-shift keys work. The overlay requires a target.
-        bool useOverlay = args.interactiveExplicit ||
-            (!args.replay.telemetryPath.empty() && args.gearbox.manual);
-
-        if (useOverlay) {
+        // (telemetryPath is non-empty on this branch by construction.)
+        if (bool useOverlay = args.interactiveExplicit || args.gearbox.manual; useOverlay) {
             auto target_ov = std::make_unique<input::EngineInputTarget>();
             target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
             if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
@@ -257,6 +218,15 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         ctx.provider = std::move(replay);
         return ctx;
     }
+
+    // Third input mode (keyboard/demo) after live/replay: unified keyboard path
+    // with an optional automatic-gearbox demo provider. Extracted from
+    // createInputProvider for S3776 cognitive-complexity relief.
+    return buildKeyboardInput(config, args);
+}
+
+InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLineArgs& args) {
+    InputContext ctx;
 
     // Unified code path: always use EngineInputTarget as the keyboard target
     auto keyboard = std::make_unique<::KeyboardInput>();
@@ -392,7 +362,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // the CSV input / --end-at, NOT by --duration. So duration defaults to 0
     // (run until CSV ends or user quits) for those modes. Only a bare
     // (non-interactive, non-telemetry) run defaults to the 3s preset.
-    const bool telemetryDriven = args.liveTelemetry || !args.replay.telemetryPath.empty();
+    const bool telemetryDriven = args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
     const double defaultDuration =
         (config.interactive || telemetryDriven)
             ? 0.0
@@ -425,7 +395,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // reversion (negative-exhaust-flow) attractor. Free-running audio mode
     // (interactive/threaded) keeps the governor for latency tracking.
     config.engineConfig.pacedReplay =
-        args.deterministic || args.liveTelemetry || !args.replay.telemetryPath.empty();
+        args.deterministic || args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
 
     // Gearbox mode: --auto enables automatic gearbox, default is manual
     config.autoGearbox = args.gearbox.automatic;
@@ -498,17 +468,11 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
     }
 }
 
-// Print why playback stopped, based on how the session ended. Single exit point.
-void reportStopReason(const SimulationConfig& config) {
-    if (config.interactive) {
-        std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
-    } else if (config.duration > 0.0) {
-        std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
-                  << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
-    } else {
-        std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
-    }
-}
+// Print why playback stopped: reportStopReason (config/StopReasonReporter.h),
+// extracted for unit testability. It reads the provider's post-run state so
+// the message names the cause that ACTUALLY ended the run (--end-at bound,
+// stream EOF at capture end, the duration timer, or the user) instead of
+// quoting config.duration unconditionally.
 
 // ============================================================================
 // Main Entry Point
@@ -534,23 +498,7 @@ int main(int argc, char* argv[]) {
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
-        if (!config.interactive && args.duration <= 0.0) {
-            if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
-                // --replay-telemetry: default to the trace's full length so each
-                // capture just runs to its end.
-                config.duration = replay->durationS();
-            } else if (const auto* live = dynamic_cast<const input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
-                // --live-telemetry: the sim must run FOR AS LONG AS stdin is open
-                // and exit cleanly at real EOF (see SimulationLoop.cpp:542 IsConnected
-                // exit). A finite default duration (3s) would terminate the run
-                // prematurely — the streaming provider owns termination, not the
-                // wall-clock. duration=0 means "no time limit"; the loop then ends
-                // only when the provider reports !IsConnected(). An explicit
-                // --duration still wins (checked above, so we leave it untouched).
-                (void)live;
-                config.duration = 0.0;
-            }
-        }
+        applyProviderDefaultDuration(config, args, inputProvider);
         auto presentation = createPresentation(config);
 
         ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
@@ -559,15 +507,10 @@ int main(int argc, char* argv[]) {
         // Determine paths to run
         auto paths = resolveConfigPaths(args, cliLogger.get());
 
-        // Create audio buffer once (client owns for session lifetime)
-        AudioMode audioMode;
-        if (config.deterministic) {
-            audioMode = AudioMode::Deterministic;
-        } else if (config.syncPull) {
-            audioMode = AudioMode::SyncPull;
-        } else {
-            audioMode = AudioMode::Threaded;
-        }
+        // Create audio buffer once (client owns for session lifetime).
+        // Strategy selection lives in resolveAudioMode (AudioModeResolver.cpp,
+        // unit-tested via CLIMainS3776S1820Test Section B).
+        const AudioMode audioMode = resolveAudioMode(config);
         auto audioBuffer = IAudioBufferFactory::createBuffer(audioMode, cliLogger.get(), telemetry.get());
 
         // cycle through the available engine presets unless a specific one is configured
@@ -578,7 +521,7 @@ int main(int argc, char* argv[]) {
         while (result == EXIT_BUT_CONTINUE_NEXT) {
             const std::string& currentPath = paths[presetIndex];
             auto simulator = SimulatorFactory::createAndConfigure(config, currentPath, "", cliLogger.get(), telemetry.get(),
-                args.couplingModel == "torque-converter");
+                args.twin.couplingModel == "torque-converter");
 
             // Build SessionDependencies from the available dependencies
             SessionDependencies deps;
@@ -617,8 +560,9 @@ int main(int argc, char* argv[]) {
             presetIndex = (presetIndex + 1) % paths.size();
         }//while
 
-        // Tell the user why playback stopped
-        reportStopReason(config);
+        // Tell the user why playback stopped — reading the provider's
+        // post-run state (end-at flag / connection) makes the message honest.
+        reportStopReason(config, inputProvider, args.replay.endAtS);
 
         // No session remains; detach so any stray signal is inert.
         stopController->detach();

@@ -99,7 +99,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
-    app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss)");
+    app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss); file replay skips there instantly — rows before the offset are never simulated (arrival state is synthesized at the offset)");
     app.add_option("--end-at", args.replay.endAt, "Stop replay/live-telemetry at this time (seconds or mm:ss); plays to input end if past it");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
@@ -107,9 +107,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
-    auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
+    auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.twin.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
 
-    app.add_option("--wheel-coupling", args.wheelCoupling,
+    app.add_option("--wheel-coupling", args.twin.wheelCoupling,
         "Live clutch wheel-coupling mode - which wheel speed drives the\n"
         "slip math. Valid options:\n"
         "  pin    - mirrors replay: pins sim vehicle speed to the CSV speed\n"
@@ -120,7 +120,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "           transmission input so road speed emerges from the solver")
         ->capture_default_str();
 
-    app.add_option("--pin-tau-ms", args.pinTauMs,
+    app.add_option("--pin-tau-ms", args.twin.pinTauMs,
         "PIN wheel-coupling compliance in milliseconds. The road speed signal\n"
         "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0, DEFAULT)\n"
         "teleports engine rpm between levels - the audible 'piano keys'.\n"
@@ -130,7 +130,24 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "the pin target only: the gearbox shift map still sees the raw speed.")
         ->capture_default_str();
 
-    app.add_option("--coupling-model", args.couplingModel,
+    app.add_flag("--effective-throttle", args.twin.effectiveThrottle,
+        "Derive the twin's ENGINE-DRIVE throttle from the commanded motor\n"
+        "torque when Autopilot holds speed with the pedal at rest (pedal 0.00\n"
+        "+ positive torque renders the engine silent today). While the pedal\n"
+        "sits at/below the 2% foot-off deadband and commanded torque is at or\n"
+        "above 20 Nm, effective = max(pedal, torque/600 Nm) - regen contributes\n"
+        "zero. DEFAULT OFF; off is bit-identical to today's output. Scoped to\n"
+        "the engine drive only (gearbox/coupling/pin keep the raw signal).");
+
+    app.add_flag("--torque-informed-gearbox", args.twin.torqueInformedGearbox,
+        "Feed the commanded motor torque (sign + magnitude) into the gearbox\n"
+        "shift DECISION as a demand hint: pull -> +torque/600*0.30 bias, AP\n"
+        "braking -> +|torque|/1000*0.30 (positive both ways - braking must\n"
+        "never read as lift-off coast). Below 20 Nm is true coast (no bias).\n"
+        "DEFAULT OFF; off is bit-identical to today's decisions. Decision\n"
+        "input only - never physics, never road speed.");
+
+    app.add_option("--coupling-model", args.twin.couplingModel,
         "Live clutch coupling model - how the live twin derives the\n"
         "engine<->drivetrain clutch pressure each frame. Valid options:\n"
         "  torque-converter - fluid-coupling pump/turbine + TR/K curves\n"

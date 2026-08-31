@@ -83,7 +83,7 @@ TEST(CLIMainStartFromPlumbing, StartFrom_hhmmss_ParsesToSeconds) {
     auto args = parseArgs({"prog", "--live-telemetry", "--start-from", "01:30"});
     EXPECT_DOUBLE_EQ(args.replay.startFromS, 90.0);
     EXPECT_EQ(args.replay.startFrom, "01:30");
-    EXPECT_TRUE(args.liveTelemetry);
+    EXPECT_TRUE(args.twin.liveTelemetry);
 }
 
 TEST(CLIMainStartFromPlumbing, StartFrom_mmss_ParsesToSeconds) {
@@ -106,7 +106,7 @@ TEST(CLIMainStartFromPlumbing, NoStartFrom_KeepsSkipSentinel) {
     auto args = parseArgs({"prog", "--live-telemetry"});
     EXPECT_DOUBLE_EQ(args.replay.startFromS, -1.0);
     EXPECT_TRUE(args.replay.startFrom.empty());
-    EXPECT_EQ(args.liveTelemetry, true);
+    EXPECT_EQ(args.twin.liveTelemetry, true);
 }
 
 // Spec: --end-at mirrors --start-from parsing (seconds + mm:ss).
@@ -123,7 +123,7 @@ TEST(CLIMainStartFromPlumbing, EndAt_ParsesToSeconds) {
 TEST(CLIMainStartFromPlumbing, EndAt_AcceptsLiveTelemetryWithoutReplay) {
     auto args = parseArgs({"prog", "--live-telemetry", "--end-at", "1:05"});
     EXPECT_DOUBLE_EQ(args.replay.endAtS, 65.0);
-    EXPECT_EQ(args.liveTelemetry, true);
+    EXPECT_EQ(args.twin.liveTelemetry, true);
 }
 
 // Spec: invalid --start-from string -> parseArguments returns false (fail-fast
@@ -158,7 +158,7 @@ TEST(CLIMainInputRouting, LiveAndReplayExclusive_ParseFails) {
 // the bug). engineConfig must receive the script path (not drop to preset[0]).
 TEST(CLIMainInputRouting, LiveWithScript_SetsEngineConfig) {
     auto args = parseArgs({"prog", "--live-telemetry", "--script", "C63_M156_V3.mr", "--start-from", "01:30"});
-    EXPECT_TRUE(args.liveTelemetry);
+    EXPECT_TRUE(args.twin.liveTelemetry);
     EXPECT_EQ(args.engineConfig, "C63_M156_V3.mr");
     EXPECT_DOUBLE_EQ(args.replay.startFromS, 90.0);
 }
@@ -189,9 +189,11 @@ TEST(CLIMainInputRouting, LiveWithScript_SetsEngineConfig) {
 //   - AudioMode resolveAudioMode(const SimulationConfig&)
 //       -> AudioMode::Deterministic | SyncPull | Threaded
 //   - std::unique_ptr<input::IInputProvider>
-//       buildTelemetryProvider(const CommandLineArgs&, ILogging*)
+//       buildTelemetryProvider(const CommandLineArgs&)
 //       -> returns LiveTelemetryProvider (--live-telemetry) or
 //          ReplayTelemetryProvider (--replay-telemetry)
+//       (the unused ILogging* parameter was dropped during the gate run —
+//       lockstep with TelemetryProviderFactory.h; call sites updated).
 //   - getStartFromS() / getEndAtS() getters on the provider (readable after the
 //       builder returns it), with the provider castable from input::IInputProvider
 // If the fix agent's extraction names these differently, update the symbols
@@ -224,6 +226,10 @@ TEST(CLIMainInputRouting, LiveWithScript_SetsEngineConfig) {
 #include "simulation/SimulationLoop.h"    // SimulationConfig
 #include "input/IInputProvider.h"         // input::IInputProvider
 #include "input/ITelemetryProvider.h"
+#include "config/TelemetryProviderFactory.h"  // buildTelemetryProvider (the pinned seam)
+#include "config/AudioModeResolver.h"         // resolveAudioMode (the pinned seam)
+#include "input/LiveTelemetryProvider.h"      // concrete cast + getStartFromS
+#include "input/ReplayTelemetryProvider.h"    // concrete cast + getStartFromS/getEndAtS
 
 // Spec 1: audio-mode selection maps the three config states deterministically.
 TEST(CLIMainRefactorAudioMode, Deterministic_SelectsDeterministic) {
@@ -254,16 +260,20 @@ TEST(CLIMainRefactorAudioMode, Threaded_SelectsThreaded) {
 // AND that the startFromS_ it carries equals the parsed arg (90.0 == 01:30).
 TEST(CLIMainRefactorTelemetryFactory, Live_WiresStartFromAndReturnsLiveProvider) {
     CommandLineArgs args;
-    args.liveTelemetry = true;
+    args.twin.liveTelemetry = true;
     args.replay.startFromS = 90.0;
     args.replay.startFrom = "01:30";
-    args.wheelCoupling = "pin";
-    args.couplingModel = "torque-converter";
+    args.twin.wheelCoupling = "pin";
+    args.twin.couplingModel = "torque-converter";
 
-    auto provider = buildTelemetryProvider(args, /*logger=*/nullptr);
+    auto provider = buildTelemetryProvider(args);
     ASSERT_NE(provider, nullptr);
-    EXPECT_NE(dynamic_cast<input::LiveTelemetryProvider*>(provider.get()), nullptr);
-    EXPECT_DOUBLE_EQ(provider->getStartFromS(), 90.0);
+    // Lockstep (fix agent, per the contract clause above): getStartFromS() is
+    // declared on the concrete provider (via IReplayTimeline), not on
+    // IInputProvider — cast first, then read the getter.
+    auto* live = dynamic_cast<input::LiveTelemetryProvider*>(provider.get());
+    ASSERT_NE(live, nullptr);
+    EXPECT_DOUBLE_EQ(live->getStartFromS(), 90.0);
 }
 
 TEST(CLIMainRefactorTelemetryFactory, Replay_WiresStartFromAndReturnsReplayProvider) {
@@ -271,10 +281,10 @@ TEST(CLIMainRefactorTelemetryFactory, Replay_WiresStartFromAndReturnsReplayProvi
     args.replay.telemetryPath = "trace.csv";
     args.replay.startFromS = 30.0;
     args.replay.endAtS = 120.0;
-    args.wheelCoupling = "pin";
-    args.couplingModel = "clutch-map";
+    args.twin.wheelCoupling = "pin";
+    args.twin.couplingModel = "clutch-map";
 
-    auto provider = buildTelemetryProvider(args, /*logger=*/nullptr);
+    auto provider = buildTelemetryProvider(args);
     ASSERT_NE(provider, nullptr);
     auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(provider.get());
     ASSERT_NE(replay, nullptr);
@@ -286,9 +296,9 @@ TEST(CLIMainRefactorTelemetryFactory, Replay_WiresStartFromAndReturnsReplayProvi
 // report's twin reversion is downstream of a SILENT fallback — we forbid that).
 TEST(CLIMainRefactorTelemetryFactory, Live_InvalidWheelCoupling_Throws) {
     CommandLineArgs args;
-    args.liveTelemetry = true;
-    args.wheelCoupling = "bogus-mode";
-    EXPECT_THROW(buildTelemetryProvider(args, nullptr), CliException);
+    args.twin.liveTelemetry = true;
+    args.twin.wheelCoupling = "bogus-mode";
+    EXPECT_THROW(buildTelemetryProvider(args), CliException);
 }
 
 #endif  // SLIPLOCK_REFACTOR_EXPOSED
