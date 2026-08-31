@@ -93,6 +93,7 @@ std::string ConsolePresentation::formatSimulatorState(const EngineState& state) 
     formatPedalState(state, out);
     formatGearState(state, out);
     formatSpeedState(state, out);
+    formatSteeringState(state, out);
     formatTargetSpeedState(state, out);
     formatTorqueState(state, out);
     formatDynoState(state, out);
@@ -196,6 +197,16 @@ std::string ConsolePresentation::formatSpeedState(const EngineState& state, std:
     {
         auto mph = static_cast<int>(std::round(state.drivetrain.vehicleSpeedKmh * EngineSimDefaults::KMH_TO_MPH));
         out << "[" << std::setw(3) << mph << " mph] ";
+    }
+    return out.str();
+}
+
+// Steering wheel angle (signed, one decimal). Absent when the telemetry feed
+// carries no steering (keyboard/demo/non-DBC sources) — the console degrades
+// to nothing rather than printing a fake zero.
+std::string ConsolePresentation::formatSteeringState(const EngineState& state, std::ostringstream& out) const {
+    if (state.controls.steeringAngleDeg.has_value()) {
+        out << "[Str: " << std::fixed << std::setprecision(1) << *state.controls.steeringAngleDeg << "] ";
     }
     return out.str();
 }

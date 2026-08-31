@@ -60,6 +60,7 @@ private:
     std::string formatPedalState(const EngineState& state, std::ostringstream& out) const;
     std::string formatGearState(const EngineState& state, std::ostringstream& out) const;
     std::string formatSpeedState(const EngineState& state, std::ostringstream& out) const;
+    std::string formatSteeringState(const EngineState& state, std::ostringstream& out) const;
     std::string formatTargetSpeedState(const EngineState& state, std::ostringstream& out) const;
     std::string formatTorqueState(const EngineState& state, std::ostringstream& out) const;
     std::string formatDynoState(const EngineState& state, std::ostringstream& out) const;
