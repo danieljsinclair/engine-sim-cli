@@ -130,6 +130,23 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "the pin target only: the gearbox shift map still sees the raw speed.")
         ->capture_default_str();
 
+    app.add_flag("--effective-throttle", args.effectiveThrottle,
+        "Derive the twin's ENGINE-DRIVE throttle from the commanded motor\n"
+        "torque when Autopilot holds speed with the pedal at rest (pedal 0.00\n"
+        "+ positive torque renders the engine silent today). While the pedal\n"
+        "sits at/below the 2% foot-off deadband and commanded torque is at or\n"
+        "above 20 Nm, effective = max(pedal, torque/600 Nm) - regen contributes\n"
+        "zero. DEFAULT OFF; off is bit-identical to today's output. Scoped to\n"
+        "the engine drive only (gearbox/coupling/pin keep the raw signal).");
+
+    app.add_flag("--torque-informed-gearbox", args.torqueInformedGearbox,
+        "Feed the commanded motor torque (sign + magnitude) into the gearbox\n"
+        "shift DECISION as a demand hint: pull -> +torque/600*0.30 bias, AP\n"
+        "braking -> +|torque|/1000*0.30 (positive both ways - braking must\n"
+        "never read as lift-off coast). Below 20 Nm is true coast (no bias).\n"
+        "DEFAULT OFF; off is bit-identical to today's decisions. Decision\n"
+        "input only - never physics, never road speed.");
+
     app.add_option("--coupling-model", args.couplingModel,
         "Live clutch coupling model - how the live twin derives the\n"
         "engine<->drivetrain clutch pressure each frame. Valid options:\n"

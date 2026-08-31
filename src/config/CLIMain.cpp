@@ -167,6 +167,19 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         }
         live->setPinTauMs(args.pinTauMs);
 
+        // Forward the torque feature toggles (--effective-throttle /
+        // --torque-informed-gearbox). Forwarded unconditionally: the disabled
+        // configs are inert no-ops on the twin (set-disabled is provably
+        // identical to never-set), so the default path stays byte-identical.
+        {
+            twin::EffectiveThrottleConfig effectiveThrottle;
+            effectiveThrottle.enabled = args.effectiveThrottle;
+            live->setEffectiveThrottleConfig(effectiveThrottle);
+            twin::TorqueInformedGearboxConfig torqueInformedGearbox;
+            torqueInformedGearbox.enabled = args.torqueInformedGearbox;
+            live->setTorqueInformedGearboxConfig(torqueInformedGearbox);
+        }
+
         attachGearboxLogger(*live, args.gearbox.logPath);
         // Warm-boot the twin to RUNNING + warm cruise basin BEFORE the first real
         // frame (mirrors replay's primeTwinToRunning). Without this the live twin +
@@ -221,6 +234,16 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
                                + std::to_string(args.pinTauMs));
         }
         replay->setPinTauMs(args.pinTauMs);
+        // Forward the torque feature toggles before Initialize() too (same
+        // store + re-apply contract; disabled configs are inert no-ops).
+        {
+            twin::EffectiveThrottleConfig effectiveThrottle;
+            effectiveThrottle.enabled = args.effectiveThrottle;
+            replay->setEffectiveThrottleConfig(effectiveThrottle);
+            twin::TorqueInformedGearboxConfig torqueInformedGearbox;
+            torqueInformedGearbox.enabled = args.torqueInformedGearbox;
+            replay->setTorqueInformedGearboxConfig(torqueInformedGearbox);
+        }
         if (!replay->Initialize()) {
             throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
