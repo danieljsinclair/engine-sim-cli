@@ -27,8 +27,8 @@ TEST(CommandLineTorqueFlagsTest, DefaultsAreOffWhenFlagsAbsent) {
     // must stay off — the byte-identical default path.
     const auto args = parse({"engine-sim-cli", "--script", "v8.mr"});
 
-    EXPECT_FALSE(args.effectiveThrottle);
-    EXPECT_FALSE(args.torqueInformedGearbox);
+    EXPECT_FALSE(args.twin.effectiveThrottle);
+    EXPECT_FALSE(args.twin.torqueInformedGearbox);
 }
 
 TEST(CommandLineTorqueFlagsTest, OtherFlagsLeaveTorqueTogglesOff) {
@@ -40,24 +40,24 @@ TEST(CommandLineTorqueFlagsTest, OtherFlagsLeaveTorqueTogglesOff) {
                              "--coupling-model", "torque-converter",
                              "--start"});
 
-    EXPECT_FALSE(args.effectiveThrottle);
-    EXPECT_FALSE(args.torqueInformedGearbox);
+    EXPECT_FALSE(args.twin.effectiveThrottle);
+    EXPECT_FALSE(args.twin.torqueInformedGearbox);
 }
 
 TEST(CommandLineTorqueFlagsTest, ParsesEffectiveThrottleFlag) {
     const auto args = parse({"engine-sim-cli", "--live-telemetry",
                              "--effective-throttle"});
 
-    EXPECT_TRUE(args.effectiveThrottle);
-    EXPECT_FALSE(args.torqueInformedGearbox);  // toggles are independent
+    EXPECT_TRUE(args.twin.effectiveThrottle);
+    EXPECT_FALSE(args.twin.torqueInformedGearbox);  // toggles are independent
 }
 
 TEST(CommandLineTorqueFlagsTest, ParsesTorqueInformedGearboxFlag) {
     const auto args = parse({"engine-sim-cli", "--live-telemetry",
                              "--torque-informed-gearbox"});
 
-    EXPECT_TRUE(args.torqueInformedGearbox);
-    EXPECT_FALSE(args.effectiveThrottle);      // toggles are independent
+    EXPECT_TRUE(args.twin.torqueInformedGearbox);
+    EXPECT_FALSE(args.twin.effectiveThrottle);      // toggles are independent
 }
 
 TEST(CommandLineTorqueFlagsTest, ParsesBothTorqueFlagsTogether) {
@@ -67,8 +67,8 @@ TEST(CommandLineTorqueFlagsTest, ParsesBothTorqueFlagsTogether) {
                              "--effective-throttle",
                              "--torque-informed-gearbox"});
 
-    EXPECT_TRUE(args.effectiveThrottle);
-    EXPECT_TRUE(args.torqueInformedGearbox);
+    EXPECT_TRUE(args.twin.effectiveThrottle);
+    EXPECT_TRUE(args.twin.torqueInformedGearbox);
 }
 
 TEST(CommandLineTorqueFlagsTest, EffectiveThrottleParsesWithoutTelemetry) {
@@ -76,5 +76,5 @@ TEST(CommandLineTorqueFlagsTest, EffectiveThrottleParsesWithoutTelemetry) {
     // demanding --live-telemetry/--replay-telemetry.
     const auto args = parse({"engine-sim-cli", "--effective-throttle"});
 
-    EXPECT_TRUE(args.effectiveThrottle);
+    EXPECT_TRUE(args.twin.effectiveThrottle);
 }
