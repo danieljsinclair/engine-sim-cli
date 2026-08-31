@@ -25,6 +25,8 @@ add_executable(unit_tests
     ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
     ../../src/config/ReplayTimeValidator.cpp
+    ../../src/config/TelemetryProviderFactory.cpp
+    ../../src/config/AudioModeResolver.cpp
     ../../src/config/KqueueSignalStopController.cpp
     ../../src/config/ANSIColors.cpp
     ../../src/config/ExecutablePath.cpp
