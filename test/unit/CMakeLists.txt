@@ -19,9 +19,14 @@ add_executable(unit_tests
     CLIMainS3776S1820Test.cpp
     ReplayTimeValidatorTest.cpp
     ExecutablePathTest.cpp
+    CommandLineTorqueFlagsTest.cpp
+    StopReasonReporterTest.cpp
     # Required support code
+    ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
     ../../src/config/ReplayTimeValidator.cpp
+    ../../src/config/TelemetryProviderFactory.cpp
+    ../../src/config/AudioModeResolver.cpp
     ../../src/config/KqueueSignalStopController.cpp
     ../../src/config/ANSIColors.cpp
     ../../src/config/ExecutablePath.cpp
