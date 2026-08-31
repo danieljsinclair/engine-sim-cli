@@ -453,3 +453,87 @@ TEST_F(ConsolePresentationTest, GearBracket_HasNoBrakeIndicator) {
               "[Gear:" + gearTriple(s.controls.gearSelector, s.controls.gearAutoMode, s.drivetrain.gear) + "]")
         << "Gear bracket must contain only the selector/mode/gear triple — no brake char";
 }
+
+// ============================================================================
+// Audio-ring health segment — the observability gap the sync-pull knock slipped
+// through (producer lapping the 44100-frame ring every ~2.25s). With
+// --diagnostic-frames the audio line gains ring:laps=/p/c=/seams=/ovprod=;
+// red when any detector has fired, green when healthy; nothing at all without
+// the flag.
+// ============================================================================
+
+class RingHealthPresentationTest : public ConsolePresentationTest {
+protected:
+    void SetUp() override {
+        PresentationConfig config;
+        config.showDiagnostics = true;
+        config.diagnostics.frames = true;
+        presentation_.Initialize(config);
+    }
+
+    // A state whose audio line renders (the frames block needs renderMs > 0).
+    EngineState audioState() const {
+        EngineState s = makeState();
+        s.audio.renderMs = 1.0;
+        s.audio.audioMode = "SYNC-PULL";
+        return s;
+    }
+
+    // Extract the ring-health segment (colour escape + counters).
+    static std::string ringSegment(const std::string& out) {
+        const auto start = out.find("ring:");
+        if (start == std::string::npos) return "";
+        const auto end = out.find('w', start);
+        return (end == std::string::npos) ? "" : out.substr(start, end - start + 1);
+    }
+};
+
+TEST_F(RingHealthPresentationTest, HealthyRing_ShowsGreenZeroedSegment) {
+    const std::string out = renderState(presentation_, audioState());
+    const std::string segment = ringSegment(out);
+
+    EXPECT_NE(segment, "") << "--diagnostic-frames must show the ring-health counters when healthy";
+    EXPECT_NE(segment.find("ring:laps=0"), std::string::npos);
+    EXPECT_NE(segment.find("seams=0"), std::string::npos);
+    EXPECT_NE(segment.find("ovprod=0w"), std::string::npos);
+    // The whole segment renders in the healthy colour (green wraps "ring:").
+    EXPECT_NE(out.find(ANSIColors::GREEN + "ring:laps=0"), std::string::npos)
+        << "a healthy ring must render green";
+}
+
+TEST_F(RingHealthPresentationTest, KnockSignature_ShowsRedAlarmSegment) {
+    EngineState s = audioState();
+    // The measured knock signature: 1.44x production, ring lapping ~2.25s,
+    // mid-waveform restarts, sustained overproduction.
+    s.audio.ringLaps = 2;
+    s.audio.prodConsRatio = 1.44;
+    s.audio.seamDiscontinuities = 3;
+    s.audio.sustainedOverproductionWindows = 5;
+
+    const std::string out = renderState(presentation_, s);
+    const std::string segment = ringSegment(out);
+
+    ASSERT_NE(segment, "");
+    EXPECT_NE(segment.find("ring:laps=2"), std::string::npos);
+    EXPECT_NE(segment.find("p/c=1.44"), std::string::npos);
+    EXPECT_NE(segment.find("seams=3"), std::string::npos);
+    EXPECT_NE(segment.find("ovprod=5w"), std::string::npos);
+    EXPECT_NE(out.find(ANSIColors::RED + "ring:laps=2"), std::string::npos)
+        << "lapped ring + seams + sustained overproduction must render red";
+}
+
+TEST_F(RingHealthPresentationTest, WithoutFramesFlag_NoRingSegment) {
+    // Fixture-less: default PresentationConfig leaves diagnostics.frames false.
+    ConsolePresentation plain;
+    PresentationConfig config;
+    config.showDiagnostics = true;
+    plain.Initialize(config);
+
+    EngineState s = audioState();
+    s.audio.ringLaps = 9;  // even an alarming ring stays invisible without the flag
+
+    const std::string out = renderState(plain, s);
+
+    EXPECT_EQ(out.find("ring:"), std::string::npos)
+        << "the ring-health segment must be gated behind --diagnostic-frames";
+}

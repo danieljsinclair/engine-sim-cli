@@ -294,6 +294,20 @@ std::string ConsolePresentation::formatAudioState(const EngineState& state, std:
             << " took=" << std::setw(5) << std::fixed << std::setprecision(1) << state.audio.renderMs << "ms"
             << " room=" << std::setw(5) << std::showpos << std::setprecision(1) << state.audio.headroomMs
             << std::noshowpos << "ms";
+
+        // Audio-ring health: the content-level facts the service metrics above
+        // cannot see (the sync-pull knock ran 1.44x production, lapping the
+        // 44100-frame ring every ~2.25s, with every req/got/took/room line
+        // looking healthy). Red when any detector has fired.
+        const bool ringAlarming = state.audio.ringLaps > 0
+                               || state.audio.seamDiscontinuities > 0
+                               || state.audio.sustainedOverproductionWindows >= 3;
+        out << " " << (ringAlarming ? ANSIColors::RED : ANSIColors::GREEN)
+            << "ring:laps=" << state.audio.ringLaps
+            << " p/c=" << std::fixed << std::setprecision(2) << state.audio.prodConsRatio
+            << " seams=" << state.audio.seamDiscontinuities
+            << " ovprod=" << state.audio.sustainedOverproductionWindows << "w"
+            << ANSIColors::RESET;
     }
 
     // Budget — SYNC-PULL only. In THREADED mode the audio thread pulls work
