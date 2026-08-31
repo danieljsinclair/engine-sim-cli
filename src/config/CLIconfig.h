@@ -97,6 +97,20 @@ struct CommandLineArgs {
     // relief, torques, state). Empty = no CSV. For automated smoke-tests /
     // lug-stall spelunking without grepping color-coded console text.
     std::string csvOut;
+
+    // --effective-throttle (DEFAULT OFF): derive the twin's ENGINE-DRIVE throttle
+    // from the commanded motor torque when Autopilot holds speed with the pedal
+    // at rest (pedal=0.00 + torque>0 renders the engine silent today — 1,998
+    // cruise rows at 95.6 kmh with +134 Nm in the 2026-08-30 capture). The blend
+    // and hysteresis constants are pinned in the bridge's twin::EffectiveThrottleConfig.
+    // Off must be byte-identical to today's output.
+    bool effectiveThrottle = false;
+
+    // --torque-informed-gearbox (DEFAULT OFF): feed the commanded motor torque
+    // (sign + magnitude, UpstreamSignal::motorTorqueNm) into the gearbox shift
+    // DECISION as a demand hint — pedal=0 AP pulls/brakes are misread as coasting
+    // today. Decision input only, never physics. Off must be byte-identical.
+    bool torqueInformedGearbox = false;
 };
 
 // ============================================================================
