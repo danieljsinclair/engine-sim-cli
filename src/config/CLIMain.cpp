@@ -26,6 +26,7 @@
 #include "presentation/PresentationCollection.h"
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
+#include "config/StopReasonReporter.h"
 #include <Verification.h>
 
 // Bridge headers for connect-demo mode
@@ -113,7 +114,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     // the provider fires the starter on frame 0.
     if (args.liveTelemetry) {
         auto live = std::make_unique<input::LiveTelemetryProvider>(
-            std::cin, /*autoStart=*/true, /*liveStream=*/true);
+            std::cin, /*autoStart=*/true);
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
         }
@@ -498,17 +499,11 @@ void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inpu
     }
 }
 
-// Print why playback stopped, based on how the session ended. Single exit point.
-void reportStopReason(const SimulationConfig& config) {
-    if (config.interactive) {
-        std::cout << "\nPlayback stopped: user quit (Q or Ctrl-C)." << std::endl;
-    } else if (config.duration > 0.0) {
-        std::cout << "\nPlayback stopped: " << config.duration << "s duration reached."
-                  << "\n  (use --interactive for open-ended, --duration <N> for longer)" << std::endl;
-    } else {
-        std::cout << "\nPlayback stopped: end of replay trace." << std::endl;
-    }
-}
+// Print why playback stopped: reportStopReason (config/StopReasonReporter.h),
+// extracted for unit testability. It reads the provider's post-run state so
+// the message names the cause that ACTUALLY ended the run (--end-at bound,
+// stream EOF at capture end, the duration timer, or the user) instead of
+// quoting config.duration unconditionally.
 
 // ============================================================================
 // Main Entry Point
@@ -540,13 +535,15 @@ int main(int argc, char* argv[]) {
                 // capture just runs to its end.
                 config.duration = replay->durationS();
             } else if (const auto* live = dynamic_cast<const input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
-                // --live-telemetry: the sim must run FOR AS LONG AS stdin is open
-                // and exit cleanly at real EOF (see SimulationLoop.cpp:542 IsConnected
-                // exit). A finite default duration (3s) would terminate the run
-                // prematurely — the streaming provider owns termination, not the
-                // wall-clock. duration=0 means "no time limit"; the loop then ends
-                // only when the provider reports !IsConnected(). An explicit
-                // --duration still wins (checked above, so we leave it untouched).
+                // --live-telemetry: the sim runs for as long as stdin has data
+                // and exits cleanly at real EOF — the provider disconnects once
+                // the stream AND its lookahead buffer are drained (owner
+                // 2026-08-30: EOF = immediate termination), and the loop ends
+                // on !IsConnected() (see SimulationLoop.cpp). A finite default
+                // duration (3s) would terminate the run prematurely — the
+                // streaming provider owns termination, not the wall-clock.
+                // duration=0 means "no time limit"; an explicit --duration
+                // still wins (checked above, so we leave it untouched).
                 (void)live;
                 config.duration = 0.0;
             }
@@ -617,8 +614,9 @@ int main(int argc, char* argv[]) {
             presetIndex = (presetIndex + 1) % paths.size();
         }//while
 
-        // Tell the user why playback stopped
-        reportStopReason(config);
+        // Tell the user why playback stopped — reading the provider's
+        // post-run state (end-at flag / connection) makes the message honest.
+        reportStopReason(config, inputProvider, args.replay.endAtS);
 
         // No session remains; detach so any stray signal is inert.
         stopController->detach();

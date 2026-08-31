@@ -15,6 +15,15 @@ Bridge submodule: `engine-sim-bridge`, branch `feat/startStop` @ 7a83baf (phase-
 > `IVehicleControlSink`), the drive-since-start stop gate (the deferred PARK-after-motion
 > item, resolved via gear history), and latch release on brake release ALONE. Door/exit-
 > vehicle remains unwired in v1 by design (see the door section).
+>
+> **Phase-3 refresh (2026-08-30, owner request):** the STOP trigger is now
+> **edge-triggered on brake RELEASE in park** instead of the brake-light level. Owner,
+> verbatim: *"BRAKE(light)+PARK cuts ignition, however, I think it should be brake
+> \*released\* in park, otherwise, it stops when you go to put your foot on the brake to
+> select first gear."* The press (level) stop fired the instant a driver pressed the
+> brake in PARK intending to select a gear and drive off; the cut now fires on the
+> brake-light ON→OFF transition while RUNNING in PARK. Implemented on bridge branch
+> `feat/startstop-release-cut`; all rules below are updated.
 
 ## Goal
 
@@ -22,8 +31,11 @@ When running `--live-telemetry` against the real car, the engine-sim's ignition 
 starter are driven by the car's own signals instead of the UI:
 
 - **START** — brake-light on, OR forward/reverse gear selected (not P)
-- **STOP**  — brake-light on AND PARK together, only after a drive gear (D/R) has been
-  selected since the current engine run started (drive-since-start gate — see Rules)
+- **STOP**  — brake-light **released** (ON→OFF edge) while in PARK and RUNNING, only
+  after a drive gear (D/R) has been selected since the current engine run started
+  (drive-since-start gate — see Rules). A brake **press** in PARK never cuts ignition
+  (the driver may be about to select a gear); if the driver shifts out of PARK before
+  releasing the brake, no stop occurs (that is a drive-off).
 - **Crank aesthetic** — gear-initiated start is **instant** (starter + ignition same
   frame); brake-initiated start engages the starter immediately and ignites after a
   tunable delay (default 0.5 s, per-vehicle later). Selecting D/R while the delay is
@@ -118,27 +130,40 @@ Rejected after investigation: `DI_gearRequest` (not on our tap — DI powertrain
 bus only), `0x229 GearLever` (level-held; no repeat-press event exists),
 throttle-blank-as-sleep (no such edge occurs in 1.6M frames).
 
-## Design — two bits and a gate bit, no state machine
+## Design — two bits, a gate bit and an edge bit, no state machine
 
 ```
 engineOn   : has the sim been started
-stopLatch  : set when a P+B stop fires; blocks restart until brake releases
+stopLatch  : set when a park release-edge stop fires; blocks restart until brake releases
 driveSinceStart : a drive gear (D/R) has been selected during the current engine run
                  (seeded by a gear-initiated start; reset by every stop and new run)
+brakeWas   : previous frame's brake light (its ON->OFF edge is the stop TRIGGER)
 ```
 
 Rules (evaluated per frame in `VehicleStartController::update` from the canonical
 `brakeLight` boolean + `gearSelector`):
 
 ```
-if (brake && gear == PARK && driveSinceStart)
+brakeReleased = brakeWas && !brake          [edge; brakeWas advances every tick]
+if (brakeReleased && gear == PARK && running && driveSinceStart)
                                        -> ignition off, stopLatch = true
 else if (stopLatch && !brake)          -> stopLatch = false            [release]
 else if (!engineOn && !stopLatch && (brake || gear == D/R)) -> VehicleStart()
 ```
 
-`stopLatch` is required: without it, holding the brake after a P+B stop
-immediately re-satisfies the START condition and restarts the engine underfoot.
+`running` above is `engineOn && !crankPending` — a brake release during the
+brake-initiated crank delay is part of the start, not a stop.
+
+**Why the edge trigger (phase-3):** the level rule (`brake && PARK`) cut ignition the
+instant a driver pressed the brake in PARK *intending to select a gear and drive off* —
+the engine died under their foot before the selector ever left P. The release edge is
+the human "I am parked and done" event: hold the brake, select PARK, release, walk
+away. Pressing the brake in PARK (to select D/R) is now invisible to the stop rule,
+and a shift out of PARK before the release lands the edge outside PARK — a drive-off,
+no stop.
+
+`stopLatch` is retained: the stop still sets it and START stays blocked while it
+holds, preserving the restart discipline across the trigger change.
 
 **Release is brake release ALONE** (`stopLatch && !brake`) — NOT "brake released AND
 out of a drive gear". While a drive gear is selected, the very tick that releases the
@@ -149,14 +174,14 @@ engine stayed dead for the rest of the capture.)
 
 **The drive-since-start gate** resolves the deferred *PARK-after-motion* work item
 using gear-selection history instead of motion history (no speed/odometry state
-machine). Without it, the still-held brake that just performed a brake-initiated
-start (0.5 s crank; both real captures shift P→D ~0.73 s after the ignition frame)
-satisfies `brake && PARK` on the ignition frame itself — every "brake touch starts"
-ended latched-off, seconds before the driver ever selected D. With the gate:
-brake+PARK stops only once the driver has selected D/R since the engine run started,
-which is the PARK-after-drive intent. A gear-initiated start seeds the gate (the
-selector IS in D/R), so brake+PARK right after shifting back out of gear stops as
-expected.
+machine). It is what keeps the release edge from firing on the brake that just
+PERFORMED a start: a brake-initiated start in PARK (0.5 s crank) followed by the
+pedal being released IS an ON→OFF edge in PARK while running — without the gate it
+would stop the engine it just cranked (the phase-3 twin of the phase-2 self-stop).
+With the gate: the release-edge cut applies only once the driver has selected D/R
+since the engine run started, which is the PARK-after-drive intent. A gear-initiated
+start seeds the gate (the selector IS in D/R), so the release cut is armed from the
+first drive-off.
 
 Door is designed in as a **level inhibit** and left as a seam for when the signal
 is proven (NOT yet wired):
@@ -165,7 +190,8 @@ is proven (NOT yet wired):
 if (doorOpen) -> ignition off, starter off    [level inhibit, NOT YET WIRED]
 ```
 
-`driverPresent` is likewise an unproven future seam — **STOP = brake+P only** in v1.
+`driverPresent` is likewise an unproven future seam — **STOP = brake release in
+PARK only** in v1 (phase-3; was brake+P level through phase-2).
 
 ## VehicleStart() sequencing
 
@@ -234,6 +260,22 @@ CLI Sonar 0 new issues.
   same-frame and stays latched while the brake is held.
 76/76 bridge suites green, coverage 83.1%, Sonar clean.
 
+**Phase-3 note (2026-08-30):** the phase-1/phase-2 E2E narratives above describe the
+LEVEL stop (`brake+P`), which phase-3 supersedes. Two consequences on the captures:
+the final stop now lands on the brake RELEASE in PARK (not the press), and a capture
+that ends with the park brake still held and never released no longer stops the engine
+before end-of-input — that is the requested semantics, not a regression. Capture-level
+E2E re-proof is pending the owner's next road test; the unit + loop suites
+(`VehicleStartControllerTest`, `SimulationLoopVehicleControlsTest`) cover the new
+trigger matrix.
+
+**Capture-end note (2026-08-30, same branch):** end-of-input now terminates the whole
+CLI, not just the ignition: on the live stdin path the provider disconnects as soon as
+the stream and its lookahead buffer drain (owner decision — "EOF = immediate
+termination", no grace window; a start still mid-crank in the last ~0.5s of a capture
+is consciously cut short). `--end-at` runs report the bound as their stop reason
+(`StopReasonReporter`), not the full trace length.
+
 ## Work items — [status: implemented on feat/startStop]
 
 ### 1. vehicle-sim — carry the new signals  — **DONE (escli.vehicle-sim 7237c8f)**
@@ -288,9 +330,11 @@ bug, not a design ambiguity.
 
 - **gear-initiated start = instant** (starter + ignition same frame).
 - **brake-initiated start = 0.5 s delayed ignition** (McLaren crank aesthetic).
-- **STOP = brake + P, gated on drive-since-start** (a D/R selection in the current
-  engine run — see Rules). Door (unproven) and `driverPresent` (unproven) are
-  future seams, deliberately not wired in v1.
+- **STOP = brake RELEASE (ON→OFF edge) in PARK, gated on drive-since-start**
+  (a D/R selection in the current engine run — see Rules). Owner, 2026-08-30:
+  the press must not cut, or the engine dies when the driver brakes to select
+  first gear. Door (unproven) and `driverPresent` (unproven) are future seams,
+  deliberately not wired in v1.
 - **Latch release = brake release alone**; in a drive gear the same tick restarts
   via the gear trigger (drive-off).
 - `drive_ready` (what the old `brake_percent` enum actually encoded) documented
@@ -299,19 +343,27 @@ bug, not a design ambiguity.
 - Display: `[Gas: 0% B/-]` (red `B`, plain `-`); no numeric `B:x.x`; no brake
   character in the Gear bracket.
 
-## Testing (TDD, test-architect authors first) — [matrix updated for phase-2]
+## Testing (TDD, test-architect authors first) — [matrix updated for phase-3]
 
 Per project rules the implementer does NOT write the tests. Test scenarios:
 
 - door open while running -> ignition off  *(seam, not yet wired)*
 - door open blocks start (brake pressed with door open -> stays off)  *(seam)*
-- brake-light + PARK **with drive-since-start** -> ignition off, latch set, same frame
-- brake-light + PARK **with no drive-since-start** -> does NOT stop (incl. the
-  still-held brake that just performed the brake-initiated start: Running continues)
+- brake-light press-and-hold in PARK **with drive-since-start** -> does NOT stop
+  (the press is not the trigger; Running continues indefinitely while held)
+- brake-light **released** in PARK **with drive-since-start** while RUNNING ->
+  ignition off on the release frame, latch set, **exactly once** (later idle
+  frames neither restart nor re-fire)
+- brake-light **released** in PARK **with no drive-since-start** -> does NOT stop
+  (the brake that just performed the brake-initiated start in P must survive its
+  own release; also the still-held brake: Running continues)
+- shift out of PARK before the brake release (incl. the gear change and the
+  release arriving on the SAME tick) -> no cut, still RUNNING
 - drive-since-start gate re-arms per engine run (a fresh brake-start in P cannot be
-  stopped by its own held brake until D/R is selected again)
-- latch blocks restart while brake-light held; **clears on brake release ALONE**;
-  in a drive gear the clearing tick restarts via the gear trigger (drive-off)
+  stopped by its own release until D/R is selected again)
+- restart path unchanged: after the release-edge stop, a brake press cranks a new
+  start and a D/R selection restarts instantly; latch **clears on brake release
+  ALONE** and the clearing+gear tick restarts via the gear trigger (drive-off)
 - brake-light alone (no door, no latch) -> VehicleStart (0.5 s delay)
 - D or R selected -> VehicleStart **instant** (same-frame ignition); P alone does NOT start
 - crank delay: starter on at t=0, ignition still off at t=0.4, on at t=0.5 (fake clock)
@@ -319,7 +371,8 @@ Per project rules the implementer does NOT write the tests. Test scenarios:
 - twin does NOT self-start without an ignition command (any duration of valid
   telemetry); first command starts it
 - loop commands twin ignition through `IVehicleControlSink`, and NOTHING is
-  commanded before the first vehicle-control opinion
+  commanded before the first vehicle-control opinion; the commanded level stays
+  true through a PARK brake press and drops only on the release
 - manual path unaffected: setIgnitionRequested/setStarterRequested still independent
 
 Real code under test, no truisms, no live-data dependence, injected clock.
