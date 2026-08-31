@@ -29,6 +29,23 @@ import "engine_sim.mr"
 //    24x -> 12.7 dB, 40x -> 9.0 dB with p05/p95 = 7094/20015, matching the
 //    cohort's absolute levels (GM LS 5985-6775 / 19514). Impulse response
 //    stays default_0 (character unchanged; only drive scale).
+//
+//    HOTFIX 2026-08-31 (v4scan + v4scan2 benches): the original tuning above
+//    was measured with windowed RMS, which is blind to instantaneous peaks —
+//    at 40x (and 24x) the output SATURATED: 4.25% (4.17%) of samples
+//    hard-clipped at the int16 rails in 99.8% (99.6%) of 100 ms windows, one
+//    continuous 44.9 s clip streak (controls V3/TeslaY: 0.27-0.46%, ~18% of
+//    windows, 3.0 s WOT bursts only). Mechanism: the script audio_volume
+//    scales the synth INPUT (piston_engine_simulator.cpp:490), pre-leveler;
+//    the leveler re-normalizes, so the "span taming" was actually rail
+//    compression. Reduced to 4x (audio_volume 2.0/4.0) — the knee of the
+//    measured grid (same capture, --end-at 00:45, pin tau150, --silent):
+//    2x 0.88%/26.2%/5.3 s/24.0 dB; 4x 1.06%/28.0%/5.3 s/18.2 dB; 8x
+//    1.18%/44.9%/5.4 s/12.2 dB; 12x 2.09%/95.8%/16.9 s/9.2 dB; 24x
+//    4.17%/99.6%/44.8 s/7.6 dB; 40x 4.25%/99.8%/44.9 s/7.5 dB (V3 parent:
+//    0.27%/18.0%/3.0 s/27.6 dB). At 4x clipping stays event-bursty (control
+//    species) while the span compression survives (18.2 dB vs V3 27.6 dB).
+//    Evidence: es-tcfix-artifacts/roadtest/v4scan2-2026-08-31_060440/.
 
 units units()
 constants constants()
@@ -368,8 +385,8 @@ public node M156 {
     )
 
 
-    exhaust_system exhaust0(es_params, audio_volume: 20.0, impulse_response: ir_lib.default_0)
-    exhaust_system exhaust1(es_params, audio_volume: 40.0, impulse_response: ir_lib.default_0)
+    exhaust_system exhaust0(es_params, audio_volume: 2.0, impulse_response: ir_lib.default_0)
+    exhaust_system exhaust1(es_params, audio_volume: 4.0, impulse_response: ir_lib.default_0)
 
     cylinder_bank b0(bank_params, angle: 45 * units.deg)
     b0
