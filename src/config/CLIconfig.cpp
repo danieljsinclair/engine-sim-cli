@@ -211,7 +211,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--csv-out", args.csvOut,
                    "Write machine-parseable per-frame CSV (all fields: timecode, rpm, gas, gear, "
-                   "clutch%, roadImplied, relief, torques, state) to <file> alongside the console line");
+                   "clutch%, roadImplied, relief, torques, state) to <file> alongside the console line.\n"
+                   "                       Without a value, a UTC timestamped roadtest_<timestamp>.csv is generated "
+                   "(reruns never overwrite). With a value, the value is used verbatim.")->expected(0, 1);
 
     try {
         app.parse(argc, argv);
@@ -223,6 +225,39 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     return processArgs(args, scriptPath, positionalEngineConfig, loadArg, threadedFlag, silentFlag, interactiveExplicit);
 }
+
+namespace {
+
+// Generate a timestamped filename so reruns never overwrite prior logs:
+//   <prefix><YYYYmmdd_HHMMSS><extension>
+// e.g. generateTimestampedFilename("gearbox_", ".csv", false) ->
+//   "gearbox_20260831_031500.csv".
+//
+// The timestamp is the current wall-clock time broken down by localtime_r
+// (local, useUtc=false) or gmtime_r (UTC, useUtc=true). The road-test CSV logs
+// use UTC (captures travel across timezones); gearbox logs use local. Thread-
+// safe (no static buffers, no ::localtime). The format is fixed so all
+// generated logs sort chronologically by name.
+std::string generateTimestampedFilename(const std::string& prefix,
+                                         const std::string& extension,
+                                         bool useUtc) {
+    const auto now = std::chrono::system_clock::now();
+    const auto time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+    if (useUtc) {
+        gmtime_r(&time, &tm);
+    } else {
+        localtime_r(&time, &tm);
+    }
+    // std::string buffer (not a C-style array) — matches the original gearbox
+    // log idiom and keeps the generated-logs path free of S5945.
+    std::string buf(32, '\0');
+    const auto n = std::strftime(buf.data(), buf.size(), "%Y%m%d_%H%M%S", &tm);
+    buf.resize(n);
+    return prefix + buf + extension;
+}
+
+}  // namespace
 
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag, bool interactiveExplicit) {
     args.syncPull = !threadedFlag && !args.deterministic;
@@ -255,15 +290,18 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         args.interactive = true;
     }
 
-    // Auto-generate gearbox log filename if flag given without value
+    // Auto-generate gearbox log filename if flag given without value.
+    // Local time (the gearbox log is a local diagnostic, not a traveling capture).
     if (args.gearbox.logPath == "true") {
-        auto now = std::chrono::system_clock::now();
-        auto time = std::chrono::system_clock::to_time_t(now);
-        struct tm tm_local;
-        localtime_r(&time, &tm_local);
-        std::string buf(64, '\0');
-        std::strftime(buf.data(), buf.size(), "gearbox_%Y%m%d_%H%M%S.csv", &tm_local);
-        args.gearbox.logPath = buf.c_str();
+        args.gearbox.logPath = generateTimestampedFilename("gearbox_", ".csv", /*useUtc=*/false);
+    }
+
+    // Auto-generate road-test CSV filename if flag given without value.
+    // UTC so a log's name is timezone-independent (captures travel across zones
+    // and the owner compares logs from different locations). Reruns never
+    // overwrite: every invocation gets a fresh timestamp.
+    if (args.csvOut == "true") {
+        args.csvOut = generateTimestampedFilename("roadtest_", ".csv", /*useUtc=*/true);
     }
 
     args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;

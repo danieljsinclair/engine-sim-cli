@@ -21,6 +21,7 @@ add_executable(unit_tests
     ExecutablePathTest.cpp
     CommandLineTorqueFlagsTest.cpp
     StopReasonReporterTest.cpp
+    CsvOutFilenameTest.cpp
     # Required support code
     ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
