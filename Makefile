@@ -532,13 +532,28 @@ sonar-scan: $(SONAR_REPORT)
 # Re-scans only when coverage/compile-db/properties/sources change. The curl
 # writes SONAR_REPORT itself. NOTE: this sonar-scanner rejects -q, so log output
 # is redirected to a file and tailed on failure (the bridge's pattern).
+# Derive -Dsonar.branch.name from the current git branch (worktree-aware).
+# In a worktree, git rev-parse --abbrev-ref HEAD returns the worktree's branch.
+# If derivation fails, FAIL FAST — never publish a branchless scan that
+# overwrites SonarCloud master. Master scans remain possible (master -> "master").
+BRANCH := $(shell git -C $$(dirname $(abspath $(firstword $(MAKEFILE_LIST)))) rev-parse --abbrev-ref HEAD 2>/dev/null)
+ifeq ($(BRANCH),)
+  $(error SONAR GUARD: cannot derive sonar.branch.name from git (no branch / no git). Refusing to publish a branchless scan.)
+endif
+ifeq ($(BRANCH),HEAD)
+  $(error SONAR GUARD: HEAD is detached — cannot derive a branch name. Check out a named branch before scanning.)
+endif
+SONAR_BRANCH_FLAG := -Dsonar.branch.name=$(BRANCH)
+
 $(SONAR_REPORT): $(COVERAGE_REPORT) $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES) $(BUILD_INPUTS)
 	@if [ -z "$${SONAR_TOKEN_ES}" ] && [ -z "$${SONAR_TOKEN}" ]; then \
 		echo "ERROR: Neither SONAR_TOKEN_ES nor SONAR_TOKEN is set. Run: source ~/.zshrc"; \
 		exit 1; \
 	fi
-	@echo "=== [engine-sim-cli] Running Sonar scan ==="
-	@SONAR_TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}" sonar-scanner > $(BUILD_COV_DIR)/sonar-scanner.log 2>&1; \
+	@echo "=== [engine-sim-cli] Running Sonar scan (branch: $(BRANCH)) ==="
+	@SONAR_TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}" sonar-scanner \
+		$(SONAR_BRANCH_FLAG) \
+		> $(BUILD_COV_DIR)/sonar-scanner.log 2>&1; \
 		rc=$$?; \
 		if [ $$rc -ne 0 ]; then \
 			echo "=== [engine-sim-cli] sonar-scanner failed (rc=$$rc); see $(BUILD_COV_DIR)/sonar-scanner.log ==="; \
