@@ -94,7 +94,7 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
         coverage-run coverage-clean coverage-summary summary gate \
-        smoke-gearbox bench-gearbox sine-knock-smoke
+        smoke-gearbox bench-gearbox sine-knock-smoke engine-knock-smoke
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 .PHONY: build-cross-gate
 # gate MUST run its steps strictly in order: build -> test -> iOS cross ->
@@ -474,6 +474,29 @@ sine-knock-smoke: build
 	@echo "--- analyzing $(SINE_KNOCK_WAV) ---"
 	@python3 scripts/sine_knock_smoke.py $(SINE_KNOCK_WAV)
 
+# ---------------------------------------------------------------------------
+# engine-knock-smoke — sync-pull knock regression test on a real engine replay.
+#
+# Same detector as sine-knock-smoke but exercises the full engine path (2
+# input channels + impulse-response convolution) that the owner hears the knock
+# on. Renders a C63 AMG replay clip to WAV and runs the discontinuity detector.
+# Fails if discontinuities > 10 OR zero-sample rate > 1% OR RMS < 1000.
+# ---------------------------------------------------------------------------
+ENGINE_KNOCK_DUR ?= 15
+ENGINE_KNOCK_WAV := $(BUILD_DIR)/engine-knock-smoke.wav
+ENGINE_KNOCK_SCRIPT ?= $(HOME)/vscode/engine-sim-cli/es_new/C63_M156_V4.mr
+ENGINE_KNOCK_CAP ?= $(HOME)/vscode/escli.vehicle-sim/captures/PinFixDrive_2026-08-29-1640.csv
+
+engine-knock-smoke: build
+	@echo "=== [engine-sim-cli] engine-knock-smoke: C63 replay knock regression ==="
+	@rm -f $(ENGINE_KNOCK_WAV)
+	@$(BUILD_DIR)/engine-sim-cli --replay-telemetry $(ENGINE_KNOCK_CAP) \
+		--start-from 00:30 --end-at 00:45 --pin-tau-ms 150 \
+		--script $(ENGINE_KNOCK_SCRIPT) --auto --silent \
+		--output $(ENGINE_KNOCK_WAV)
+	@echo "--- analyzing $(ENGINE_KNOCK_WAV) ---"
+	@python3 scripts/sine_knock_smoke.py $(ENGINE_KNOCK_WAV)
+
 # Diagnostic bench harness on em-dinner (mph MAE/worst/%>2, gear-per-speed vs
 # oracle, rpm-coupling self-calibrated K, stall). Richer detail than the smoke
 # test; same metric logic as the acceptance brief.
@@ -503,6 +526,7 @@ help:
 	@echo "  make run      - Build and run CLI with .mr script"
 	@echo "  make run-json - Build and run CLI with JSON preset"
 	@echo "  make sine-knock-smoke - Sync-pull audio knock regression (30s --sine, fails on knock)"
+	@echo "  make engine-knock-smoke - Sync-pull knock regression on C63 engine replay (fails on knock)"
 	@echo "  make smoke-gearbox - Gearbox regression smoke (6 mph stall window, must stay green)"
 	@echo "  make bench-gearbox - Gearbox diagnostic bench (mph/gear/coupling/stall metrics)"
 	@echo "  make esp32    - Build ESP32 firmware"
