@@ -406,6 +406,32 @@ run: build
 run-json: build
 	./build/engine-sim-cli --interactive --play --script es/v8_gm_ls.json
 
+# --- Road-test kit ------------------------------------------------------------
+# Headless, short, deterministic road-test runs. Each run auto-generates a
+# UTC-timestamped roadtest_<timestamp>.csv (--csv-out true) so reruns NEVER
+# overwrite a prior log. NO build step inside these targets — run `make build`
+# first, then `make roadtest_*`. --silent (mandatory on the laptop) and
+# --pin-tau-ms 150 (tuned road value) are on EVERY run. The full command line
+# is echoed (so it is visible / copyable) before execution.
+#
+# PRESETS (verified present in es/):
+#   Ferrari F136  -> es/ferrari_f136.mr (canonical, also the existing `run` target)
+#   C63           -> es_new/C63_M156_V4.mr (span-tamed V4: clean body + tamed
+#                    audio span, audio_volume 40x->4x; supersedes the V3 in es/).
+ROADTEST_SCRIPT_FERRARI ?= es/ferrari_f136.mr
+ROADTEST_SCRIPT_C63     ?= es_new/C63_M156_V4.mr
+ROADTEST_DURATION       ?= 5
+
+roadtest_ferrari:
+	@echo "=== [engine-sim-cli] roadtest_ferrari: short deterministic run ==="
+	@echo "./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_FERRARI)"
+	./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_FERRARI)
+
+roadtest_c63:
+	@echo "=== [engine-sim-cli] roadtest_c63: short deterministic run ==="
+	@echo "./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_C63)"
+	./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_C63)
+
 # --- Gearbox regression smoke + bench -----------------------------------------
 # Canonical recording + window for the "6 mph stall" regression that MUST stay
 # green. VEHICLE_SIM_CAP / RECORDING / WINDOW overrides via the env.
