@@ -94,7 +94,7 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
         coverage-run coverage-clean coverage-summary summary gate \
-        smoke-gearbox bench-gearbox
+        smoke-gearbox bench-gearbox sine-knock-smoke
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 .PHONY: build-cross-gate
 # gate MUST run its steps strictly in order: build -> test -> iOS cross ->
@@ -450,6 +450,30 @@ smoke-gearbox: build
 	@scripts/smoke_gearbox.py "$(SMOKE_RECORDING)" \
 		--start-from $(SMOKE_WINDOW_START) --end-at $(SMOKE_WINDOW_END)
 
+# ---------------------------------------------------------------------------
+# sine-knock-smoke — sync-pull audio knock regression test.
+#
+# Renders a 30s --sine run to a WAV (the true rendered output, captured
+# pre-silent-mute by the --output seam) and measures buffer-boundary
+# discontinuities. The knock is a mid-waveform restart from the audio ring's
+# write index lapping its read index; it shows up as hundreds of large int16
+# jumps between adjacent samples. A clean sine has at most a handful of
+# startup-transient jumps.
+#
+# Headless: uses --silent (no audio hardware) and --output (WAV file).
+# Fails if discontinuities > 10 OR zero-sample rate > 1% OR RMS < 1000.
+# ---------------------------------------------------------------------------
+SINE_KNOCK_DUR ?= 30
+SINE_KNOCK_WAV := $(BUILD_DIR)/sine-knock-smoke.wav
+
+sine-knock-smoke: build
+	@echo "=== [engine-sim-cli] sine-knock-smoke: 30s --sine knock regression ==="
+	@rm -f $(SINE_KNOCK_WAV)
+	@$(BUILD_DIR)/engine-sim-cli --sine --duration $(SINE_KNOCK_DUR) \
+		--output $(SINE_KNOCK_WAV) --silent
+	@echo "--- analyzing $(SINE_KNOCK_WAV) ---"
+	@python3 scripts/sine_knock_smoke.py $(SINE_KNOCK_WAV)
+
 # Diagnostic bench harness on em-dinner (mph MAE/worst/%>2, gear-per-speed vs
 # oracle, rpm-coupling self-calibrated K, stall). Richer detail than the smoke
 # test; same metric logic as the acceptance brief.
@@ -478,6 +502,7 @@ help:
 	@echo "  make scrub    - Remove entire build directory (full clean)"
 	@echo "  make run      - Build and run CLI with .mr script"
 	@echo "  make run-json - Build and run CLI with JSON preset"
+	@echo "  make sine-knock-smoke - Sync-pull audio knock regression (30s --sine, fails on knock)"
 	@echo "  make smoke-gearbox - Gearbox regression smoke (6 mph stall window, must stay green)"
 	@echo "  make bench-gearbox - Gearbox diagnostic bench (mph/gear/coupling/stall metrics)"
 	@echo "  make esp32    - Build ESP32 firmware"
