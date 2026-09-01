@@ -386,6 +386,11 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
         config.engineConfig.simulationFrequency = args.audio.simulationFrequency;
     }
     config.engineConfig.targetSynthesizerLatency = (args.audio.synthLatency > 0.0) ? args.audio.synthLatency : config.engineConfig.targetSynthesizerLatency;
+    // Output-stage span taming: forwarded unconditionally so 0 (the CommandLineArgs
+    // default) is the explicit OFF value — the synthesizer skips shape() entirely
+    // at 0 for bit-identical legacy audio. Applied to AudioParameters at factory
+    // build time via SimulatorInitHelpers::applySpanTame (see SimulatorFactory).
+    config.engineConfig.spanTame = args.spanTame;
 
     // Paced-replay mode: the sim is paced to a recording (deterministic replay,
     // or live/replay telemetry whose warm-start prefix steps the full sim on the

@@ -203,3 +203,53 @@ TEST(CommandLineParserTest, PinTauMsParsesExplicitZero) {
     EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
     EXPECT_DOUBLE_EQ(args.twin.pinTauMs, 0.0);
 }
+
+// --span-tame <x>: output-stage taming amount, x in [0.0, 1.0], default 0.0
+// = OFF = bit-identical audio. The runtime knob the owner dialled span-taming
+// with (the script-side audio_volume lever is exhausted: the leveler
+// re-normalizes it, so taming must live at the synthesizer output stage).
+
+TEST(CommandLineParserTest, SpanTameParsesValidValue) {
+    const char* argv[] = {"engine-sim-cli", "--span-tame", "0.75"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_FLOAT_EQ(args.spanTame, 0.75f);
+}
+
+TEST(CommandLineParserTest, SpanTameDefaultsToOff) {
+    const char* argv[] = {"engine-sim-cli", "--silent"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FLOAT_EQ(args.spanTame, 0.0f);
+}
+
+// Both interval ends are valid taming amounts (0 = explicit off, 1 = full
+// taming) — only values OUTSIDE [0, 1] are rejected.
+TEST(CommandLineParserTest, SpanTameAcceptsBothIntervalEnds) {
+    const char* argvZero[] = {"engine-sim-cli", "--span-tame", "0.0"};
+    CommandLineArgs argsZero;
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argvZero), argsZero));
+    EXPECT_FLOAT_EQ(argsZero.spanTame, 0.0f);
+
+    const char* argvOne[] = {"engine-sim-cli", "--span-tame", "1.0"};
+    CommandLineArgs argsOne;
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argvOne), argsOne));
+    EXPECT_FLOAT_EQ(argsOne.spanTame, 1.0f);
+}
+
+// Out-of-range values are rejected at parse time (a typo'd 1.5 or negative
+// must fail the run, not silently clamp) — while a valid value on the same
+// schema parses, so the rejection is about the range, not the flag shape.
+TEST(CommandLineParserTest, SpanTameRejectsAboveRange) {
+    const char* argv[] = {"engine-sim-cli", "--span-tame", "1.5"};
+    CommandLineArgs args;
+    EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
+}
+
+TEST(CommandLineParserTest, SpanTameRejectsBelowRange) {
+    const char* argv[] = {"engine-sim-cli", "--span-tame", "-0.1"};
+    CommandLineArgs args;
+    EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
+}

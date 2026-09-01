@@ -453,3 +453,59 @@ TEST_F(ConsolePresentationTest, GearBracket_HasNoBrakeIndicator) {
               "[Gear:" + gearTriple(s.controls.gearSelector, s.controls.gearAutoMode, s.drivetrain.gear) + "]")
         << "Gear bracket must contain only the selector/mode/gear triple — no brake char";
 }
+
+// ============================================================================
+// Steering-angle display: the console line shows the steering wheel angle
+// when the feed carries it (vehicle-sim steering_angle_deg / CAN 0x129
+// SCCM_steeringAngle, plumbed to EngineState.Controls.steeringAngleDeg), and
+// degrades to NOTHING when absent (non-DBC sources unchanged — no dead field,
+// no zero placeholder). Values below come from the same real-capture rows
+// embedded in the bridge CsvTelemetryParser steering tests.
+// ============================================================================
+
+static std::string renderStateLine(const EngineState& state) {
+    ConsolePresentation presentation;
+    PresentationConfig config;
+    config.showDiagnostics = true;
+    presentation.Initialize(config);
+
+    OutputCapture capture(std::cout);
+    presentation.ShowSimulatorStates(state);
+    return capture.str();
+}
+
+TEST(ConsolePresentationSteeringTest, SteeringPresent_RendersAngleInConsoleLine) {
+    EngineState state = makeState();
+    state.controls.steeringAngleDeg = -12.5;
+
+    const std::string line = renderStateLine(state);
+
+    // The readout is identifiable and carries the signed value (one decimal).
+    EXPECT_NE(line.find("Str:"), std::string::npos)
+        << "steering readout missing when the feed carries steering";
+    EXPECT_NE(line.find("-12.5"), std::string::npos)
+        << "signed steering value not rendered";
+}
+
+TEST(ConsolePresentationSteeringTest, SteeringPositive_RendersSigned) {
+    EngineState state = makeState();
+    state.controls.steeringAngleDeg = 3.9;
+
+    const std::string line = renderStateLine(state);
+
+    EXPECT_NE(line.find("Str:"), std::string::npos);
+    EXPECT_NE(line.find("3.9"), std::string::npos);
+}
+
+TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {
+    EngineState state = makeState();  // no steering value set
+
+    const std::string line = renderStateLine(state);
+
+    // Degraded to nothing: no steering readout at all, and the rest of the
+    // line renders exactly as before (no behavior change for steering-less
+    // feeds — keyboard/demo/non-DBC sources).
+    EXPECT_EQ(line.find("Str:"), std::string::npos);
+    EXPECT_NE(line.find("RPM"), std::string::npos);
+    EXPECT_NE(line.find("mph"), std::string::npos);
+}

@@ -121,6 +121,16 @@ struct CommandLineArgs {
     // relief, torques, state). Empty = no CSV. For automated smoke-tests /
     // lug-stall spelunking without grepping color-coded console text.
     std::string csvOut;
+
+    // Output-stage span taming amount (--span-tame), [0.0, 1.0]. The runtime
+    // tuning knob for the synthesizer output-stage tamer (soft-knee compressor
+    // + makeup gain + safety soft-clip just before the int16 conversion — see
+    // engine-sim include/span_tame.h for the pinned parameterization). 0.0
+    // (the default) = feature OFF = bit-identical audio; the script-side
+    // audio_volume lever is exhausted (leveler re-normalizes it), so span
+    // taming lives at the output stage. Forwards to the bridge's
+    // ISimulatorConfig.spanTame.
+    float spanTame = 0.0f;
 };
 
 // ============================================================================
