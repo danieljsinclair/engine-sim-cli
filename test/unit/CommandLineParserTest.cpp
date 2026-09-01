@@ -116,7 +116,7 @@ TEST(CommandLineParserTest, LiveTelemetryFlagParses) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_TRUE(args.liveTelemetry);
+    EXPECT_TRUE(args.twin.liveTelemetry);
 }
 
 TEST(CommandLineParserTest, LiveTelemetryDefaultFalse) {
@@ -124,7 +124,7 @@ TEST(CommandLineParserTest, LiveTelemetryDefaultFalse) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.liveTelemetry);
+    EXPECT_FALSE(args.twin.liveTelemetry);
 }
 
 TEST(CommandLineParserTest, LiveTelemetryExcludesReplayTelemetry) {
@@ -157,7 +157,7 @@ TEST(CommandLineParserTest, LiveTelemetryCombinesWithScriptToSelectEngine) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
-    EXPECT_TRUE(args.liveTelemetry);
+    EXPECT_TRUE(args.twin.liveTelemetry);
     EXPECT_EQ(args.engineConfig, "C63_M156_V3.mr")
         << "--live-telemetry must combine with --script so a named engine loads "
            "instead of the alphabetical preset[0]";
@@ -187,21 +187,21 @@ TEST(CommandLineParserTest, PinTauMsDefaultsToZero_RigidPin) {
     const char* argv[] = {"engine-sim-cli", "--script", "v8.mr"};
     CommandLineArgs args;
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_DOUBLE_EQ(args.pinTauMs, 0.0);
+    EXPECT_DOUBLE_EQ(args.twin.pinTauMs, 0.0);
 }
 
 TEST(CommandLineParserTest, PinTauMsParsesExplicitValue) {
     const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--pin-tau-ms", "150"};
     CommandLineArgs args;
     EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
-    EXPECT_DOUBLE_EQ(args.pinTauMs, 150.0);
+    EXPECT_DOUBLE_EQ(args.twin.pinTauMs, 150.0);
 }
 
 TEST(CommandLineParserTest, PinTauMsParsesExplicitZero) {
     const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--pin-tau-ms", "0"};
     CommandLineArgs args;
     EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
-    EXPECT_DOUBLE_EQ(args.pinTauMs, 0.0);
+    EXPECT_DOUBLE_EQ(args.twin.pinTauMs, 0.0);
 }
 
 // --span-tame <x>: output-stage taming amount, x in [0.0, 1.0], default 0.0

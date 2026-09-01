@@ -1,0 +1,55 @@
+import "engine_sim.mr"
+import "themes/default.mr"
+import "engines/atg-video-2/08_ferrari_f136_v8.mr"
+import "tesla_y_performance.mr"
+
+// Module-scope units instance so `units.Nm` etc. resolve inside the node
+// bodies below (same pattern as C63_TeslaY.mr).
+units units()
+
+use_default_theme()
+
+// Ferrari F136 V8 engine sound on the Tesla Model Y body, but with a
+// MULTI-SPEED gearbox (the C63's ZF8-style 7-speed, 4.38..0.73) so the twin
+// actually shifts. Sibling of ferrari_f136_TeslaY.mr, which stays single-speed
+// by design (Tesla EV 9.00:1, one 1.00 gear, never shifts). As in that file,
+// we deliberately do NOT call the imported module's `main()` node (which would
+// apply the Mustang geometry).
+
+// Same box as C63_TeslaY.mr's tesla_y_ice_transmission: 7-speed ZF8 ratios,
+// clutch torque high enough that the twin never slips it.
+public node ferrari_y_7sp_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 12000 * units.Nm
+        )
+        .add_gear(4.38)
+        .add_gear(2.86)
+        .add_gear(1.92)
+        .add_gear(1.37)
+        .add_gear(1.00)
+        .add_gear(0.82)
+        .add_gear(0.73);
+}
+
+// Tesla body (mass/aero/tire from tesla_y_performance.mr) with the C63 final
+// drive (2.82) instead of the Tesla EV 9.00. Riding the ZF8 box on the 9.00
+// diff would give an incoherent 1st gear of 4.38 * 9.00 = 39:1 (the documented
+// over-rev root cause in C63_TeslaY iter1). With 2.82 the ratios are coherent:
+// ~1480 rpm at 10 mph in 1st (no stall), ~1730 rpm at 70 mph in 7th (sane
+// cruise, not idling at 4000).
+public node ferrari_y_c63fd_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 2000.0 * units.kg,
+            drag_coefficient: 0.23,
+            cross_sectional_area: 2.496 * units.m2,
+            diff_ratio: 2.82,
+            tire_radius: 0.356 * units.m,
+            rolling_resistance: 300.0 * units.N
+        );
+}
+
+set_engine(f136_v8())
+set_transmission(ferrari_y_7sp_transmission())
+set_vehicle(ferrari_y_c63fd_vehicle())
