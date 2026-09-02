@@ -335,7 +335,8 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
     return ctx;
 }
 
-std::unique_ptr<presentation::IPresentation> createPresentation(const SimulationConfig& config) {
+std::unique_ptr<presentation::IPresentation> createPresentation(const SimulationConfig& config,
+                                                                const CommandLineArgs& args) {
     presentation::PresentationConfig presConfig;
     // SimulationConfig is the source of truth; PresentationConfig receives copies for display purposes only
     // Note: interactive conceptually belongs to IInputProvider but is surfaced here for presentation
@@ -346,7 +347,8 @@ std::unique_ptr<presentation::IPresentation> createPresentation(const Simulation
     // When --csv-out is set the Collection fans every call out to
     // all children; the loop holds one IPresentation.
     auto collection = std::make_unique<presentation::PresentationCollection>();
-    collection->add(std::make_unique<presentation::ConsolePresentation>());
+    collection->add(std::make_unique<presentation::ConsolePresentation>(
+        presentation::ParseSteeringStyle(args.presentation.steeringStyle)));
     if (!config.csvOutPath.empty()) {
         collection->add(std::make_unique<presentation::CsvPresentation>(config.csvOutPath));
     }
@@ -566,7 +568,7 @@ int main(int argc, char* argv[]) {
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
         applyProviderDefaultDuration(config, args, inputProvider);
-        auto presentation = createPresentation(config);
+        auto presentation = createPresentation(config, args);
 
         ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
         ASSERT(presentation, "A presentation provider must be created successfully");

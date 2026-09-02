@@ -89,6 +89,14 @@ struct TwinArgs {
     bool torqueInformedGearbox = false;
 };
 
+// Presentation-layer knobs (--steering-style). Grouped so CommandLineArgs
+// stays under the struct-field threshold (S1820).
+struct PresentationArgs {
+    // "braille" (default — 12-position two-cell braille clock face) or
+    // "arrows" (8-way directional arrows, 45 deg sectors).
+    std::string steeringStyle = "braille";
+};
+
 struct CommandLineArgs {
     std::string engineConfig;
     std::string outputWav;
@@ -118,6 +126,9 @@ struct CommandLineArgs {
 
     // --live-telemetry + the twin coupling/torque knobs (see TwinArgs).
     TwinArgs twin;
+
+    // Console presentation knobs (see PresentationArgs).
+    PresentationArgs presentation;
 
     // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
     // unmutes one optional diagnostic line; all default off.

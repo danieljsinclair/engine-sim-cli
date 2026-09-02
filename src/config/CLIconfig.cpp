@@ -222,6 +222,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
                    "                       Without a value, a UTC timestamped roadtest_<timestamp>.csv is generated "
                    "(reruns never overwrite). With a value, the value is used verbatim.")->expected(0, 1);
 
+    app.add_option("--steering-style", args.presentation.steeringStyle,
+                   "Steering gauge glyph style for the console readout:\n"
+                   "                       braille - 12-position two-cell braille clock face (DEFAULT)\n"
+                   "                       arrows  - 8-way directional arrows (45 deg sectors)")
+                   ->capture_default_str()
+                   ->check(CLI::IsMember({"braille", "arrows"}));
+
     try {
         app.parse(argc, argv);
     }
