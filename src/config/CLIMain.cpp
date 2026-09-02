@@ -270,10 +270,19 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         target->setDemoControls(demoProvider.get());
 
         // Auto-engage DRIVE so the user can just press throttle and drive.
-        input::IDemoControls* demoControls = demoProvider.get();
-        demoControls->shiftUp();  // P → R
-        demoControls->shiftUp();  // R → N
-        demoControls->shiftUp();  // N → D
+        // NOT in interactive mode: the engine must launch Stopped and wait for
+        // the user's start control (startStop protocol: starter engaged on
+        // demand). Auto-shifting to DRIVE on construction makes the startStop
+        // controller fire starter+ignition on frame 0 — the engine auto-crank
+        // starts before the user can deliberately crank and listen to the
+        // startup audio. In interactive mode the box stays in PARK until the
+        // user selects a gear.
+        if (!args.interactiveExplicit) {
+            input::IDemoControls* demoControls = demoProvider.get();
+            demoControls->shiftUp();  // P → R
+            demoControls->shiftUp();  // R → N
+            demoControls->shiftUp();  // N → D
+        }
 
         if (!demoProvider->Initialize()) {
             throw CliException("Failed to initialize demo input provider");
