@@ -30,6 +30,7 @@
 #include "config/ANSIColors.h"
 #include "config/StopReasonReporter.h"
 #include <Verification.h>
+#include <poll.h>
 
 // Bridge headers for connect-demo mode
 #include "input/DemoInputProvider.h"
@@ -149,8 +150,19 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     // flag wiring + time-slice setters live in buildTelemetryProvider
     // (TelemetryProviderFactory.cpp); this branch owns lifecycle + run wiring.
     if (args.twin.liveTelemetry) {
+        // Readiness probe for the stdin pipe: poll(2) with zero timeout on
+        // STDIN_FILENO. Injected into the LiveTelemetryProvider so its row
+        // refill NEVER parks the simulation loop on a lagging writer
+        // (vehicle-sim replay pacing, network hiccup) — a parked loop stops
+        // synthesizer input production and the audio ring drains into short
+        // reads (the sync-pull buffer-boundary thump). std::cin's fd is 0.
+        auto streamDataReady = []() {
+            pollfd p{STDIN_FILENO, POLLIN, 0};
+            return ::poll(&p, 1, /*timeout=*/0) > 0;
+        };
         std::unique_ptr<input::LiveTelemetryProvider> live(
-            dynamic_cast<input::LiveTelemetryProvider*>(buildTelemetryProvider(args).release()));
+            dynamic_cast<input::LiveTelemetryProvider*>(
+                buildTelemetryProvider(args, std::move(streamDataReady)).release()));
         ASSERT(live, "buildTelemetryProvider must return a LiveTelemetryProvider for --live-telemetry");
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
@@ -275,6 +287,11 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         );
 
         attachGearboxLogger(*demoProvider, args.gearbox.logPath);
+        // Forward the D1-D3 coupling flags to the demo path (mirrors the
+        // live/replay wiring in TelemetryProviderFactory). Without this the
+        // demo path ignored --coupling-model / --wheel-coupling / --pin-tau-ms
+        // / --effective-throttle / --torque-informed-gearbox.
+        applyTwinCouplingFlags(*demoProvider, args.twin);
 
         // Wire demoProvider as speed enhancer to EngineInputTarget
         target->setSpeedEnhancer(demoProvider.get());

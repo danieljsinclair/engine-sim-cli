@@ -299,6 +299,20 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     }
     args.interactiveExplicit = interactiveExplicit;
 
+    // FAIL-FAST: --duration combined with a telemetry-driven mode has no legal
+    // meaning. For --live-telemetry the streaming provider owns termination
+    // (stdin EOF), so a --duration would be silently overridden to 0; for
+    // --replay-telemetry it would truncate the trace mid-capture. The audit
+    // found no legal combo, so we refuse the combination at parse time with a
+    // clear error rather than silently misrunning. --end-at is the correct way
+    // to bound a telemetry run.
+    if (args.duration > 0.0 && telemetryDriven) {
+        std::cerr << "ERROR: --duration cannot be combined with --live-telemetry "
+                  << "or --replay-telemetry (the telemetry input bounds the run; "
+                  << "use --end-at to stop at a relative timecode).\n";
+        return false;
+    }
+
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
         args.playAudio = true;

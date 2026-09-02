@@ -11,9 +11,13 @@ Why a new harness (not bolted onto smoke_gearbox.py):
   smoke_gearbox.py is a single 5s-window REPLAY tool. Its three blind spots
   were (a) the narrow window fresh-starts the engine AFTER the stall trigger,
   (b) its [NO STALL] check excluded Stopped frames so a Stopped-latch stall was
-  invisible, and (c) it ran replay-mode only, never the live --coupling-model
-  path where the bugs live. This harness inverts all three: full recording,
-  Stopped-latch IS a failure, and it runs the live models directly.
+  invisible, and (c) it ran replay-mode only and (at the time) never applied
+  the --coupling-model / --wheel-coupling / --pin-tau-ms flags that the live
+  path wired — so the coupling-dependent bugs were invisible to it. Since the
+  TelemetryProviderFactory refactor, the replay path applies the SAME coupling
+  flags as live (applyTwinCouplingFlags), so this harness now exercises the
+  coupling model on both transports. This harness inverts all three: full
+  recording, Stopped-latch IS a failure, and it runs the live models directly.
 
 INVARIANTS (each verdict-bearing; ANY fail -> gate RED for that model):
   1. FULL_RECORDING        CSV time span >= MIN_SPAN_S. Catches the 5s-window

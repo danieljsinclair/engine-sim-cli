@@ -181,6 +181,37 @@ TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
     EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
 }
 
+// FAIL-FAST: --duration combined with a telemetry-driven mode (--live-telemetry
+// or --replay-telemetry) has no legal meaning — the CSV input / --end-at bounds
+// the run, the streaming provider owns termination, and a --duration would
+// either be silently overridden (live: duration forced to 0) or truncate the
+// trace mid-capture (replay). The audit found no legal combo, so we refuse the
+// combination at parse time with a clear error rather than silently misrunning.
+
+TEST(CommandLineParserTest, DurationWithLiveTelemetry_IsRejected) {
+    const char* argv[] = {"engine-sim-cli", "--live-telemetry", "--duration", "10"};
+    CommandLineArgs args;
+    EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args))
+        << "--duration + --live-telemetry must be refused at parse time";
+}
+
+TEST(CommandLineParserTest, DurationWithReplayTelemetry_IsRejected) {
+    const char* argv[] = {"engine-sim-cli", "--duration", "10", "--replay-telemetry", "trace.csv"};
+    CommandLineArgs args;
+    EXPECT_FALSE(parseArguments(5, const_cast<char**>(argv), args))
+        << "--duration + --replay-telemetry must be refused at parse time";
+}
+
+// --duration on its own (keyboard/demo path) remains legal — the fail-fast is
+// scoped to telemetry-driven modes only.
+TEST(CommandLineParserTest, DurationWithoutTelemetry_IsAllowed) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--duration", "5"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args))
+        << "--duration without telemetry must still parse";
+    EXPECT_DOUBLE_EQ(args.duration, 5.0);
+}
+
 // --pin-tau-ms: PIN-coupling compliance time constant. Default 0 = the rigid
 // pin (bit-identical legacy behavior); the tuned road value is ~150.
 TEST(CommandLineParserTest, PinTauMsDefaultsToZero_RigidPin) {
