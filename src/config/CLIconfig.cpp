@@ -96,8 +96,8 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
-    app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    app.add_option("--starter-delay", args.audio.starterDelayMs,
+    app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
+    app.add_option("--starter-delay", args.start.starterDelayMs,
         "Starter-then-ignition delay in ms (McLaren mod: crank BEFORE ignition). "
         "0 = combined start (DEFAULT; starter+ignition together). "
         "A positive value engages the starter, then fires ignition after N ms — "

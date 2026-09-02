@@ -38,7 +38,6 @@ struct AudioTimingArgs {
     double synthLatency = 0.0;       // Synth latency seconds
     int preFillMs = 0;               // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
     float crankingVolume = 0.0f;     // resolved by bridge/SimulationConfig
-    int starterDelayMs = 0;          // --starter-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start
 };
 
 // The vehicle-twin telemetry input subsystem: --live-telemetry plus the
@@ -104,11 +103,18 @@ struct CommandLineArgs {
     bool silent = false;         // Run full audio pipeline but with zero volume
     bool deterministic = false;  // --deterministic: headless fixed-timestep replay (gate/diagnosis)
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
-    bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
 
     ReplayArgs replay;
     GearboxArgs gearbox;
     AudioTimingArgs audio;
+
+    // Start-control knobs (--start / --starter-delay). Grouped so
+    // CommandLineArgs stays under the struct-field threshold (S1820).
+    struct StartArgs {
+        bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
+        int starterDelayMs = 0;      // --starter-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start
+    };
+    StartArgs start;
 
     // --live-telemetry + the twin coupling/torque knobs (see TwinArgs).
     TwinArgs twin;

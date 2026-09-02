@@ -201,7 +201,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             auto target_ov = std::make_unique<input::EngineInputTarget>();
             target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
             if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
-            if (args.autoStart) target_ov->setStarter();
+            if (args.start.autoStart) target_ov->setStarter();
             auto overlay = std::make_unique<input::OverlayInputProvider>(
                 std::move(replay), std::move(kb), target_ov.get());
             if (!overlay->Initialize()) {
@@ -263,7 +263,7 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         // Starting is reserved for --start / the start controller. The genuine
         // demo path (--connect-demo) keeps ignition ON (it auto-starts and
         // auto-shifts to DRIVE, the historical demo behavior).
-        if (!args.connectDemo && !args.autoStart) {
+        if (!args.connectDemo && !args.start.autoStart) {
             ignition->setOn(false);
         }
 
@@ -442,12 +442,12 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // makes --start use the SAME code path as the CSV auto path and the iOS
     // app button — the old path bypassed VSC via EngineInputTarget::setStarter
     // (a one-shot pulse to CrankingController::engageStarter).
-    config.startRequested = args.autoStart;
+    config.startRequested = args.start.autoStart;
 
     // --starter-delay: starter-then-ignition delay (McLaren mod). Converted to
     // seconds for the VehicleStartController. 0 = combined start (default).
-    config.startStopCrankDelayS = args.audio.starterDelayMs > 0
-        ? static_cast<double>(args.audio.starterDelayMs) / 1000.0
+    config.startStopCrankDelayS = args.start.starterDelayMs > 0
+        ? static_cast<double>(args.start.starterDelayMs) / 1000.0
         : input::VehicleStartController::kDefaultCrankDelayS;
 
     // Color the simulator label for CLI output
