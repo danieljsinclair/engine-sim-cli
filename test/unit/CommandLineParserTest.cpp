@@ -181,6 +181,82 @@ TEST(CommandLineParserTest, LiveTelemetryStillExcludesPositionalEngineConfig) {
     EXPECT_FALSE(parseArguments(4, const_cast<char**>(argv), args));
 }
 
+// --duration + a telemetry-driven mode is a WINDOW (owner-approved semantics):
+// N seconds from the start point, resolved onto the --end-at path so the
+// provider's single time-slicing mechanism bounds the run. Replay measures the
+// window from --start-from's arrival point on the recording clock; live
+// measures it from attach (same formula, same provider clock). The raw
+// --duration is consumed (reset to 0) so downstream duration logic can't
+// double-bound the run.
+
+TEST(CommandLineParserTest, DurationWithReplayTelemetry_ResolvesToWindowFromStartFrom) {
+    const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv",
+                          "--start-from", "00:05", "--duration", "12"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(7, const_cast<char**>(argv), args))
+        << "explicit --duration with --replay-telemetry is a legal window";
+    EXPECT_DOUBLE_EQ(args.replay.endAtS, 17.0)
+        << "--duration 12 from --start-from 00:05 must bound the run at 17s recording time";
+    EXPECT_DOUBLE_EQ(args.duration, 0.0)
+        << "the window consumes --duration so the run is bounded once, by end-at";
+}
+
+TEST(CommandLineParserTest, DurationWithReplayTelemetry_NoStartFrom_WindowFromZero) {
+    const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv", "--duration", "12"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args));
+    EXPECT_DOUBLE_EQ(args.replay.endAtS, 12.0)
+        << "without --start-from the window runs from the trace start";
+    EXPECT_DOUBLE_EQ(args.duration, 0.0);
+}
+
+TEST(CommandLineParserTest, DurationWithLiveTelemetry_ResolvesToAttachWindow) {
+    const char* argv[] = {"engine-sim-cli", "--live-telemetry", "--duration", "10"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args))
+        << "explicit --duration with --live-telemetry is a legal attach window";
+    EXPECT_DOUBLE_EQ(args.replay.endAtS, 10.0)
+        << "live measures the window from attach (startFromS unset = -1 sentinel)";
+    EXPECT_DOUBLE_EQ(args.duration, 0.0);
+}
+
+TEST(CommandLineParserTest, DurationWindow_MatchesEquivalentEndAt) {
+    const char* argvDuration[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv",
+                                  "--start-from", "00:05", "--duration", "12"};
+    CommandLineArgs viaDuration;
+    ASSERT_TRUE(parseArguments(7, const_cast<char**>(argvDuration), viaDuration));
+
+    const char* argvEndAt[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv",
+                               "--start-from", "00:05", "--end-at", "00:17"};
+    CommandLineArgs viaEndAt;
+    ASSERT_TRUE(parseArguments(7, const_cast<char**>(argvEndAt), viaEndAt));
+
+    EXPECT_DOUBLE_EQ(viaDuration.replay.endAtS, viaEndAt.replay.endAtS)
+        << "--duration 12 and --end-at 00:17 (from 00:05) must resolve identically";
+    EXPECT_DOUBLE_EQ(viaEndAt.duration, 0.0)
+        << "the --end-at form leaves duration unset, as before";
+}
+
+// Both flags bound the end of the run — refusing the combination is safer
+// than guessing precedence between two stop conditions.
+TEST(CommandLineParserTest, DurationAndEndAtTogether_AreRejected) {
+    const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv",
+                          "--duration", "12", "--end-at", "00:20"};
+    CommandLineArgs args;
+    EXPECT_FALSE(parseArguments(7, const_cast<char**>(argv), args))
+        << "--duration and --end-at are mutually exclusive bounds";
+}
+
+// --duration on its own (keyboard/demo path) remains legal — the fail-fast is
+// scoped to telemetry-driven modes only.
+TEST(CommandLineParserTest, DurationWithoutTelemetry_IsAllowed) {
+    const char* argv[] = {"engine-sim-cli", "--script", "v8.mr", "--duration", "5"};
+    CommandLineArgs args;
+    EXPECT_TRUE(parseArguments(5, const_cast<char**>(argv), args))
+        << "--duration without telemetry must still parse";
+    EXPECT_DOUBLE_EQ(args.duration, 5.0);
+}
+
 // --pin-tau-ms: PIN-coupling compliance time constant. Default 0 = the rigid
 // pin (bit-identical legacy behavior); the tuned road value is ~150.
 TEST(CommandLineParserTest, PinTauMsDefaultsToZero_RigidPin) {
