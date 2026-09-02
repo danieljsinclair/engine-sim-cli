@@ -255,6 +255,18 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         auto gearSelector = std::make_unique<input::GearSelectorInput>();
         auto ignition = std::make_unique<input::IgnitionInput>();
 
+        // Owner ruling 2026-09-02: --auto selects the gearbox twin ONLY — it
+        // must NOT start the engine. The VirtualIceTwin auto-starts (OFF->
+        // CRANKING with starterMotor+ignition) whenever its ignition is ON, so
+        // for the --auto path (no --start) we leave the ignition OFF: the twin
+        // stays OFF, the engine launches Stopped, and the box stays in PARK.
+        // Starting is reserved for --start / the start controller. The genuine
+        // demo path (--connect-demo) keeps ignition ON (it auto-starts and
+        // auto-shifts to DRIVE, the historical demo behavior).
+        if (!args.connectDemo && !args.autoStart) {
+            ignition->setOn(false);
+        }
+
         auto demoProvider = std::make_unique<input::DemoInputProvider>(
             std::move(throttle),
             std::move(gearSelector),
