@@ -156,24 +156,36 @@ TEST_F(KeyboardInputProviderTest, BracketLeft_ShiftsDown) {
     EXPECT_EQ(input.gearDelta, -1);
 }
 
-// 'i' key toggles ignition (edge-triggered)
-TEST_F(KeyboardInputProviderTest, IKey_TogglesIgnition) {
-    EngineInput baseline = tick();
-    bool baselineIgnition = baseline.ignition;
-
+// 'i' key requests an ignition toggle through the shared start/ignition state
+// machine (composable primitive). The intent arrives as an ignitionRequest
+// event (NOT a direct ignition_ flip) — SimulationLoop forwards it to the
+// VehicleStartController. Owner spec 2026-09-02: every frontend is a thin
+// caller of the shared state machine.
+TEST_F(KeyboardInputProviderTest, IKey_RequestsIgnitionToggle) {
+    // Default ignition is ON, so the first 'i' requests OFF.
     rawMock_->enqueue('i');
     EngineInput input = tick();
-    EXPECT_EQ(input.ignition, !baselineIgnition);
+    ASSERT_TRUE(input.ignitionRequest.has_value());
+    EXPECT_FALSE(input.ignitionRequest.value());
+
+    // Second 'i' requests ON again.
+    rawMock_->enqueue('i');
+    EngineInput input2 = tick();
+    ASSERT_TRUE(input2.ignitionRequest.has_value());
+    EXPECT_TRUE(input2.ignitionRequest.value());
 }
 
-// 's' key sets starterButton momentary (one frame, then false)
-TEST_F(KeyboardInputProviderTest, SKey_SetsStarterButtonMomentary) {
+// 's' key requests the starter through the shared state machine (composable
+// primitive: engage starter WITHOUT firing ignition). The intent arrives as a
+// starterRequested event (NOT a direct starterButton pulse) — one-shot, reset
+// next frame.
+TEST_F(KeyboardInputProviderTest, SKey_RequestsStarter) {
     rawMock_->enqueue('s');
     EngineInput input = tick();
-    EXPECT_TRUE(input.starterButton);
+    EXPECT_TRUE(input.starterRequested);
 
     EngineInput nextInput = tick();
-    EXPECT_FALSE(nextInput.starterButton);
+    EXPECT_FALSE(nextInput.starterRequested);
 }
 
 // 'p' key sets presetCycle momentary (one frame, then false)
