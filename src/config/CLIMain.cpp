@@ -446,8 +446,8 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 
     // --starter-delay: starter-then-ignition delay (McLaren mod). Converted to
     // seconds for the VehicleStartController. 0 = combined start (default).
-    config.startStopCrankDelayS = args.start.starterDelayMs > 0
-        ? static_cast<double>(args.start.starterDelayMs) / 1000.0
+    config.startStopCrankDelayS = args.audio.starterDelayMs > 0
+        ? static_cast<double>(args.audio.starterDelayMs) / 1000.0
         : input::VehicleStartController::kDefaultCrankDelayS;
 
     // Color the simulator label for CLI output
