@@ -279,7 +279,15 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     // line (interactiveExplicit), not when we defaulted here. Without that
     // distinction, every live/replay run without --duration would try to build
     // an overlay provider and fail (double-init on stdin).
-    if (args.duration <= 0.0) {
+    //
+    // Telemetry-driven runs (--live-telemetry, --replay-telemetry) are NOT
+    // interactive even without --duration: the CSV input / --end-at bounds the
+    // run, the keyboard overlay is excluded (mutual exclusion in parseArguments),
+    // and the stop-reporter must not claim "user quit" for a trace-driven end.
+    // Only a bare (keyboard-driven, non-telemetry, non-deterministic,
+    // non-connect-demo) run without --duration defaults to interactive.
+    const bool telemetryDriven = args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
+    if (args.duration <= 0.0 && !telemetryDriven && !args.deterministic && !args.connectDemo) {
         args.interactive = true;
     }
     args.interactiveExplicit = interactiveExplicit;

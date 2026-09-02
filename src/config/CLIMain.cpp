@@ -242,10 +242,11 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
     if (args.holdThrottle >= 0.0f) {
         target->setThrottle(static_cast<double>(args.holdThrottle));
     }
-    // --start: one-shot starter pulse so the CrankingController cranks the engine.
-    if (args.autoStart) {
-        target->setStarter();
-    }
+    // --start is NOT applied here as a one-shot EngineInputTarget::setStarter
+    // pulse anymore. It is carried on config.startRequested and routed through
+    // the shared VehicleStartController::requestCombinedStart() on the first
+    // tick (see SimulationLoop::run). This makes --start use the SAME state
+    // machine as the CSV auto path and the iOS app button.
 
     // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
     // and route the shift keys to its PRND selector (P/R/N/D).
@@ -253,6 +254,18 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         auto throttle = std::make_unique<input::DemoThrottleSource>();
         auto gearSelector = std::make_unique<input::GearSelectorInput>();
         auto ignition = std::make_unique<input::IgnitionInput>();
+
+        // Owner ruling 2026-09-02: --auto selects the gearbox twin ONLY — it
+        // must NOT start the engine. The VirtualIceTwin auto-starts (OFF->
+        // CRANKING with starterMotor+ignition) whenever its ignition is ON, so
+        // for the --auto path (no --start) we leave the ignition OFF: the twin
+        // stays OFF, the engine launches Stopped, and the box stays in PARK.
+        // Starting is reserved for --start / the start controller. The genuine
+        // demo path (--connect-demo) keeps ignition ON (it auto-starts and
+        // auto-shifts to DRIVE, the historical demo behavior).
+        if (!args.connectDemo && !args.autoStart) {
+            ignition->setOn(false);
+        }
 
         auto demoProvider = std::make_unique<input::DemoInputProvider>(
             std::move(throttle),
@@ -269,11 +282,22 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         // can drive it into DRIVE (P/R/N/D) for the automatic gearbox.
         target->setDemoControls(demoProvider.get());
 
-        // Auto-engage DRIVE so the user can just press throttle and drive.
-        input::IDemoControls* demoControls = demoProvider.get();
-        demoControls->shiftUp();  // P → R
-        demoControls->shiftUp();  // R → N
-        demoControls->shiftUp();  // N → D
+        // Auto-engage DRIVE so the bare --connect-demo run can just press
+        // throttle and drive. Owner ruling 2026-09-02: --auto selects the
+        // gearbox twin ONLY — it must NOT start the engine and must NOT select a
+        // gear. The P->R->N->D auto-shift is therefore reserved for the genuine
+        // demo path (--connect-demo). For --auto (gearbox twin selection only)
+        // the box stays in PARK and the engine launches Stopped — starting is
+        // reserved for --start / the start controller. Auto-shifting to DRIVE
+        // on construction would make the startStop controller fire
+        // starter+ignition on frame 0 (the engine auto-crank), which is not
+        // --auto's job.
+        if (args.connectDemo) {
+            input::IDemoControls* demoControls = demoProvider.get();
+            demoControls->shiftUp();  // P → R
+            demoControls->shiftUp();  // R → N
+            demoControls->shiftUp();  // N → D
+        }
 
         if (!demoProvider->Initialize()) {
             throw CliException("Failed to initialize demo input provider");
@@ -355,7 +379,15 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.assetBasePath = "";
 
     // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
-    config.interactive = false;
+    // --interactive (explicit flag, or the no---duration default) means an
+    // open-ended run that only ends on user quit — never a duration cap. The
+    // parsed args.interactive already encodes both cases (CLIconfig.cpp defaults
+    // it true when no --duration is given), so propagate it here rather than
+    // hardcoding false: the old hardcode made --interactive on the command line
+    // a no-op, so the run still hit the 3s default and printed "30s duration
+    // reached (use --interactive for open-ended...)" — the hint firing while
+    // the flag was present.
+    config.interactive = args.interactive;
     config.playAudio = args.playAudio;
     // Duration semantics: interactive mode and both telemetry variants
     // (--live-telemetry stdin CSV, --replay-telemetry file CSV) are driven by
@@ -404,6 +436,13 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 
     // Gearbox mode: --auto enables automatic gearbox, default is manual
     config.autoGearbox = args.gearbox.automatic;
+
+    // --start: request a combined start through the shared state machine
+    // (VehicleStartController::requestCombinedStart) on the first tick. This
+    // makes --start use the SAME code path as the CSV auto path and the iOS
+    // app button — the old path bypassed VSC via EngineInputTarget::setStarter
+    // (a one-shot pulse to CrankingController::engageStarter).
+    config.startRequested = args.autoStart;
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
