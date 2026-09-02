@@ -464,8 +464,9 @@ TEST_F(ConsolePresentationTest, GearBracket_HasNoBrakeIndicator) {
 // embedded in the bridge CsvTelemetryParser steering tests.
 // ============================================================================
 
-static std::string renderStateLine(const EngineState& state) {
-    ConsolePresentation presentation;
+static std::string renderStateLine(const EngineState& state,
+                                    presentation::SteeringStyle style = presentation::SteeringStyle::Braille) {
+    ConsolePresentation presentation(style);
     PresentationConfig config;
     config.showDiagnostics = true;
     presentation.Initialize(config);
@@ -481,12 +482,15 @@ TEST(ConsolePresentationSteeringTest, SteeringPresent_RendersAngleInConsoleLine)
 
     const std::string line = renderStateLine(state);
 
-    // v2: steering-wheel glyph (U+1F6DE) identifies the readout; the signed
-    // value (one decimal) is present and right-justified to a fixed width.
-    EXPECT_NE(line.find("\xF0\x9F\x9B\x9E"), std::string::npos)
-        << "steering-wheel glyph missing when the feed carries steering";
+    // v4 (owner): the steering-wheel icon is off pending the owner's verdict
+    // — the gauge glyph leads the readout instead (12.5 deg is 12-o'clock
+    // sector), with the signed value right-justified to a fixed width.
+    EXPECT_NE(line.find(presentation::SteeringGauge::GLYPH_12), std::string::npos)
+        << "braille sector glyph missing when the feed carries steering";
     EXPECT_NE(line.find("-12.5"), std::string::npos)
         << "signed steering value not rendered";
+    EXPECT_EQ(line.find("\xF0\x9F\x9B\x9E"), std::string::npos)
+        << "steering-wheel icon must stay commented out (v4 owner directive)";
 }
 
 TEST(ConsolePresentationSteeringTest, SteeringPositive_RendersSigned) {
@@ -495,14 +499,14 @@ TEST(ConsolePresentationSteeringTest, SteeringPositive_RendersSigned) {
 
     const std::string line = renderStateLine(state);
 
-    EXPECT_NE(line.find("\xF0\x9F\x9B\x9E"), std::string::npos);
     EXPECT_NE(line.find("3.9"), std::string::npos);
 }
 
 // v2: the steering component must occupy the same byte-width regardless of
 // angle, so the rest of the telemetry line never jitters. We render at a
 // wide and a narrow angle and assert the component substring is identical
-// length. Component runs from the steering-wheel glyph to the closing ']'.
+// length. Component runs from the gauge glyph to the closing ']' (both
+// renders sit in the 12-o'clock sector: 0 deg and -359 -> 359 -> wrap tail).
 TEST(ConsolePresentationSteeringTest, SteeringComponent_FixedWidth) {
     auto render = [](double deg) {
         EngineState s = makeState();
@@ -514,7 +518,7 @@ TEST(ConsolePresentationSteeringTest, SteeringComponent_FixedWidth) {
     const std::string wide   = render(-359.0);
 
     auto componentWidth = [](const std::string& line) -> std::size_t {
-        std::size_t start = line.find("\xF0\x9F\x9B\x9E");
+        std::size_t start = line.find(presentation::SteeringGauge::GLYPH_12);
         if (start == std::string::npos) return 0;
         std::size_t end = line.find(']', start);
         if (end == std::string::npos) return 0;
@@ -539,6 +543,20 @@ TEST(ConsolePresentationSteeringTest, SteeringCenter_RendersTdcGlyph) {
     const std::string right = renderStateLine(state);
     EXPECT_NE(right.find(presentation::SteeringGauge::GLYPH_3), std::string::npos)
         << "full-right steering must render the 3-o'clock braille glyph";
+}
+
+// v4 (--steering-style arrows): the same 90 deg input must render the arrow
+// compass instead of the braille clock face.
+TEST(ConsolePresentationSteeringTest, SteeringStyleArrows_RendersArrowGlyph) {
+    EngineState state = makeState();
+    state.controls.steeringAngleDeg = 90.0;
+
+    const std::string line = renderStateLine(state, presentation::SteeringStyle::Arrows);
+
+    EXPECT_NE(line.find(presentation::ArrowGauge::GLYPH_RIGHT), std::string::npos)
+        << "arrows style must render the right arrow at full-right steering";
+    EXPECT_EQ(line.find(presentation::SteeringGauge::GLYPH_3), std::string::npos)
+        << "arrows style must not render braille glyphs";
 }
 
 TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {

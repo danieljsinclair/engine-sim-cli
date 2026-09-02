@@ -5,7 +5,9 @@
 
 #include "io/IPresentation.h"
 #include "config/ANSIColors.h"
+#include "SteeringGauge.h"
 #include <chrono>
+#include <memory>
 
 namespace presentation {
 
@@ -30,7 +32,9 @@ std::string gearTriple(int selector, bool autoMode, int physicalGear);
 
 class ConsolePresentation final : public IPresentation {
 public:
-    ConsolePresentation();
+    // style selects the steering gauge glyph set (braille clock face is the
+    // default; arrows is the 8-way variant selected by --steering-style).
+    explicit ConsolePresentation(SteeringStyle style = SteeringStyle::Braille);
     ~ConsolePresentation() override;
 
     // Manages console/output state. Copying has no meaningful semantics here and
@@ -68,6 +72,7 @@ private:
     std::string formatAudioState(const EngineState& state, std::ostringstream& out) const;
 
     PresentationConfig config_;
+    std::unique_ptr<ISteeringGauge> steeringGauge_;
     std::chrono::steady_clock::time_point lastDiagTime_;
     bool initialized_{false};
 };

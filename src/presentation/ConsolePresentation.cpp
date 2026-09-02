@@ -59,7 +59,8 @@ std::string gearTriple(int selector, bool autoMode, int physicalGear) {
     return std::string(1, field1) + field2 + field3;
 }
 
-ConsolePresentation::ConsolePresentation() = default;
+ConsolePresentation::ConsolePresentation(SteeringStyle style)
+    : steeringGauge_(makeSteeringGauge(style)) {}
 
 ConsolePresentation::~ConsolePresentation() {
     Shutdown();
@@ -210,9 +211,10 @@ std::string ConsolePresentation::formatSpeedState(const EngineState& state, std:
 // 12-position clock face of two-cell braille glyphs (0 deg = 12 o'clock,
 // 90 deg = 3 o'clock full right; sector fences at 14/44/74/.../344 deg).
 // Every glyph is the same two-cell width (braille blank U+2800 pads empty
-// cells), so the component stays a constant-width block. Layout:
-// "[<wheel><braille-clock> <angle>]" where the angle is right-justified to
-// 6 chars (covers -359.0 .. 359.0) so the line never jitters.
+// cells), so the component stays a constant-width block. v4 adds the
+// selectable 8-way arrow variant (--steering-style arrows). Layout:
+// "[<gauge> <angle>]" where the angle is right-justified to 6 chars (covers
+// -359.0 .. 359.0) so the line never jitters.
 std::string ConsolePresentation::formatSteeringState(const EngineState& state, std::ostringstream& out) const {
     if (state.controls.steeringAngleDeg.has_value()) {
         const double deg = *state.controls.steeringAngleDeg;
@@ -221,11 +223,11 @@ std::string ConsolePresentation::formatSteeringState(const EngineState& state, s
         std::ios_base::fmtflags savedFlags = out.flags();
         std::streamsize savedPrec = out.precision();
 
-        // Steering-wheel glyph (U+1F6DE) + owner's braille clock-face sector.
-        // (The v2 escape \xDE was an invalid UTF-8 continuation byte; \x9E is
-        // the correct final byte of the U+1F6DE sequence.)
-        const SteeringGauge steeringGauge;
-        out << "[\xF0\x9F\x9B\x9E" << steeringGauge.getSteeringString(static_cast<int>(deg)) << ' '
+        // v4 (owner): steering-wheel icon commented out — the owner found it
+        // over-bearing and wants to judge the gauge alone on a real trace.
+        // To reinstate, uncomment this line (literal wheel U+1F6DE):
+        // out << "🛞";
+        out << '[' << steeringGauge_->getSteeringString(static_cast<int>(deg)) << ' '
             << std::fixed << std::setprecision(1) << std::setw(6) << std::right
             << deg << "] ";
 
