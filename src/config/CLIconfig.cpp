@@ -96,7 +96,14 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
-    app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
+    app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
+    app.add_option("--starter-delay", args.start.starterDelayMs,
+        "Starter-then-ignition delay in ms (McLaren mod: crank BEFORE ignition). "
+        "0 = combined start (DEFAULT; starter+ignition together). "
+        "A positive value engages the starter, then fires ignition after N ms — "
+        "the user can elongate cranking for as long as they want by also holding "
+        "the 'S' key. Per-engine .mr starter_torque/speed still apply.")
+        ->check(CLI::Range(0, 10000));
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
     app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss); file replay skips there instantly — rows before the offset are never simulated (arrival state is synthesized at the offset)");
@@ -279,10 +286,32 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     // line (interactiveExplicit), not when we defaulted here. Without that
     // distinction, every live/replay run without --duration would try to build
     // an overlay provider and fail (double-init on stdin).
-    if (args.duration <= 0.0) {
+    //
+    // Telemetry-driven runs (--live-telemetry, --replay-telemetry) are NOT
+    // interactive even without --duration: the CSV input / --end-at bounds the
+    // run, the keyboard overlay is excluded (mutual exclusion in parseArguments),
+    // and the stop-reporter must not claim "user quit" for a trace-driven end.
+    // Only a bare (keyboard-driven, non-telemetry, non-deterministic,
+    // non-connect-demo) run without --duration defaults to interactive.
+    const bool telemetryDriven = args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
+    if (args.duration <= 0.0 && !telemetryDriven && !args.deterministic && !args.connectDemo) {
         args.interactive = true;
     }
     args.interactiveExplicit = interactiveExplicit;
+
+    // FAIL-FAST: --duration combined with a telemetry-driven mode has no legal
+    // meaning. For --live-telemetry the streaming provider owns termination
+    // (stdin EOF), so a --duration would be silently overridden to 0; for
+    // --replay-telemetry it would truncate the trace mid-capture. The audit
+    // found no legal combo, so we refuse the combination at parse time with a
+    // clear error rather than silently misrunning. --end-at is the correct way
+    // to bound a telemetry run.
+    if (args.duration > 0.0 && telemetryDriven) {
+        std::cerr << "ERROR: --duration cannot be combined with --live-telemetry "
+                  << "or --replay-telemetry (the telemetry input bounds the run; "
+                  << "use --end-at to stop at a relative timecode).\n";
+        return false;
+    }
 
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
