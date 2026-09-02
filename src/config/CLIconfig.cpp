@@ -6,6 +6,7 @@
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <iostream>
@@ -26,7 +27,8 @@ void printUsage(const char* progName) {
     std::cout << "  --load <0-100>       Dyno load torque percentage (engine works against this)\n";
     std::cout << "  --interactive        Enable interactive keyboard control\n";
 
-    std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
+    std::cout << "  --duration <seconds> Run for N seconds; with --replay-telemetry/--live-telemetry:\n"
+                 "                       window from the start point (same as --end-at start+N)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --connect-demo       Run VirtualICE twin demo (gearbox mode per --auto/--manual)\n";
     std::cout << "  --auto               Use automatic gearbox (default in --connect-demo is manual)\n";
@@ -90,7 +92,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--load", loadArg, "Dyno load torque percentage (engine works against this)") ->check(CLI::Range(0.0, 100.0));
     app.add_option("--output", args.outputWav, "Output WAV file path");
-    app.add_option("--duration", args.duration, "Duration in seconds (default: 3.0, ignored in interactive)");
+    app.add_option("--duration", args.duration,
+                   "Run for N seconds; with --replay-telemetry/--live-telemetry: window from the "
+                   "start point (same as --end-at start+N); mutually exclusive with --end-at");
     app.add_option("--sim-freq", args.audio.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
     app.add_option("--synth-latency", args.audio.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
@@ -299,20 +303,6 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     }
     args.interactiveExplicit = interactiveExplicit;
 
-    // FAIL-FAST: --duration combined with a telemetry-driven mode has no legal
-    // meaning. For --live-telemetry the streaming provider owns termination
-    // (stdin EOF), so a --duration would be silently overridden to 0; for
-    // --replay-telemetry it would truncate the trace mid-capture. The audit
-    // found no legal combo, so we refuse the combination at parse time with a
-    // clear error rather than silently misrunning. --end-at is the correct way
-    // to bound a telemetry run.
-    if (args.duration > 0.0 && telemetryDriven) {
-        std::cerr << "ERROR: --duration cannot be combined with --live-telemetry "
-                  << "or --replay-telemetry (the telemetry input bounds the run; "
-                  << "use --end-at to stop at a relative timecode).\n";
-        return false;
-    }
-
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
         args.playAudio = true;
@@ -356,6 +346,27 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
             std::cerr << "ERROR: Invalid --end-at time: " << args.replay.endAt << "\n";
             return false;
         }
+    }
+
+    // --duration + a telemetry-driven mode is a WINDOW: N seconds from the
+    // start point — replay measures from --start-from's arrival on the
+    // recording clock, live from attach (both providers run the same
+    // elapsed-seconds clock, so one formula covers both). Resolved onto the
+    // --end-at path so the provider's single time-slicing mechanism bounds
+    // the run; the raw --duration is consumed (reset to 0) so no downstream
+    // duration logic double-bounds it. Passing --duration AND --end-at gives
+    // two stop conditions — refuse rather than guess precedence.
+    // (Supersedes the parse-time fail-fast that rejected every
+    // --duration + telemetry combination.)
+    if (args.duration > 0.0 && telemetryDriven) {
+        if (!args.replay.endAt.empty()) {
+            std::cerr << "ERROR: --duration and --end-at are mutually exclusive "
+                      << "(both bound the end of the run) — pass one or the other.\n";
+            return false;
+        }
+        const double windowStartS = std::max(0.0, args.replay.startFromS);
+        args.replay.endAtS = windowStartS + args.duration;
+        args.duration = 0.0;
     }
 
     return true;
