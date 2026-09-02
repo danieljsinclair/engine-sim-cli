@@ -245,7 +245,7 @@ TEST(CommandLineParserTest, SpanTameParsesValidValue) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_FLOAT_EQ(args.spanTame, 0.75f);
+    EXPECT_FLOAT_EQ(args.audio.spanTame, 0.75f);
 }
 
 TEST(CommandLineParserTest, SpanTameDefaultsToOff) {
@@ -253,7 +253,7 @@ TEST(CommandLineParserTest, SpanTameDefaultsToOff) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_FLOAT_EQ(args.spanTame, 0.0f);
+    EXPECT_FLOAT_EQ(args.audio.spanTame, 0.0f);
 }
 
 // Both interval ends are valid taming amounts (0 = explicit off, 1 = full
@@ -262,12 +262,12 @@ TEST(CommandLineParserTest, SpanTameAcceptsBothIntervalEnds) {
     const char* argvZero[] = {"engine-sim-cli", "--span-tame", "0.0"};
     CommandLineArgs argsZero;
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argvZero), argsZero));
-    EXPECT_FLOAT_EQ(argsZero.spanTame, 0.0f);
+    EXPECT_FLOAT_EQ(argsZero.audio.spanTame, 0.0f);
 
     const char* argvOne[] = {"engine-sim-cli", "--span-tame", "1.0"};
     CommandLineArgs argsOne;
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argvOne), argsOne));
-    EXPECT_FLOAT_EQ(argsOne.spanTame, 1.0f);
+    EXPECT_FLOAT_EQ(argsOne.audio.spanTame, 1.0f);
 }
 
 // Out-of-range values are rejected at parse time (a typo'd 1.5 or negative

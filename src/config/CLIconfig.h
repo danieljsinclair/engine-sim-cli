@@ -38,6 +38,13 @@ struct AudioTimingArgs {
     double synthLatency = 0.0;       // Synth latency seconds
     int preFillMs = 0;               // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
     float crankingVolume = 0.0f;     // resolved by bridge/SimulationConfig
+
+    // Output-stage span taming (see engine-sim include/span_tame.h for the
+    // pinned parameterization). 0.0 (the default) = feature OFF = bit-identical
+    // audio; the script-side audio_volume lever is exhausted (leveler
+    // re-normalizes it), so span taming lives at the output stage. Forwards to
+    // the bridge's ISimulatorConfig.spanTame.
+    float spanTame = 0.0f;
 };
 
 // The vehicle-twin telemetry input subsystem: --live-telemetry plus the
@@ -136,17 +143,6 @@ struct CommandLineArgs {
     // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
-
-
-    // Output-stage span taming amount (--span-tame), [0.0, 1.0]. The runtime
-    // tuning knob for the synthesizer output-stage tamer (soft-knee compressor
-    // + makeup gain + safety soft-clip just before the int16 conversion — see
-    // engine-sim include/span_tame.h for the pinned parameterization). 0.0
-    // (the default) = feature OFF = bit-identical audio; the script-side
-    // audio_volume lever is exhausted (leveler re-normalizes it), so span
-    // taming lives at the output stage. Forwards to the bridge's
-    // ISimulatorConfig.spanTame.
-    float spanTame = 0.0f;
 };
 
 // ============================================================================

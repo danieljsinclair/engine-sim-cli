@@ -165,7 +165,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "                     (the path that oscillated; kept for A/B comparison)")
         ->capture_default_str();
 
-    app.add_option("--span-tame", args.spanTame,
+    app.add_option("--span-tame", args.audio.spanTame,
         "Output-stage span taming (0.0=off, 1.0=full). Soft-knee compressor\n"
         "pinned: ratio R(x)=1+5x, makeup gain m(x)=10^(12*(1-1/R)/20),\n"
         "knee [-18,-6] dBFS, safety soft-clip at 0.90/0.95. Off (default)\n"
