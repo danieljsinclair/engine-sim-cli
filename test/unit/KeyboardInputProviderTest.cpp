@@ -168,7 +168,8 @@ TEST_F(KeyboardInputProviderTest, IKey_RequestsIgnitionToggle) {
     ASSERT_TRUE(input.ignitionRequest.has_value());
     EXPECT_FALSE(input.ignitionRequest.value());
 
-    // Second 'i' requests ON again.
+    // Second 'i' (enqueued after the first tick consumed the first) requests
+    // ON again.
     rawMock_->enqueue('i');
     EngineInput input2 = tick();
     ASSERT_TRUE(input2.ignitionRequest.has_value());
