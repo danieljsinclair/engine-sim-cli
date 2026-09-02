@@ -242,10 +242,11 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
     if (args.holdThrottle >= 0.0f) {
         target->setThrottle(static_cast<double>(args.holdThrottle));
     }
-    // --start: one-shot starter pulse so the CrankingController cranks the engine.
-    if (args.autoStart) {
-        target->setStarter();
-    }
+    // --start is NOT applied here as a one-shot EngineInputTarget::setStarter
+    // pulse anymore. It is carried on config.startRequested and routed through
+    // the shared VehicleStartController::requestCombinedStart() on the first
+    // tick (see SimulationLoop::run). This makes --start use the SAME state
+    // machine as the CSV auto path and the iOS app button.
 
     // Auto gearbox modes: create the vehicle-twin provider as a speed enhancer
     // and route the shift keys to its PRND selector (P/R/N/D).
@@ -269,15 +270,17 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         // can drive it into DRIVE (P/R/N/D) for the automatic gearbox.
         target->setDemoControls(demoProvider.get());
 
-        // Auto-engage DRIVE so the user can just press throttle and drive.
-        // NOT in interactive mode: the engine must launch Stopped and wait for
-        // the user's start control (startStop protocol: starter engaged on
-        // demand). Auto-shifting to DRIVE on construction makes the startStop
-        // controller fire starter+ignition on frame 0 — the engine auto-crank
-        // starts before the user can deliberately crank and listen to the
-        // startup audio. In interactive mode the box stays in PARK until the
-        // user selects a gear.
-        if (!args.interactiveExplicit) {
+        // Auto-engage DRIVE so the bare --connect-demo run can just press
+        // throttle and drive. Owner ruling 2026-09-02: --auto selects the
+        // gearbox twin ONLY — it must NOT start the engine and must NOT select a
+        // gear. The P->R->N->D auto-shift is therefore reserved for the genuine
+        // demo path (--connect-demo). For --auto (gearbox twin selection only)
+        // the box stays in PARK and the engine launches Stopped — starting is
+        // reserved for --start / the start controller. Auto-shifting to DRIVE
+        // on construction would make the startStop controller fire
+        // starter+ignition on frame 0 (the engine auto-crank), which is not
+        // --auto's job.
+        if (args.connectDemo) {
             input::IDemoControls* demoControls = demoProvider.get();
             demoControls->shiftUp();  // P → R
             demoControls->shiftUp();  // R → N
@@ -421,6 +424,13 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 
     // Gearbox mode: --auto enables automatic gearbox, default is manual
     config.autoGearbox = args.gearbox.automatic;
+
+    // --start: request a combined start through the shared state machine
+    // (VehicleStartController::requestCombinedStart) on the first tick. This
+    // makes --start use the SAME code path as the CSV auto path and the iOS
+    // app button — the old path bypassed VSC via EngineInputTarget::setStarter
+    // (a one-shot pulse to CrankingController::engageStarter).
+    config.startRequested = args.autoStart;
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
