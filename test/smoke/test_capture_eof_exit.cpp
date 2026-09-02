@@ -8,13 +8,14 @@
 // --end-at run reported the FULL trace length as its stop reason.
 //
 // These tests run the real binary:
-//   1. --live-telemetry < finite 1s capture, with --duration 6 as a WATCHDOG:
-//      before the fix the run burns the full 6s and prints "6s duration
-//      reached."; after it exits just after the capture drains (~1s) and
-//      prints "end of replay trace." (Both the wall time and the message are
-//      red discriminators; the wall assert alone would be flake-prone, the
-//      message assert alone would not prove prompt exit — together they pin
-//      the contract.)
+//   1. --live-telemetry < finite 1s capture: exits just after the capture
+//      drains (~1s) and prints "end of replay trace." NOTE: --duration cannot
+//      be combined with --live-telemetry (the telemetry input bounds the run;
+//      the fail-fast refuses the combo), so there is no duration watchdog —
+//      the test relies on the capture's own EOF to terminate. (Both the wall
+//      time and the message are red discriminators; the wall assert alone
+//      would be flake-prone, the message assert alone would not prove prompt
+//      exit — together they pin the contract.)
 //   2. --replay-telemetry 10s capture --end-at 5: stops at 5s and must say
 //      so ("--end-at 5s reached"), not claim the 10s trace duration.
 
@@ -73,8 +74,11 @@ TEST(CaptureEofExitTest, LiveStdinEof_ExitsWholeCliAtCaptureEnd) {
 
     const long long before = logSize();
     const auto t0 = std::chrono::steady_clock::now();
+    // --duration is deliberately NOT used here: the fail-fast refuses
+    // --duration + --live-telemetry (the telemetry input bounds the run). The
+    // capture's own EOF terminates the run.
     const int rc = SmokeTestHelper::runCLI(
-        "--live-telemetry --duration 6 --silent < " + csv);
+        "--live-telemetry --silent < " + csv);
     const double wall =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - t0)
             .count();
@@ -82,8 +86,7 @@ TEST(CaptureEofExitTest, LiveStdinEof_ExitsWholeCliAtCaptureEnd) {
 
     EXPECT_EQ(exitCodeOf(rc), 0) << "clean exit at capture end, out:\n" << out;
     EXPECT_LT(wall, 4.5)
-        << "capture is 1s with a 6s watchdog: EOF must exit ~1s, not burn the "
-           "watchdog. wall=" << wall;
+        << "capture is 1s: EOF must exit ~1s, not hang. wall=" << wall;
     EXPECT_TRUE(out.find("end of replay trace") != std::string::npos) << out;
     EXPECT_TRUE(out.find("duration reached") == std::string::npos)
         << "EOF ended the run, not the duration timer:\n" << out;

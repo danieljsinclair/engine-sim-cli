@@ -30,6 +30,7 @@
 #include "config/ANSIColors.h"
 #include "config/StopReasonReporter.h"
 #include <Verification.h>
+#include <poll.h>
 
 // Bridge headers for connect-demo mode
 #include "input/DemoInputProvider.h"
@@ -149,8 +150,19 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     // flag wiring + time-slice setters live in buildTelemetryProvider
     // (TelemetryProviderFactory.cpp); this branch owns lifecycle + run wiring.
     if (args.twin.liveTelemetry) {
+        // Readiness probe for the stdin pipe: poll(2) with zero timeout on
+        // STDIN_FILENO. Injected into the LiveTelemetryProvider so its row
+        // refill NEVER parks the simulation loop on a lagging writer
+        // (vehicle-sim replay pacing, network hiccup) — a parked loop stops
+        // synthesizer input production and the audio ring drains into short
+        // reads (the sync-pull buffer-boundary thump). std::cin's fd is 0.
+        auto streamDataReady = []() {
+            pollfd p{STDIN_FILENO, POLLIN, 0};
+            return ::poll(&p, 1, /*timeout=*/0) > 0;
+        };
         std::unique_ptr<input::LiveTelemetryProvider> live(
-            dynamic_cast<input::LiveTelemetryProvider*>(buildTelemetryProvider(args).release()));
+            dynamic_cast<input::LiveTelemetryProvider*>(
+                buildTelemetryProvider(args, std::move(streamDataReady)).release()));
         ASSERT(live, "buildTelemetryProvider must return a LiveTelemetryProvider for --live-telemetry");
         if (!live->Initialize()) {
             throw CliException("Failed to initialize live telemetry: " + live->GetLastError());
@@ -201,7 +213,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             auto target_ov = std::make_unique<input::EngineInputTarget>();
             target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
             if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
-            if (args.autoStart) target_ov->setStarter();
+            if (args.start.autoStart) target_ov->setStarter();
             auto overlay = std::make_unique<input::OverlayInputProvider>(
                 std::move(replay), std::move(kb), target_ov.get());
             if (!overlay->Initialize()) {
@@ -263,7 +275,7 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         // Starting is reserved for --start / the start controller. The genuine
         // demo path (--connect-demo) keeps ignition ON (it auto-starts and
         // auto-shifts to DRIVE, the historical demo behavior).
-        if (!args.connectDemo && !args.autoStart) {
+        if (!args.connectDemo && !args.start.autoStart) {
             ignition->setOn(false);
         }
 
@@ -275,6 +287,11 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
         );
 
         attachGearboxLogger(*demoProvider, args.gearbox.logPath);
+        // Forward the D1-D3 coupling flags to the demo path (mirrors the
+        // live/replay wiring in TelemetryProviderFactory). Without this the
+        // demo path ignored --coupling-model / --wheel-coupling / --pin-tau-ms
+        // / --effective-throttle / --torque-informed-gearbox.
+        applyTwinCouplingFlags(*demoProvider, args.twin);
 
         // Wire demoProvider as speed enhancer to EngineInputTarget
         target->setSpeedEnhancer(demoProvider.get());
@@ -442,7 +459,13 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // makes --start use the SAME code path as the CSV auto path and the iOS
     // app button — the old path bypassed VSC via EngineInputTarget::setStarter
     // (a one-shot pulse to CrankingController::engageStarter).
-    config.startRequested = args.autoStart;
+    config.startRequested = args.start.autoStart;
+
+    // --starter-delay: starter-then-ignition delay (McLaren mod). Converted to
+    // seconds for the VehicleStartController. 0 = combined start (default).
+    config.startStopCrankDelayS = args.start.starterDelayMs > 0
+        ? static_cast<double>(args.start.starterDelayMs) / 1000.0
+        : input::VehicleStartController::kDefaultCrankDelayS;
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
