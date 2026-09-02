@@ -483,7 +483,7 @@ TEST(ConsolePresentationSteeringTest, SteeringPresent_RendersAngleInConsoleLine)
 
     // v2: steering-wheel glyph (U+1F6DE) identifies the readout; the signed
     // value (one decimal) is present and right-justified to a fixed width.
-    EXPECT_NE(line.find("\xF0\x9F\x9B\xDE"), std::string::npos)
+    EXPECT_NE(line.find("\xF0\x9F\x9B\x9E"), std::string::npos)
         << "steering-wheel glyph missing when the feed carries steering";
     EXPECT_NE(line.find("-12.5"), std::string::npos)
         << "signed steering value not rendered";
@@ -495,7 +495,7 @@ TEST(ConsolePresentationSteeringTest, SteeringPositive_RendersSigned) {
 
     const std::string line = renderStateLine(state);
 
-    EXPECT_NE(line.find("\xF0\x9F\x9B\xDE"), std::string::npos);
+    EXPECT_NE(line.find("\xF0\x9F\x9B\x9E"), std::string::npos);
     EXPECT_NE(line.find("3.9"), std::string::npos);
 }
 
@@ -514,7 +514,7 @@ TEST(ConsolePresentationSteeringTest, SteeringComponent_FixedWidth) {
     const std::string wide   = render(-359.0);
 
     auto componentWidth = [](const std::string& line) -> std::size_t {
-        std::size_t start = line.find("\xF0\x9F\x9B\xDE");
+        std::size_t start = line.find("\xF0\x9F\x9B\x9E");
         if (start == std::string::npos) return 0;
         std::size_t end = line.find(']', start);
         if (end == std::string::npos) return 0;
@@ -549,7 +549,7 @@ TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {
     // Degraded to nothing: no steering readout at all, and the rest of the
     // line renders exactly as before (no behavior change for steering-less
     // feeds — keyboard/demo/non-DBC sources).
-    EXPECT_EQ(line.find("\xF0\x9F\x9B\xDE"), std::string::npos);
+    EXPECT_EQ(line.find("\xF0\x9F\x9B\x9E"), std::string::npos);
     EXPECT_NE(line.find("RPM"), std::string::npos);
     EXPECT_NE(line.find("mph"), std::string::npos);
 }

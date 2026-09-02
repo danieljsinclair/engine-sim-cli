@@ -222,8 +222,10 @@ std::string ConsolePresentation::formatSteeringState(const EngineState& state, s
         std::streamsize savedPrec = out.precision();
 
         // Steering-wheel glyph (U+1F6DE) + owner's braille clock-face sector.
+        // (The v2 escape \xDE was an invalid UTF-8 continuation byte; \x9E is
+        // the correct final byte of the U+1F6DE sequence.)
         const SteeringGauge steeringGauge;
-        out << "[\xF0\x9F\x9B\xDE" << steeringGauge.getSteeringString(static_cast<int>(deg)) << ' '
+        out << "[\xF0\x9F\x9B\x9E" << steeringGauge.getSteeringString(static_cast<int>(deg)) << ' '
             << std::fixed << std::setprecision(1) << std::setw(6) << std::right
             << deg << "] ";
 
