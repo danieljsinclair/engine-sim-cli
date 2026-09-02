@@ -49,12 +49,31 @@ char gearChar(int selector, int physicalGear) {
     return '?';
 }
 
-// "[selector][mode][gear]". Manual mirrors the selector for the gear field
-// (selector == gear); auto derives it from the physical gear via gearChar.
+// Manual mode's third field: a selected gear (1-8) mirrors its digit; P/R/N
+// are engaged transmission states (not gears) and mirror too; DRIVE in manual
+// means NO gear is selected yet — '-' rather than an echoed 'D' that read
+// like a gear ("DMD" was widely misread as gear "D").
+static char manualGearChar(int selector) {
+    using GS = bridge::GearSelector;
+    switch (static_cast<GS>(selector)) {
+        case GS::PARK:    return 'P';
+        case GS::REVERSE: return 'R';
+        case GS::NEUTRAL: return 'N';
+        case GS::DRIVE:   return '-';  // no gear selected in manual
+        default: break;               // FIRST=1 .. EIGHTH=8 render as digits
+    }
+    if (selector >= 1 && selector <= 8) {
+        return static_cast<char>('0' + selector);
+    }
+    return '?';
+}
+
+// "[selector][mode][gear]". Manual shows what the driver has engaged
+// (manualGearChar); auto derives it from the physical gear via gearChar.
 std::string gearTriple(int selector, bool autoMode, int physicalGear) {
     const char field1 = gearSelectorChar(selector);
     const char field2 = autoMode ? 'A' : 'M';
-    const char field3 = autoMode ? gearChar(selector, physicalGear) : gearSelectorChar(selector);
+    const char field3 = autoMode ? gearChar(selector, physicalGear) : manualGearChar(selector);
     return std::string(1, field1) + field2 + field3;
 }
 

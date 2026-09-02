@@ -105,13 +105,22 @@ TEST(GearCharTest, PhysicalOutOfRange_ReturnsQuestion) {
 // ============================================================================
 
 TEST(GearTripleTest, Manual_MirrorsSelectorForGear) {
-    // Manual: selector == gear, so field-3 mirrors field-1.
+    // Manual: a selected gear (1-8) mirrors into field-3; R/N/P are engaged
+    // transmission states, not gears, so they mirror too. DRIVE in manual
+    // means NO gear is selected — field-3 is '-' (an echoed 'D' read like a
+    // gear: "DMD").
     EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::REVERSE), false, 0), "RMR");
     EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::NEUTRAL), false, 0), "NMN");
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::PARK), false, 0), "PMP");
     EXPECT_EQ(presentation::gearTriple(1, false, 1), "1M1");
     EXPECT_EQ(presentation::gearTriple(2, false, 2), "2M2");
     EXPECT_EQ(presentation::gearTriple(3, false, 3), "3M3");
     EXPECT_EQ(presentation::gearTriple(8, false, 8), "8M8");
+}
+
+TEST(GearTripleTest, Manual_DriveWithNoGearSelectedShowsDash) {
+    // The footgun readout: DRIVE selector in manual with no gear chosen.
+    EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::DRIVE), false, 0), "DM-");
 }
 
 TEST(GearTripleTest, Auto_DerivesGearFromPhysics) {
