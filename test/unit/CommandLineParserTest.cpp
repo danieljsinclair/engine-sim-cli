@@ -270,6 +270,33 @@ TEST(CommandLineParserTest, SpanTameAcceptsBothIntervalEnds) {
     EXPECT_FLOAT_EQ(argsOne.audio.spanTame, 1.0f);
 }
 
+// v4 (owner verdict): arrows is the DEFAULT gauge style when the flag is
+// unspecified; braille stays available via an explicit --steering-style.
+TEST(CommandLineParserTest, SteeringStyleDefaultsToArrows) {
+    const char* argv[] = {"engine-sim-cli", "--silent"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.presentation.steeringStyle, "arrows");
+}
+
+TEST(CommandLineParserTest, SteeringStyleParsesExplicitChoice) {
+    const char* argv[] = {"engine-sim-cli", "--steering-style", "braille"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.presentation.steeringStyle, "braille");
+}
+
+// Unknown style names are rejected at parse time (CLI11 IsMember), not
+// silently coerced to the default.
+TEST(CommandLineParserTest, SteeringStyleRejectsUnknownName) {
+    const char* argv[] = {"engine-sim-cli", "--steering-style", "spin"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
+}
+
 // Out-of-range values are rejected at parse time (a typo'd 1.5 or negative
 // must fail the run, not silently clamp) — while a valid value on the same
 // schema parses, so the rejection is about the range, not the flag shape.

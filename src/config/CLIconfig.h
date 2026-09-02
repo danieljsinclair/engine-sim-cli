@@ -99,9 +99,10 @@ struct TwinArgs {
 // Presentation-layer knobs (--steering-style, --csv-out). Grouped so
 // CommandLineArgs stays under the struct-field threshold (S1820).
 struct PresentationArgs {
-    // "braille" (default — 12-position two-cell braille clock face) or
-    // "arrows" (8-way directional arrows, 45 deg sectors).
-    std::string steeringStyle = "braille";
+    // "arrows" (default — 8-way directional arrows, 45 deg sectors; owner
+    // verdict 2026-09-02) or "braille" (12-position two-cell braille clock
+    // face) when explicitly selected.
+    std::string steeringStyle = "arrows";
 
     // Machine-parseable CSV output alongside the console line. Empty = no CSV.
     std::string csvOut;

@@ -212,7 +212,8 @@ std::string ConsolePresentation::formatSpeedState(const EngineState& state, std:
 // 90 deg = 3 o'clock full right; sector fences at 14/44/74/.../344 deg).
 // Every glyph is the same two-cell width (braille blank U+2800 pads empty
 // cells), so the component stays a constant-width block. v4 adds the
-// selectable 8-way arrow variant (--steering-style arrows). Layout:
+// selectable styles: 8-way arrows (default per the owner's verdict) or the
+// braille clock face via --steering-style braille. Layout:
 // "[<gauge> <angle>]" where the angle is right-justified to 6 chars (covers
 // -359.0 .. 359.0) so the line never jitters.
 std::string ConsolePresentation::formatSteeringState(const EngineState& state, std::ostringstream& out) const {

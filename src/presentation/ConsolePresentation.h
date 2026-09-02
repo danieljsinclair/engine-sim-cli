@@ -32,9 +32,10 @@ std::string gearTriple(int selector, bool autoMode, int physicalGear);
 
 class ConsolePresentation final : public IPresentation {
 public:
-    // style selects the steering gauge glyph set (braille clock face is the
-    // default; arrows is the 8-way variant selected by --steering-style).
-    explicit ConsolePresentation(SteeringStyle style = SteeringStyle::Braille);
+    // style selects the steering gauge glyph set (arrows is the default per
+    // the owner's verdict; the braille clock face is selected by
+    // --steering-style braille).
+    explicit ConsolePresentation(SteeringStyle style = SteeringStyle::Arrows);
     ~ConsolePresentation() override;
 
     // Manages console/output state. Copying has no meaningful semantics here and

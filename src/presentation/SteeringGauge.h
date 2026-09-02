@@ -4,8 +4,8 @@
 // (never a \x escape sequence) so the definitions stay human-readable.
 //
 // Two owner-selectable styles share one algorithm:
-//   - SteeringGauge: 12-position two-cell braille clock face (default)
-//   - ArrowGauge:    8-way directional arrows (45 deg sectors)
+//   - ArrowGauge:    8-way directional arrows, 45 deg sectors (default)
+//   - SteeringGauge: 12-position two-cell braille clock face (--steering-style braille)
 // Both use the owner-authored fence-post semantics: normalise the angle into
 // [0, 360) and walk an ordered map of inclusive ceilings - the first entry
 // whose maxDegrees >= the angle wins.

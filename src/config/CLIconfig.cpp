@@ -224,8 +224,8 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--steering-style", args.presentation.steeringStyle,
                    "Steering gauge glyph style for the console readout:\n"
-                   "                       braille - 12-position two-cell braille clock face (DEFAULT)\n"
-                   "                       arrows  - 8-way directional arrows (45 deg sectors)")
+                   "                       arrows  - 8-way directional arrows, 45 deg sectors (DEFAULT)\n"
+                   "                       braille - 12-position two-cell braille clock face")
                    ->capture_default_str()
                    ->check(CLI::IsMember({"braille", "arrows"}));
 
