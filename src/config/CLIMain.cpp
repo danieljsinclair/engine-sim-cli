@@ -355,7 +355,15 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.assetBasePath = "";
 
     // Resolve CLI args (0-sentinel pattern: use named constants from EngineSimDefaults if arg is 0)
-    config.interactive = false;
+    // --interactive (explicit flag, or the no---duration default) means an
+    // open-ended run that only ends on user quit — never a duration cap. The
+    // parsed args.interactive already encodes both cases (CLIconfig.cpp defaults
+    // it true when no --duration is given), so propagate it here rather than
+    // hardcoding false: the old hardcode made --interactive on the command line
+    // a no-op, so the run still hit the 3s default and printed "30s duration
+    // reached (use --interactive for open-ended...)" — the hint firing while
+    // the flag was present.
+    config.interactive = args.interactive;
     config.playAudio = args.playAudio;
     // Duration semantics: interactive mode and both telemetry variants
     // (--live-telemetry stdin CSV, --replay-telemetry file CSV) are driven by
