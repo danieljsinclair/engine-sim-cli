@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "presentation/ConsolePresentation.h"
+#include "presentation/SteeringGauge.h"
 #include "simulator/GearConventions.h"
 #include "config/ANSIColors.h"
 #include "io/IPresentation.h"
@@ -525,13 +526,19 @@ TEST(ConsolePresentationSteeringTest, SteeringComponent_FixedWidth) {
         << narrow << "\" wide=\"" << wide << "\")";
 }
 
-// v2: 8-way direction arrow. Dead center (0) must render the up-arrow glyph.
-TEST(ConsolePresentationSteeringTest, SteeringCenter_RendersUpArrow) {
+// v3 (owner design): braille clock face. Dead center (0) must render the
+// 12-o'clock TDC glyph, and full-right (90) the 3-o'clock glyph.
+TEST(ConsolePresentationSteeringTest, SteeringCenter_RendersTdcGlyph) {
     EngineState state = makeState();
     state.controls.steeringAngleDeg = 0.0;
     const std::string line = renderStateLine(state);
-    EXPECT_NE(line.find("\xE2\x86\x91"), std::string::npos)
-        << "dead-center steering must render up-arrow (U+2191)";
+    EXPECT_NE(line.find(presentation::SteeringGauge::GLYPH_12), std::string::npos)
+        << "dead-center steering must render the 12-o'clock TDC braille glyph";
+
+    state.controls.steeringAngleDeg = 90.0;
+    const std::string right = renderStateLine(state);
+    EXPECT_NE(right.find(presentation::SteeringGauge::GLYPH_3), std::string::npos)
+        << "full-right steering must render the 3-o'clock braille glyph";
 }
 
 TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {
