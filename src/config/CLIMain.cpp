@@ -444,6 +444,12 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // (a one-shot pulse to CrankingController::engageStarter).
     config.startRequested = args.autoStart;
 
+    // --starter-delay: starter-then-ignition delay (McLaren mod). Converted to
+    // seconds for the VehicleStartController. 0 = combined start (default).
+    config.startStopCrankDelayS = args.starterDelayMs > 0
+        ? static_cast<double>(args.starterDelayMs) / 1000.0
+        : input::VehicleStartController::kDefaultCrankDelayS;
+
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
     config.simulatorLabel = ANSIColors::CYAN + name + ANSIColors::RESET;

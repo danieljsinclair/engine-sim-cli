@@ -104,6 +104,7 @@ struct CommandLineArgs {
     bool deterministic = false;  // --deterministic: headless fixed-timestep replay (gate/diagnosis)
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
     bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
+    int starterDelayMs = 0;      // --starter-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start (default)
 
     ReplayArgs replay;
     GearboxArgs gearbox;
