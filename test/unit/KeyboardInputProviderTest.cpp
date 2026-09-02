@@ -168,8 +168,13 @@ TEST_F(KeyboardInputProviderTest, IKey_RequestsIgnitionToggle) {
     ASSERT_TRUE(input.ignitionRequest.has_value());
     EXPECT_FALSE(input.ignitionRequest.value());
 
-    // Second 'i' (enqueued after the first tick consumed the first) requests
-    // ON again.
+    // KeyHoldBridge deduplicates: a second 'i' while the key is still "down"
+    // is seen as a repeat, not a fresh press. Let the key time out (250ms
+    // INITIAL_TIMEOUT_MS; tick dt is 16ms) so the next 'i' is a fresh edge.
+    for (int i = 0; i < 20; i++) { tick(); }
+    ASSERT_FALSE(rawMock_->hasKeys());
+
+    // Second 'i' (after timeout) requests ON again.
     rawMock_->enqueue('i');
     EngineInput input2 = tick();
     ASSERT_TRUE(input2.ignitionRequest.has_value());
