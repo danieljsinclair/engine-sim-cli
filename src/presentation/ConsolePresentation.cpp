@@ -90,10 +90,10 @@ std::string ConsolePresentation::formatSimulatorState(const EngineState& state) 
     formatRPM(state, out);
     formatStarterState(state, out);
     formatNameState(state, out);
+    formatSteeringState(state, out);
     formatPedalState(state, out);
     formatGearState(state, out);
     formatSpeedState(state, out);
-    formatSteeringState(state, out);
     formatTargetSpeedState(state, out);
     formatTorqueState(state, out);
     formatDynoState(state, out);
@@ -204,9 +204,57 @@ std::string ConsolePresentation::formatSpeedState(const EngineState& state, std:
 // Steering wheel angle (signed, one decimal). Absent when the telemetry feed
 // carries no steering (keyboard/demo/non-DBC sources) — the console degrades
 // to nothing rather than printing a fake zero.
+//
+// v2: glyph + 8-way direction arrow, fixed-width numeric so the line never
+// jitters. Layout: "[<glyph><arrow> <angle>]" where angle is right-justified
+// to 4 chars (covers -359.0 .. 359.0). The whole component is a constant
+// byte-width block regardless of angle.
+//
+// 8-way arrow mapping (dead-band around 0 maps to up-arrow per spec):
+//   (-22.5, +22.5)        → ↑  (U+2191)   dead center
+//   (22.5, 67.5)          → ↗  (U+2197)   up-right
+//   (67.5, 112.5)         → →  (U+2192)   right
+//   (112.5, 157.5)        → ↘  (U+2198)   down-right
+//   (157.5, 180] & [-180, -157.5) → ↓ (U+2193) down
+//   (-157.5, -112.5)      → ↙  (U+2199)   down-left
+//   (-112.5, -67.5)       → ←  (U+2190)   left
+//   (-67.5, -22.5)        → ↖  (U+2196)   up-left
+namespace {
+    const char* steeringArrow(double deg) {
+        // Normalize to [-180, 180).
+        double a = std::fmod(deg, 360.0);
+        if (a < -180.0) a += 360.0;
+        else if (a >= 180.0) a -= 360.0;
+
+        // Octant boundaries at 22.5, 67.5, 112.5, 157.5 and their negatives.
+        if (a > -22.5 && a <= 22.5)  return "\xE2\x86\x91"; // ↑ U+2191
+        if (a > 22.5 && a <= 67.5)   return "\xE2\x86\x97"; // ↗ U+2197
+        if (a > 67.5 && a <= 112.5)  return "\xE2\x86\x92"; // → U+2192
+        if (a > 112.5 && a <= 157.5) return "\xE2\x86\x98"; // ↘ U+2198
+        if (a > 157.5 || a <= -157.5) return "\xE2\x86\x93"; // ↓ U+2193
+        if (a > -157.5 && a <= -112.5) return "\xE2\x86\x99"; // ↙ U+2199
+        if (a > -112.5 && a <= -67.5)  return "\xE2\x86\x90"; // ← U+2190
+        /* (-67.5, -22.5) */          return "\xE2\x86\x96"; // ↖ U+2196
+    }
+}
+
 std::string ConsolePresentation::formatSteeringState(const EngineState& state, std::ostringstream& out) const {
     if (state.controls.steeringAngleDeg.has_value()) {
-        out << "[Str: " << std::fixed << std::setprecision(1) << *state.controls.steeringAngleDeg << "] ";
+        const double deg = *state.controls.steeringAngleDeg;
+
+        // Save stream format state so we don't corrupt downstream components.
+        std::ios_base::fmtflags savedFlags = out.flags();
+        std::streamsize savedPrec = out.precision();
+
+        // Steering-wheel glyph (U+1F6DE). Single-width fallback U+25CD if the
+        // owner reports column drift; we use the emoji here per spec.
+        out << "[\xF0\x9F\x9B\xDE" << steeringArrow(deg) << ' '
+            << std::fixed << std::setprecision(1) << std::setw(6) << std::right
+            << deg << "] ";
+
+        // Restore stream format state for the next component.
+        out.flags(savedFlags);
+        out.precision(savedPrec);
     }
     return out.str();
 }

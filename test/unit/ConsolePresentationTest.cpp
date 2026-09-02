@@ -480,9 +480,10 @@ TEST(ConsolePresentationSteeringTest, SteeringPresent_RendersAngleInConsoleLine)
 
     const std::string line = renderStateLine(state);
 
-    // The readout is identifiable and carries the signed value (one decimal).
-    EXPECT_NE(line.find("Str:"), std::string::npos)
-        << "steering readout missing when the feed carries steering";
+    // v2: steering-wheel glyph (U+1F6DE) identifies the readout; the signed
+    // value (one decimal) is present and right-justified to a fixed width.
+    EXPECT_NE(line.find("\xF0\x9F\x9B\xDE"), std::string::npos)
+        << "steering-wheel glyph missing when the feed carries steering";
     EXPECT_NE(line.find("-12.5"), std::string::npos)
         << "signed steering value not rendered";
 }
@@ -493,8 +494,44 @@ TEST(ConsolePresentationSteeringTest, SteeringPositive_RendersSigned) {
 
     const std::string line = renderStateLine(state);
 
-    EXPECT_NE(line.find("Str:"), std::string::npos);
+    EXPECT_NE(line.find("\xF0\x9F\x9B\xDE"), std::string::npos);
     EXPECT_NE(line.find("3.9"), std::string::npos);
+}
+
+// v2: the steering component must occupy the same byte-width regardless of
+// angle, so the rest of the telemetry line never jitters. We render at a
+// wide and a narrow angle and assert the component substring is identical
+// length. Component runs from the steering-wheel glyph to the closing ']'.
+TEST(ConsolePresentationSteeringTest, SteeringComponent_FixedWidth) {
+    auto render = [](double deg) {
+        EngineState s = makeState();
+        s.controls.steeringAngleDeg = deg;
+        return renderStateLine(s);
+    };
+
+    const std::string narrow = render(0.0);
+    const std::string wide   = render(-359.0);
+
+    auto componentWidth = [](const std::string& line) -> std::size_t {
+        std::size_t start = line.find("\xF0\x9F\x9B\xDE");
+        if (start == std::string::npos) return 0;
+        std::size_t end = line.find(']', start);
+        if (end == std::string::npos) return 0;
+        return end - start + 1; // include the closing ']'
+    };
+
+    EXPECT_EQ(componentWidth(narrow), componentWidth(wide))
+        << "steering component width must not vary with angle (narrow=\""
+        << narrow << "\" wide=\"" << wide << "\")";
+}
+
+// v2: 8-way direction arrow. Dead center (0) must render the up-arrow glyph.
+TEST(ConsolePresentationSteeringTest, SteeringCenter_RendersUpArrow) {
+    EngineState state = makeState();
+    state.controls.steeringAngleDeg = 0.0;
+    const std::string line = renderStateLine(state);
+    EXPECT_NE(line.find("\xE2\x86\x91"), std::string::npos)
+        << "dead-center steering must render up-arrow (U+2191)";
 }
 
 TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {
@@ -505,7 +542,7 @@ TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {
     // Degraded to nothing: no steering readout at all, and the rest of the
     // line renders exactly as before (no behavior change for steering-less
     // feeds — keyboard/demo/non-DBC sources).
-    EXPECT_EQ(line.find("Str:"), std::string::npos);
+    EXPECT_EQ(line.find("\xF0\x9F\x9B\xDE"), std::string::npos);
     EXPECT_NE(line.find("RPM"), std::string::npos);
     EXPECT_NE(line.find("mph"), std::string::npos);
 }
