@@ -106,6 +106,57 @@ TEST(CommandLineParserTest, AutoFlagWithConnectDemo) {
     EXPECT_TRUE(args.connectDemo);
 }
 
+// Replay telemetry defaults the gearbox to AUTO: a replay CSV carries only a
+// PRND selector (no +/- gear channel), so a manual replay can never select a
+// gear and free-revs stationary. Opt back in with --manual or --interactive.
+TEST(CommandLineParserTest, ReplayTelemetryDefaultsToAutoGearbox) {
+    const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.gearbox.automatic);
+    EXPECT_FALSE(args.gearbox.manual);
+}
+
+TEST(CommandLineParserTest, ReplayTelemetryManualOptOut) {
+    const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv", "--manual"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_TRUE(args.gearbox.manual);
+}
+
+TEST(CommandLineParserTest, ReplayTelemetryInteractiveKeepsManualDefault) {
+    // --interactive is deliberate keyboard control (the [ / ] overlay), so the
+    // replay default must NOT flip the gearbox to auto behind the user's back.
+    const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv", "--interactive"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_FALSE(args.gearbox.manual);
+}
+
+TEST(CommandLineParserTest, ReplayTelemetryExplicitAutoIsIdempotent) {
+    const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv", "--auto"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.gearbox.automatic);
+}
+
+TEST(CommandLineParserTest, LiveTelemetryGearboxModeUnchangedByReplayDefault) {
+    // Live has no manual gearbox mode at all (the twin is always telemetry-
+    // driven), so the replay-defaults-to-auto flip must not touch live runs.
+    const char* argv[] = {"engine-sim-cli", "--live-telemetry"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_FALSE(args.gearbox.manual);
+}
+
 // --live-telemetry: read live CSV from stdin (vehicle-sim --stdout-csv piped in).
 // Live and recorded replay share the same stdin CSV contract, so they are
 // distinct input sources and must not be combined with each other or with the
