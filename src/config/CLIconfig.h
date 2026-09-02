@@ -104,11 +104,17 @@ struct CommandLineArgs {
     bool deterministic = false;  // --deterministic: headless fixed-timestep replay (gate/diagnosis)
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
     bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
-    int starterDelayMs = 0;      // --starter-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start (default)
+
+    // Start-control knobs (--start / --starter-delay). Grouped so
+    // CommandLineArgs stays under the struct-field threshold (S1820).
+    struct StartArgs {
+        int starterDelayMs = 0;  // --starter-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start
+    };
 
     ReplayArgs replay;
     GearboxArgs gearbox;
     AudioTimingArgs audio;
+    StartArgs start;
 
     // --live-telemetry + the twin coupling/torque knobs (see TwinArgs).
     TwinArgs twin;
