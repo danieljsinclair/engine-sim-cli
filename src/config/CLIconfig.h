@@ -89,12 +89,15 @@ struct TwinArgs {
     bool torqueInformedGearbox = false;
 };
 
-// Presentation-layer knobs (--steering-style). Grouped so CommandLineArgs
-// stays under the struct-field threshold (S1820).
+// Presentation-layer knobs (--steering-style, --csv-out). Grouped so
+// CommandLineArgs stays under the struct-field threshold (S1820).
 struct PresentationArgs {
     // "braille" (default — 12-position two-cell braille clock face) or
     // "arrows" (8-way directional arrows, 45 deg sectors).
     std::string steeringStyle = "braille";
+
+    // Machine-parseable CSV output alongside the console line. Empty = no CSV.
+    std::string csvOut;
 };
 
 struct CommandLineArgs {
@@ -134,11 +137,6 @@ struct CommandLineArgs {
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
 
-    // Machine-parseable CSV output alongside the console line. One row per frame
-    // with all per-frame fields (timecode, rpm, gas, gear, clutch%, roadImplied,
-    // relief, torques, state). Empty = no CSV. For automated smoke-tests /
-    // lug-stall spelunking without grepping color-coded console text.
-    std::string csvOut;
 
     // Output-stage span taming amount (--span-tame), [0.0, 1.0]. The runtime
     // tuning knob for the synthesizer output-stage tamer (soft-knee compressor

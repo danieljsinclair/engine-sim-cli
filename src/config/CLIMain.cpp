@@ -427,7 +427,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
-    config.csvOutPath = args.csvOut;
+    config.csvOutPath = args.presentation.csvOut;
 
     // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
     // simulationFrequency: 0 means "use engine's built-in frequency" (piston engines get it from
