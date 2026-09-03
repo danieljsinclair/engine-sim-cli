@@ -290,6 +290,20 @@ std::string generateTimestampedFilename(const std::string& prefix,
     return prefix + buf + extension;
 }
 
+// Replay telemetry defaults the gearbox to AUTO unless the user explicitly
+// opted into manual control (--manual, or --interactive for the keyboard
+// overlay). A replay CSV carries only a PRND selector — there is no +/-
+// gear channel — so a manual replay can never select a gear and sits
+// stationary free-revving ("DM-", 0 mph, engine unloaded). The live path
+// is untouched: LiveTelemetryProvider has no manual gearbox mode to flip.
+// (Owner ruling 2026-09-03: replay must self-drive by default.)
+void resolveReplayGearboxDefault(CommandLineArgs& args) {
+    const bool replayWithoutAuto = !args.replay.telemetryPath.empty() && !args.gearbox.automatic;
+    if (replayWithoutAuto && !args.gearbox.manual && !args.interactiveExplicit) {
+        args.gearbox.automatic = true;
+    }
+}
+
 }  // namespace
 
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag, bool interactiveExplicit) {
@@ -325,17 +339,7 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     }
     args.interactiveExplicit = interactiveExplicit;
 
-    // Replay telemetry defaults the gearbox to AUTO unless the user explicitly
-    // opted into manual control (--manual, or --interactive for the keyboard
-    // overlay). A replay CSV carries only a PRND selector — there is no +/-
-    // gear channel — so a manual replay can never select a gear and sits
-    // stationary free-revving ("DM-", 0 mph, engine unloaded). The live path
-    // is untouched: LiveTelemetryProvider has no manual gearbox mode to flip.
-    // (Owner ruling 2026-09-03: replay must self-drive by default.)
-    const bool manualReplayOptOut = args.gearbox.manual || args.interactiveExplicit;
-    if (!args.replay.telemetryPath.empty() && !args.gearbox.automatic && !manualReplayOptOut) {
-        args.gearbox.automatic = true;
-    }
+    resolveReplayGearboxDefault(args);
 
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {

@@ -25,12 +25,15 @@
 class CommandLineArgs;
 class ILogging;
 
-namespace {
+// Named detail namespace (S1000): pure parse/validate helpers shared by the
+// coupling-flag template below. inline keeps them ODR-safe across TUs now
+// they no longer have internal linkage.
+namespace telemetry_detail {
 
 // --wheel-coupling: free / pin / torque. Fail-fast on anything else rather
 // than silently falling back to FREE (a typo'd mode must never quietly
 // re-couple the twin).
-twin::WheelCouplingMode parseWheelCouplingMode(const std::string& mode) {
+inline twin::WheelCouplingMode parseWheelCouplingMode(const std::string& mode) {
     if (mode == "free") return twin::WheelCouplingMode::Free;
     if (mode == "pin") return twin::WheelCouplingMode::Pin;
     if (mode == "torque") return twin::WheelCouplingMode::Torque;
@@ -40,7 +43,7 @@ twin::WheelCouplingMode parseWheelCouplingMode(const std::string& mode) {
 // --coupling-model: clutch-map (smooth governor fallback) / torque-converter
 // (default) / legacy (historical bang-bang relief, kept for A/B). Fail-fast
 // on a typo, mirroring --wheel-coupling.
-twin::CouplingModelKind parseCouplingModel(const std::string& model) {
+inline twin::CouplingModelKind parseCouplingModel(const std::string& model) {
     if (model == "clutch-map") return twin::CouplingModelKind::ClutchMap;
     if (model == "torque-converter") return twin::CouplingModelKind::TorqueConverter;
     if (model == "legacy") return twin::CouplingModelKind::Legacy;
@@ -50,14 +53,14 @@ twin::CouplingModelKind parseCouplingModel(const std::string& model) {
 
 // --pin-tau-ms: negative is a typo'd flag value — fail fast rather than
 // silently running rigid.
-double validatedPinTauMs(double tauMs) {
+inline double validatedPinTauMs(double tauMs) {
     if (tauMs < 0.0) {
         throw CliException("--pin-tau-ms must be >= 0 (0 = rigid pin), got: " + std::to_string(tauMs));
     }
     return tauMs;
 }
 
-}  // namespace
+}  // namespace telemetry_detail
 
 // Apply the shared twin coupling flags to a coupling-bearing provider, in the
 // historical order (coupling mode, coupling model, tau, torque toggles).
@@ -67,9 +70,9 @@ double validatedPinTauMs(double tauMs) {
 // identical to never-set), so the default path stays byte-identical.
 template <typename Provider>
 void applyTwinCouplingFlags(Provider& provider, const TwinArgs& twin) {
-    provider.setWheelCouplingMode(parseWheelCouplingMode(twin.wheelCoupling));
-    provider.setCouplingModel(parseCouplingModel(twin.couplingModel));
-    provider.setPinTauMs(validatedPinTauMs(twin.pinTauMs));
+    provider.setWheelCouplingMode(telemetry_detail::parseWheelCouplingMode(twin.wheelCoupling));
+    provider.setCouplingModel(telemetry_detail::parseCouplingModel(twin.couplingModel));
+    provider.setPinTauMs(telemetry_detail::validatedPinTauMs(twin.pinTauMs));
     twin::EffectiveThrottleConfig effectiveThrottle;
     effectiveThrottle.enabled = twin.effectiveThrottle;
     provider.setEffectiveThrottleConfig(effectiveThrottle);
