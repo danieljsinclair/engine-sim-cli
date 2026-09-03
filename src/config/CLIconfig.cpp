@@ -37,6 +37,8 @@ void printUsage(const char* progName) {
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --deterministic      Headless fixed-timestep replay: reproducible per-frame output (gate/diagnosis mode)\n";
+    std::cout << "  --verbose            Show DEBUG-level console logging (startup discards, sync-pull buffer fills)\n";
+    std::cout << "  --starter-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
@@ -101,13 +103,22 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    app.add_option("--starter-delay", args.start.starterDelayMs,
-        "Starter-then-ignition delay in ms (McLaren mod: crank BEFORE ignition). "
-        "0 = combined start (DEFAULT; starter+ignition together). "
-        "A positive value engages the starter, then fires ignition after N ms — "
-        "the user can elongate cranking for as long as they want by also holding "
-        "the 'S' key. Per-engine .mr starter_torque/speed still apply.")
+    auto starterDelayOpt = app.add_option("--starter-delay", args.start.starterDelayMs,
+        "Starter-then-ignition delay in MILLISECONDS (true ms scale, linear: "
+        "1000 = one second of cranking before ignition; max 10000 = 10 s). "
+        "0 = zero-delay combined start (starter+ignition together). "
+        "ABSENT = 500 ms default. Only applies to brake-held starts; a gear "
+        "start ignites instantly, and selecting a drive gear mid-crank fires "
+        "ignition immediately (safety fast-forward — truncates the delay). "
+        "Per-engine .mr starter_torque/speed still apply.")
         ->check(CLI::Range(0, 10000));
+    // Explicitness is tracked separately: the VALUE 0 is meaningful (combined
+    // start) and must not fall back to the 500 ms default — only an ABSENT
+    // flag does.
+    starterDelayOpt->each([&args](const std::string&) {
+        args.start.starterDelayExplicit = true;
+        return std::string();
+    });
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
     app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss); file replay skips there instantly — rows before the offset are never simulated (arrival state is synthesized at the offset)");
@@ -209,6 +220,9 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "mode for gate runs and diagnosis. Implies --silent audio behavior.");
     // Headless mode has no audio strategy choice and no speakers.
     deterministicOpt->excludes(threadedOpt);
+    app.add_flag("--verbose", args.output.verbose,
+        "Enable DEBUG-level console logging (startup zero-drain discards, "
+        "sync-pull buffer fills). Default output is INFO+ only.");
     app.add_option("--gearbox-log", args.gearbox.logPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
     auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox");
@@ -275,12 +289,12 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) {
         args.playAudio = true;
-        args.silent = true;
+        args.output.silent = true;
     }
     if (args.deterministic) {
         // Headless: zero volume by construction (no audio output exists), and
         // the deterministic strategy replaces the sync-pull/threaded choice.
-        args.silent = true;
+        args.output.silent = true;
     }
 
     // Default to interactive mode unless --duration is given. This is the

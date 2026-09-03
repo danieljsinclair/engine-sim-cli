@@ -24,7 +24,7 @@ TEST(CommandLineParserTest, ParsesOptionsAndTranslatesLoad) {
     EXPECT_EQ(args.engineConfig, "v8_engine.mr");
     EXPECT_EQ(args.outputWav, "output.wav");
     EXPECT_DOUBLE_EQ(args.targetLoad, 0.5);
-    EXPECT_TRUE(args.silent);
+    EXPECT_TRUE(args.output.silent);
     EXPECT_TRUE(args.playAudio);
     EXPECT_FALSE(args.syncPull);
 }
@@ -328,4 +328,76 @@ TEST(CommandLineParserTest, SpanTameRejectsBelowRange) {
     const char* argv[] = {"engine-sim-cli", "--span-tame", "-0.1"};
     CommandLineArgs args;
     EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
+}
+
+// ===========================================================================
+// --starter-delay scale (owner 2026-09-03: "0 seems to take 30 cranking
+// steps, 0-100 behave identically, at 1000 about a second longer, 10000
+// about 4s" — the scale must be honest milliseconds and 0 must be a
+// MEANINGFUL zero, not a silent fallback to the controller default).
+// ===========================================================================
+
+TEST(CommandLineParserTest, StarterDelayZeroIsExplicit) {
+    // --starter-delay 0 is the documented zero-delay combined start: the flag
+    // APPEARED, so it must be recorded as explicit (0 is a value, not "unset").
+    const char* argv[] = {"engine-sim-cli", "--starter-delay", "0"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.start.starterDelayMs, 0);
+    EXPECT_TRUE(args.start.starterDelayExplicit);
+}
+
+TEST(CommandLineParserTest, StarterDelayAbsentIsNotExplicit) {
+    // No flag: not explicit — the controller default applies downstream.
+    const char* argv[] = {"engine-sim-cli", "--silent"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.start.starterDelayExplicit);
+}
+
+TEST(CommandLineParserTest, StarterDelayValueParsesMilliseconds) {
+    const char* argv[] = {"engine-sim-cli", "--starter-delay", "1000"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.start.starterDelayMs, 1000);
+    EXPECT_TRUE(args.start.starterDelayExplicit);
+}
+
+// The conversion seam: ms->s at exactly the parsed value when explicit
+// (INCLUDING zero), default only when the flag was absent.
+TEST(CommandLineParserTest, ResolveCrankDelay_ExplicitZeroIsZeroSeconds) {
+    EXPECT_DOUBLE_EQ(resolveCrankDelayS(0, true, 0.5), 0.0);
+}
+
+TEST(CommandLineParserTest, ResolveCrankDelay_AbsentFallsBackToDefault) {
+    EXPECT_DOUBLE_EQ(resolveCrankDelayS(0, false, 0.5), 0.5);
+}
+
+TEST(CommandLineParserTest, ResolveCrankDelay_ExplicitMsConvertsToSeconds) {
+    EXPECT_DOUBLE_EQ(resolveCrankDelayS(10000, true, 0.5), 10.0);
+    EXPECT_DOUBLE_EQ(resolveCrankDelayS(1000, true, 0.5), 1.0);
+}
+
+// ===========================================================================
+// --verbose (owner 2026-09-03: default output must not carry [DEBUG] lines;
+// the SyncPullStrategy startup diagnostics stay available behind the flag).
+// ===========================================================================
+
+TEST(CommandLineParserTest, VerboseFlagParsesTrue) {
+    const char* argv[] = {"engine-sim-cli", "--verbose"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.output.verbose);
+}
+
+TEST(CommandLineParserTest, VerboseDefaultsToFalse) {
+    const char* argv[] = {"engine-sim-cli", "--silent"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.output.verbose);
 }
