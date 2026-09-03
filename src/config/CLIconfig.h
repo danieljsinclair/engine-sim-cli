@@ -27,8 +27,9 @@ struct ReplayArgs {
 
 // Gearbox mode and logging (--auto / --manual / --gearbox-log).
 struct GearboxArgs {
-    bool automatic = false;          // Automatic gearbox (--auto flag), default is manual
-    bool manual = false;             // Explicit --manual flag (manual is already the default)
+    bool automatic = false;          // Automatic gearbox. Default EXCEPT --replay-telemetry,
+                                     // which resolves to auto in processArgs (PRND-only CSV).
+    bool manual = false;             // Explicit --manual flag (opts replay out of the auto default)
     std::string logPath;             // Empty = no gearbox logging, path = enable CSV logging
 };
 

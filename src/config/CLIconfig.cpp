@@ -31,8 +31,9 @@ void printUsage(const char* progName) {
                  "                       window from the start point (same as --end-at start+N)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --connect-demo       Run VirtualICE twin demo (gearbox mode per --auto/--manual)\n";
-    std::cout << "  --auto               Use automatic gearbox (default in --connect-demo is manual)\n";
-    std::cout << "  --manual             Use manual gearbox (default)\n";
+    std::cout << "  --auto               Use automatic gearbox (default for --replay-telemetry: a\n"
+                 "                       PRND-only CSV cannot shift a manual box)\n";
+    std::cout << "  --manual             Use manual gearbox (default except --replay-telemetry)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
@@ -225,8 +226,8 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "sync-pull buffer fills). Default output is INFO+ only.");
     app.add_option("--gearbox-log", args.gearbox.logPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
-    auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox");
-    auto manualFlag = app.add_flag("--manual", args.gearbox.manual, "Use manual gearbox (default)");
+    auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox (default for --replay-telemetry)");
+    auto manualFlag = app.add_flag("--manual", args.gearbox.manual, "Use manual gearbox (default except --replay-telemetry)");
     autoFlag->excludes(manualFlag);
 
     app.add_flag("--diagnostic-frames", args.diagnostics.frames,
@@ -323,6 +324,18 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         args.interactive = true;
     }
     args.interactiveExplicit = interactiveExplicit;
+
+    // Replay telemetry defaults the gearbox to AUTO unless the user explicitly
+    // opted into manual control (--manual, or --interactive for the keyboard
+    // overlay). A replay CSV carries only a PRND selector — there is no +/-
+    // gear channel — so a manual replay can never select a gear and sits
+    // stationary free-revving ("DM-", 0 mph, engine unloaded). The live path
+    // is untouched: LiveTelemetryProvider has no manual gearbox mode to flip.
+    // (Owner ruling 2026-09-03: replay must self-drive by default.)
+    const bool manualReplayOptOut = args.gearbox.manual || args.interactiveExplicit;
+    if (!args.replay.telemetryPath.empty() && !args.gearbox.automatic && !manualReplayOptOut) {
+        args.gearbox.automatic = true;
+    }
 
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
