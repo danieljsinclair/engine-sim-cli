@@ -89,6 +89,16 @@ struct TwinArgs {
     bool torqueInformedGearbox = false;
 };
 
+// Resolve the VehicleStartController crank delay (seconds) from the parsed
+// start args. An EXPLICIT --starter-delay converts ms->s verbatim (0 is a
+// meaningful zero-delay combined start); only an ABSENT flag falls back to the
+// controller default. Pure so the CLI conversion is unit-testable.
+inline double resolveCrankDelayS(int starterDelayMs, bool explicitMs, double defaultS) {
+    return explicitMs
+        ? static_cast<double>(starterDelayMs) / 1000.0
+        : defaultS;
+}
+
 struct CommandLineArgs {
     std::string engineConfig;
     std::string outputWav;
@@ -100,7 +110,6 @@ struct CommandLineArgs {
     bool connectDemo = false;      // Run VirtualICE twin demo with automatic gearbox
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
-    bool silent = false;         // Run full audio pipeline but with zero volume
     bool deterministic = false;  // --deterministic: headless fixed-timestep replay (gate/diagnosis)
     float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
 
@@ -108,11 +117,24 @@ struct CommandLineArgs {
     GearboxArgs gearbox;
     AudioTimingArgs audio;
 
+    // Output-shaping controls (--silent / --verbose). Grouped so
+    // CommandLineArgs stays under the struct-field threshold (S1820),
+    // mirroring StartArgs below.
+    struct OutputArgs {
+        bool silent = false;   // --silent: run full audio pipeline at zero volume
+        bool verbose = false;  // --verbose: enable DEBUG-level logging (default output is INFO+)
+    };
+    OutputArgs output;
+
     // Start-control knobs (--start / --starter-delay). Grouped so
     // CommandLineArgs stays under the struct-field threshold (S1820).
     struct StartArgs {
         bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
         int starterDelayMs = 0;      // --starter-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start
+        // True only when --starter-delay appeared on the command line. The
+        // value 0 is MEANINGFUL (zero-delay combined start) and must not fall
+        // back to the controller default — only an ABSENT flag does.
+        bool starterDelayExplicit = false;
     };
     StartArgs start;
 

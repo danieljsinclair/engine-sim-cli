@@ -417,7 +417,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
             ? 0.0
             : EngineSimDefaults::DEFAULT_DURATION_SECONDS;
     config.duration = args.duration > 0.0 ? args.duration : defaultDuration;
-    config.volume = args.silent ? 0.0f : config.volume;
+    config.volume = args.output.silent ? 0.0f : config.volume;
     config.syncPull = args.syncPull != config.syncPull ? args.syncPull : config.syncPull;
     config.deterministic = args.deterministic;
     config.deterministicTickLock = args.deterministic;
@@ -461,11 +461,13 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // (a one-shot pulse to CrankingController::engageStarter).
     config.startRequested = args.start.autoStart;
 
-    // --starter-delay: starter-then-ignition delay (McLaren mod). Converted to
-    // seconds for the VehicleStartController. 0 = combined start (default).
-    config.startStopCrankDelayS = args.start.starterDelayMs > 0
-        ? static_cast<double>(args.start.starterDelayMs) / 1000.0
-        : input::VehicleStartController::kDefaultCrankDelayS;
+    // --starter-delay: starter-then-ignition delay (McLaren mod), true
+    // milliseconds. An EXPLICIT value converts verbatim (0 = zero-delay
+    // combined start — a real setting, not the default); only an ABSENT flag
+    // falls back to the controller default.
+    config.startStopCrankDelayS = resolveCrankDelayS(
+        args.start.starterDelayMs, args.start.starterDelayExplicit,
+        input::VehicleStartController::kDefaultCrankDelayS);
 
     // Color the simulator label for CLI output
     std::string name = config.configPath.empty() ? "[DEFAULT]" : config.configPath;
@@ -560,6 +562,9 @@ int main(int argc, char* argv[]) {
 
     if (CommandLineArgs args; parseArguments(argc, argv, args)) {
         try {
+        // Default console output is INFO+ (the SyncPullStrategy startup
+        // diagnostics are DBG and stay silent); --verbose re-enables them.
+        cliLogger->setMask(LogMask::runMask(args.output.verbose));
         SimulationConfig config = CreateSimulationConfig(args);
         ShowConfigHeader(config, ISimulator::getVersion());
 
