@@ -3,6 +3,7 @@
 // SRP: Single responsibility - formats and outputs EngineState to console
 
 #include "ConsolePresentation.h"
+#include "SteeringGauge.h"
 #include "simulator/GearConventions.h"
 
 #include <cmath>
@@ -58,7 +59,8 @@ std::string gearTriple(int selector, bool autoMode, int physicalGear) {
     return std::string(1, field1) + field2 + field3;
 }
 
-ConsolePresentation::ConsolePresentation() = default;
+ConsolePresentation::ConsolePresentation(SteeringStyle style)
+    : steeringGauge_(makeSteeringGauge(style)) {}
 
 ConsolePresentation::~ConsolePresentation() {
     Shutdown();
@@ -90,10 +92,10 @@ std::string ConsolePresentation::formatSimulatorState(const EngineState& state) 
     formatRPM(state, out);
     formatStarterState(state, out);
     formatNameState(state, out);
+    formatSteeringState(state, out);
     formatPedalState(state, out);
     formatGearState(state, out);
     formatSpeedState(state, out);
-    formatSteeringState(state, out);
     formatTargetSpeedState(state, out);
     formatTorqueState(state, out);
     formatDynoState(state, out);
@@ -204,9 +206,35 @@ std::string ConsolePresentation::formatSpeedState(const EngineState& state, std:
 // Steering wheel angle (signed, one decimal). Absent when the telemetry feed
 // carries no steering (keyboard/demo/non-DBC sources) — the console degrades
 // to nothing rather than printing a fake zero.
+//
+// v3 (owner design): the direction is the owner-authored SteeringGauge — a
+// 12-position clock face of two-cell braille glyphs (0 deg = 12 o'clock,
+// 90 deg = 3 o'clock full right; sector fences at 14/44/74/.../344 deg).
+// Every glyph is the same two-cell width (braille blank U+2800 pads empty
+// cells), so the component stays a constant-width block. v4 adds the
+// selectable styles: 8-way arrows (default per the owner's verdict) or the
+// braille clock face via --steering-style braille. Layout:
+// "[<gauge> <angle>]" where the angle is right-justified to 6 chars (covers
+// -359.0 .. 359.0) so the line never jitters.
 std::string ConsolePresentation::formatSteeringState(const EngineState& state, std::ostringstream& out) const {
     if (state.controls.steeringAngleDeg.has_value()) {
-        out << "[Str: " << std::fixed << std::setprecision(1) << *state.controls.steeringAngleDeg << "] ";
+        const double deg = *state.controls.steeringAngleDeg;
+
+        // Save stream format state so we don't corrupt downstream components.
+        std::ios_base::fmtflags savedFlags = out.flags();
+        std::streamsize savedPrec = out.precision();
+
+        // v4 (owner): steering-wheel icon commented out — the owner found it
+        // over-bearing and wants to judge the gauge alone on a real trace.
+        // To reinstate, uncomment this line (literal wheel U+1F6DE):
+        // out << "🛞";
+        out << '[' << steeringGauge_->getSteeringString(static_cast<int>(deg)) << ' '
+            << std::fixed << std::setprecision(1) << std::setw(6) << std::right
+            << deg << "] ";
+
+        // Restore stream format state for the next component.
+        out.flags(savedFlags);
+        out.precision(savedPrec);
     }
     return out.str();
 }

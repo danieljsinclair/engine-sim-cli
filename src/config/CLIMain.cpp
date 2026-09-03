@@ -335,7 +335,8 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
     return ctx;
 }
 
-std::unique_ptr<presentation::IPresentation> createPresentation(const SimulationConfig& config) {
+std::unique_ptr<presentation::IPresentation> createPresentation(const SimulationConfig& config,
+                                                                const CommandLineArgs& args) {
     presentation::PresentationConfig presConfig;
     // SimulationConfig is the source of truth; PresentationConfig receives copies for display purposes only
     // Note: interactive conceptually belongs to IInputProvider but is surfaced here for presentation
@@ -346,7 +347,8 @@ std::unique_ptr<presentation::IPresentation> createPresentation(const Simulation
     // When --csv-out is set the Collection fans every call out to
     // all children; the loop holds one IPresentation.
     auto collection = std::make_unique<presentation::PresentationCollection>();
-    collection->add(std::make_unique<presentation::ConsolePresentation>());
+    collection->add(std::make_unique<presentation::ConsolePresentation>(
+        presentation::ParseSteeringStyle(args.presentation.steeringStyle)));
     if (!config.csvOutPath.empty()) {
         collection->add(std::make_unique<presentation::CsvPresentation>(config.csvOutPath));
     }
@@ -425,7 +427,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.preFillMs = (args.audio.preFillMs > 0) ? args.audio.preFillMs : config.preFillMs;
 
     if (!args.outputWav.empty()) config.outputWav = args.outputWav.c_str();
-    config.csvOutPath = args.csvOut;
+    config.csvOutPath = args.presentation.csvOut;
 
     // Apply CLI overrides on top of EngineSimDefaults (from ISimulatorConfig inline initializers)
     // simulationFrequency: 0 means "use engine's built-in frequency" (piston engines get it from
@@ -439,7 +441,7 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // default) is the explicit OFF value — the synthesizer skips shape() entirely
     // at 0 for bit-identical legacy audio. Applied to AudioParameters at factory
     // build time via SimulatorInitHelpers::applySpanTame (see SimulatorFactory).
-    config.engineConfig.spanTame = args.spanTame;
+    config.engineConfig.spanTame = args.audio.spanTame;
 
     // Paced-replay mode: the sim is paced to a recording (deterministic replay,
     // or live/replay telemetry whose warm-start prefix steps the full sim on the
@@ -571,7 +573,7 @@ int main(int argc, char* argv[]) {
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
         applyProviderDefaultDuration(config, args, inputProvider);
-        auto presentation = createPresentation(config);
+        auto presentation = createPresentation(config, args);
 
         ASSERT(inputProvider || !config.interactive, "Interactive mode requires an input provider");
         ASSERT(presentation, "A presentation provider must be created successfully");

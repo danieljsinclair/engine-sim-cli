@@ -290,7 +290,7 @@ TEST(CommandLineParserTest, SpanTameParsesValidValue) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_FLOAT_EQ(args.spanTame, 0.75f);
+    EXPECT_FLOAT_EQ(args.audio.spanTame, 0.75f);
 }
 
 TEST(CommandLineParserTest, SpanTameDefaultsToOff) {
@@ -298,7 +298,7 @@ TEST(CommandLineParserTest, SpanTameDefaultsToOff) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_FLOAT_EQ(args.spanTame, 0.0f);
+    EXPECT_FLOAT_EQ(args.audio.spanTame, 0.0f);
 }
 
 // Both interval ends are valid taming amounts (0 = explicit off, 1 = full
@@ -307,12 +307,39 @@ TEST(CommandLineParserTest, SpanTameAcceptsBothIntervalEnds) {
     const char* argvZero[] = {"engine-sim-cli", "--span-tame", "0.0"};
     CommandLineArgs argsZero;
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argvZero), argsZero));
-    EXPECT_FLOAT_EQ(argsZero.spanTame, 0.0f);
+    EXPECT_FLOAT_EQ(argsZero.audio.spanTame, 0.0f);
 
     const char* argvOne[] = {"engine-sim-cli", "--span-tame", "1.0"};
     CommandLineArgs argsOne;
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argvOne), argsOne));
-    EXPECT_FLOAT_EQ(argsOne.spanTame, 1.0f);
+    EXPECT_FLOAT_EQ(argsOne.audio.spanTame, 1.0f);
+}
+
+// v4 (owner verdict): arrows is the DEFAULT gauge style when the flag is
+// unspecified; braille stays available via an explicit --steering-style.
+TEST(CommandLineParserTest, SteeringStyleDefaultsToArrows) {
+    const char* argv[] = {"engine-sim-cli", "--silent"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.presentation.steeringStyle, "arrows");
+}
+
+TEST(CommandLineParserTest, SteeringStyleParsesExplicitChoice) {
+    const char* argv[] = {"engine-sim-cli", "--steering-style", "braille"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.presentation.steeringStyle, "braille");
+}
+
+// Unknown style names are rejected at parse time (CLI11 IsMember), not
+// silently coerced to the default.
+TEST(CommandLineParserTest, SteeringStyleRejectsUnknownName) {
+    const char* argv[] = {"engine-sim-cli", "--steering-style", "spin"};
+    CommandLineArgs args;
+
+    EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
 }
 
 // Out-of-range values are rejected at parse time (a typo'd 1.5 or negative

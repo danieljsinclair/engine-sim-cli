@@ -180,7 +180,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "                     (the path that oscillated; kept for A/B comparison)")
         ->capture_default_str();
 
-    app.add_option("--span-tame", args.spanTame,
+    app.add_option("--span-tame", args.audio.spanTame,
         "Output-stage span taming (0.0=off, 1.0=full). Soft-knee compressor\n"
         "pinned: ratio R(x)=1+5x, makeup gain m(x)=10^(12*(1-1/R)/20),\n"
         "knee [-18,-6] dBFS, safety soft-clip at 0.90/0.95. Off (default)\n"
@@ -234,11 +234,18 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_flag("--diagnostic-freq", args.diagnostics.freq,
                  "Show per-frame update-call frequency line (calls=/need/kfps)");
 
-    app.add_option("--csv-out", args.csvOut,
+    app.add_option("--csv-out", args.presentation.csvOut,
                    "Write machine-parseable per-frame CSV (all fields: timecode, rpm, gas, gear, "
                    "clutch%, roadImplied, relief, torques, state) to <file> alongside the console line.\n"
                    "                       Without a value, a UTC timestamped roadtest_<timestamp>.csv is generated "
                    "(reruns never overwrite). With a value, the value is used verbatim.")->expected(0, 1);
+
+    app.add_option("--steering-style", args.presentation.steeringStyle,
+                   "Steering gauge glyph style for the console readout:\n"
+                   "                       arrows  - 8-way directional arrows, 45 deg sectors (DEFAULT)\n"
+                   "                       braille - 12-position two-cell braille clock face")
+                   ->capture_default_str()
+                   ->check(CLI::IsMember({"braille", "arrows"}));
 
     try {
         app.parse(argc, argv);
@@ -333,8 +340,8 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     // UTC so a log's name is timezone-independent (captures travel across zones
     // and the owner compares logs from different locations). Reruns never
     // overwrite: every invocation gets a fresh timestamp.
-    if (args.csvOut == "true") {
-        args.csvOut = generateTimestampedFilename("roadtest_", ".csv", /*useUtc=*/true);
+    if (args.presentation.csvOut == "true") {
+        args.presentation.csvOut = generateTimestampedFilename("roadtest_", ".csv", /*useUtc=*/true);
     }
 
     args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;

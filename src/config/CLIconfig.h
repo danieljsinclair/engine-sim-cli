@@ -38,6 +38,13 @@ struct AudioTimingArgs {
     double synthLatency = 0.0;       // Synth latency seconds
     int preFillMs = 0;               // Pre-fill buffer ms — 0 means use SimulationConfig default (50)
     float crankingVolume = 0.0f;     // resolved by bridge/SimulationConfig
+
+    // Output-stage span taming (see engine-sim include/span_tame.h for the
+    // pinned parameterization). 0.0 (the default) = feature OFF = bit-identical
+    // audio; the script-side audio_volume lever is exhausted (leveler
+    // re-normalizes it), so span taming lives at the output stage. Forwards to
+    // the bridge's ISimulatorConfig.spanTame.
+    float spanTame = 0.0f;
 };
 
 // The vehicle-twin telemetry input subsystem: --live-telemetry plus the
@@ -99,6 +106,18 @@ inline double resolveCrankDelayS(int starterDelayMs, bool explicitMs, double def
         : defaultS;
 }
 
+// Presentation-layer knobs (--steering-style, --csv-out). Grouped so
+// CommandLineArgs stays under the struct-field threshold (S1820).
+struct PresentationArgs {
+    // "arrows" (default — 8-way directional arrows, 45 deg sectors; owner
+    // verdict 2026-09-02) or "braille" (12-position two-cell braille clock
+    // face) when explicitly selected.
+    std::string steeringStyle = "arrows";
+
+    // Machine-parseable CSV output alongside the console line. Empty = no CSV.
+    std::string csvOut;
+};
+
 struct CommandLineArgs {
     std::string engineConfig;
     std::string outputWav;
@@ -141,25 +160,12 @@ struct CommandLineArgs {
     // --live-telemetry + the twin coupling/torque knobs (see TwinArgs).
     TwinArgs twin;
 
+    // Console presentation knobs (see PresentationArgs).
+    PresentationArgs presentation;
+
     // Selective per-frame debug output (see DiagnosticOutputFilter). Each flag
     // unmutes one optional diagnostic line; all default off.
     presentation::DiagnosticOutputFilter diagnostics;  // populated by --diagnostic-frames / --diagnostic-freq
-
-    // Machine-parseable CSV output alongside the console line. One row per frame
-    // with all per-frame fields (timecode, rpm, gas, gear, clutch%, roadImplied,
-    // relief, torques, state). Empty = no CSV. For automated smoke-tests /
-    // lug-stall spelunking without grepping color-coded console text.
-    std::string csvOut;
-
-    // Output-stage span taming amount (--span-tame), [0.0, 1.0]. The runtime
-    // tuning knob for the synthesizer output-stage tamer (soft-knee compressor
-    // + makeup gain + safety soft-clip just before the int16 conversion — see
-    // engine-sim include/span_tame.h for the pinned parameterization). 0.0
-    // (the default) = feature OFF = bit-identical audio; the script-side
-    // audio_volume lever is exhausted (leveler re-normalizes it), so span
-    // taming lives at the output stage. Forwards to the bridge's
-    // ISimulatorConfig.spanTame.
-    float spanTame = 0.0f;
 };
 
 // ============================================================================

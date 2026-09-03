@@ -65,19 +65,19 @@ TEST(CsvOutFilename, TrueValue_GeneratesTimestampedName) {
 
     // Filename must follow the roadtest_<timestamp>.csv contract.
     const std::regex pattern(R"(roadtest_\d{8}_\d{6}\.csv)");
-    EXPECT_TRUE(std::regex_match(args.csvOut, pattern))
-        << "Expected timestamped filename, got: " << args.csvOut;
+    EXPECT_TRUE(std::regex_match(args.presentation.csvOut, pattern))
+        << "Expected timestamped filename, got: " << args.presentation.csvOut;
 }
 
 TEST(CsvOutFilename, TrueValue_HasRoadtestPrefix) {
     auto args = parseArgv({"--csv-out", "true"});
-    EXPECT_EQ(args.csvOut.substr(0, 9), "roadtest_")
+    EXPECT_EQ(args.presentation.csvOut.substr(0, 9), "roadtest_")
         << "Filename must keep the 'roadtest_' prefix";
 }
 
 TEST(CsvOutFilename, TrueValue_HasCsvExtension) {
     auto args = parseArgv({"--csv-out", "true"});
-    EXPECT_EQ(args.csvOut.substr(args.csvOut.size() - 4), ".csv")
+    EXPECT_EQ(args.presentation.csvOut.substr(args.presentation.csvOut.size() - 4), ".csv")
         << "Filename must keep the '.csv' extension";
 }
 
@@ -85,8 +85,8 @@ TEST(CsvOutFilename, TrueValue_DateGroupMatchesTodayUtc) {
     // The first 8 digits (YYYYMMDD) must equal today's UTC date. This is the
     // intent the gmtime_r path must preserve: a correct broken-down UTC time.
     auto args = parseArgv({"--csv-out", "true"});
-    ASSERT_GE(args.csvOut.size(), 17u);
-    const std::string fileDate = args.csvOut.substr(9, 8);
+    ASSERT_GE(args.presentation.csvOut.size(), 17u);
+    const std::string fileDate = args.presentation.csvOut.substr(9, 8);
     const std::string todayDate = expectedTimestampNowUtc().substr(0, 8);
     EXPECT_EQ(fileDate, todayDate)
         << "Filename date " << fileDate << " does not match today(UTC) " << todayDate;
@@ -96,9 +96,9 @@ TEST(CsvOutFilename, TrueValue_TimeGroupIsPlausiblyNowUtc) {
     // The HHMMSS group must be within a few minutes of now(UTC). Window avoids
     // a fragile wall-clock test; still catches a wrong/stale time.
     auto args = parseArgv({"--csv-out", "true"});
-    ASSERT_GE(args.csvOut.size(), 22u);
+    ASSERT_GE(args.presentation.csvOut.size(), 22u);
 
-    const std::string fileStamp = args.csvOut.substr(9, 15);  // YYYYMMDD_HHMMSS
+    const std::string fileStamp = args.presentation.csvOut.substr(9, 15);  // YYYYMMDD_HHMMSS
     const std::string nowStamp = expectedTimestampNowUtc();
 
     std::tm fileTm{};
@@ -137,11 +137,11 @@ TEST(CsvOutFilename, TwoCalls_DistinctNames) {
     CommandLineArgs b;
     do {
         b = parseArgv({"--csv-out", "true"});
-    } while (b.csvOut == a.csvOut && std::chrono::steady_clock::now() < deadline);
+    } while (b.presentation.csvOut == a.presentation.csvOut && std::chrono::steady_clock::now() < deadline);
 
-    EXPECT_NE(a.csvOut, b.csvOut)
+    EXPECT_NE(a.presentation.csvOut, b.presentation.csvOut)
         << "Two runs a second apart produced the SAME filename (would overwrite): "
-        << a.csvOut;
+        << a.presentation.csvOut;
 }
 
 // ============================================================================
@@ -150,13 +150,13 @@ TEST(CsvOutFilename, TwoCalls_DistinctNames) {
 
 TEST(CsvOutFilename, ExplicitValue_IsUsedVerbatim) {
     auto args = parseArgv({"--csv-out", "my_road.csv"});
-    EXPECT_EQ(args.csvOut, "my_road.csv");
+    EXPECT_EQ(args.presentation.csvOut, "my_road.csv");
 }
 
 TEST(CsvOutFilename, ExplicitValue_DoesNotTriggerAutoGeneration) {
     auto args = parseArgv({"--csv-out", "custom_path.csv"});
     const std::regex autoPattern(R"(roadtest_\d{8}_\d{6}\.csv)");
-    EXPECT_FALSE(std::regex_match(args.csvOut, autoPattern))
+    EXPECT_FALSE(std::regex_match(args.presentation.csvOut, autoPattern))
         << "Explicit value must not be overwritten by auto-generated name";
 }
 
@@ -166,7 +166,7 @@ TEST(CsvOutFilename, ExplicitValue_DoesNotTriggerAutoGeneration) {
 
 TEST(CsvOutFilename, Omitted_DefaultsToEmpty) {
     auto args = parseArgv({});
-    EXPECT_TRUE(args.csvOut.empty())
+    EXPECT_TRUE(args.presentation.csvOut.empty())
         << "Without --csv-out, the path must be empty (CSV output disabled)";
 }
 
@@ -175,6 +175,6 @@ TEST(CsvOutFilename, BareFlag_LeavesEmpty) {
     // CLI11 leaves csvOut empty, which means CSV output is disabled. This pins
     // the current observable behavior; the "true" sentinel is the ONLY trigger.
     auto args = parseArgv({"--csv-out"});
-    EXPECT_TRUE(args.csvOut.empty())
+    EXPECT_TRUE(args.presentation.csvOut.empty())
         << "Bare --csv-out must leave the path empty (CSV output disabled)";
 }
