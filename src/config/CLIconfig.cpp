@@ -39,7 +39,7 @@ void printUsage(const char* progName) {
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --deterministic      Headless fixed-timestep replay: reproducible per-frame output (gate/diagnosis mode)\n";
     std::cout << "  --verbose            Show DEBUG-level console logging (startup discards, sync-pull buffer fills)\n";
-    std::cout << "  --starter-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000)\n";
+    std::cout << "  --cranking-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000; --starter-delay accepted as alias)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
@@ -104,26 +104,33 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    auto starterDelayOpt = app.add_option("--starter-delay", args.start.starterDelayMs,
+    auto crankingDelayOpt = app.add_option("--cranking-delay,--starter-delay", args.start.crankingDelayMs,
         "Starter-then-ignition delay in MILLISECONDS (true ms scale, linear: "
         "1000 = one second of cranking before ignition; max 10000 = 10 s). "
         "0 = zero-delay combined start (starter+ignition together). "
         "ABSENT = 500 ms default. Only applies to brake-held starts; a gear "
         "start ignites instantly, and selecting a drive gear mid-crank fires "
         "ignition immediately (safety fast-forward — truncates the delay). "
-        "Per-engine .mr starter_torque/speed still apply.")
+        "Per-engine .mr starter_torque/speed still apply. "
+        "(--starter-delay is the old name, still accepted.)")
         ->check(CLI::Range(0, 10000));
     // Explicitness is tracked separately: the VALUE 0 is meaningful (combined
     // start) and must not fall back to the 500 ms default — only an ABSENT
     // flag does.
-    starterDelayOpt->each([&args](const std::string&) {
-        args.start.starterDelayExplicit = true;
+    crankingDelayOpt->each([&args](const std::string&) {
+        args.start.crankingDelayExplicit = true;
         return std::string();
     });
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
     app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss); file replay skips there instantly — rows before the offset are never simulated (arrival state is synthesized at the offset)");
     app.add_option("--end-at", args.replay.endAt, "Stop replay/live-telemetry at this time (seconds or mm:ss); plays to input end if past it");
+    app.add_flag("--no-blank-skip", args.replay.noBlankSkip,
+        "With --start-from: anchor the arrival state exactly on the first row "
+        "at/after the offset, blank or not. DEFAULT (skip ON) walks forward "
+        "past blank USB-settle rows to the first row carrying engine data — "
+        "a blank row holds no operating point to warm-boot from. Diagnostic "
+        "escape hatch to A/B what the skip papers over.");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
     auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");

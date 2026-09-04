@@ -409,39 +409,75 @@ TEST(CommandLineParserTest, SpanTameRejectsBelowRange) {
 }
 
 // ===========================================================================
-// --starter-delay scale (owner 2026-09-03: "0 seems to take 30 cranking
+// --cranking-delay scale (owner 2026-09-03: "0 seems to take 30 cranking
 // steps, 0-100 behave identically, at 1000 about a second longer, 10000
 // about 4s" — the scale must be honest milliseconds and 0 must be a
 // MEANINGFUL zero, not a silent fallback to the controller default).
+// Renamed from --starter-delay (owner 2026-09-03); the old name stays a
+// hidden alias so scripts keep working.
 // ===========================================================================
 
-TEST(CommandLineParserTest, StarterDelayZeroIsExplicit) {
-    // --starter-delay 0 is the documented zero-delay combined start: the flag
+TEST(CommandLineParserTest, CrankingDelayZeroIsExplicit) {
+    // --cranking-delay 0 is the documented zero-delay combined start: the flag
     // APPEARED, so it must be recorded as explicit (0 is a value, not "unset").
-    const char* argv[] = {"engine-sim-cli", "--starter-delay", "0"};
+    const char* argv[] = {"engine-sim-cli", "--cranking-delay", "0"};
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_EQ(args.start.starterDelayMs, 0);
-    EXPECT_TRUE(args.start.starterDelayExplicit);
+    EXPECT_EQ(args.start.crankingDelayMs, 0);
+    EXPECT_TRUE(args.start.crankingDelayExplicit);
 }
 
-TEST(CommandLineParserTest, StarterDelayAbsentIsNotExplicit) {
+TEST(CommandLineParserTest, CrankingDelayAbsentIsNotExplicit) {
     // No flag: not explicit — the controller default applies downstream.
     const char* argv[] = {"engine-sim-cli", "--silent"};
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.start.starterDelayExplicit);
+    EXPECT_FALSE(args.start.crankingDelayExplicit);
 }
 
-TEST(CommandLineParserTest, StarterDelayValueParsesMilliseconds) {
+TEST(CommandLineParserTest, CrankingDelayValueParsesMilliseconds) {
+    const char* argv[] = {"engine-sim-cli", "--cranking-delay", "1000"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_EQ(args.start.crankingDelayMs, 1000);
+    EXPECT_TRUE(args.start.crankingDelayExplicit);
+}
+
+TEST(CommandLineParserTest, StarterDelayAliasStillParses) {
+    // Back-compat: the old --starter-delay name feeds the same destination
+    // and the same explicitness tracking (a rename must not break scripts).
     const char* argv[] = {"engine-sim-cli", "--starter-delay", "1000"};
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_EQ(args.start.starterDelayMs, 1000);
-    EXPECT_TRUE(args.start.starterDelayExplicit);
+    EXPECT_EQ(args.start.crankingDelayMs, 1000);
+    EXPECT_TRUE(args.start.crankingDelayExplicit);
+}
+
+// ===========================================================================
+// --no-blank-skip: passthrough of the bridge-side arrival blank-skip toggle.
+// Default OFF (= skip blanks); the flag opts into anchoring exactly at the
+// offset row. Parse-level only — provider behavior is pinned in the bridge
+// (ReplayTelemetryProviderTest.ArrivalBlankSkip*).
+// ===========================================================================
+
+TEST(CommandLineParserTest, NoBlankSkipFlagParses) {
+    const char* argv[] = {"engine-sim-cli", "--no-blank-skip"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.replay.noBlankSkip);
+}
+
+TEST(CommandLineParserTest, BlankSkipOnByDefault) {
+    const char* argv[] = {"engine-sim-cli", "--silent"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.replay.noBlankSkip);
 }
 
 // The conversion seam: ms->s at exactly the parsed value when explicit

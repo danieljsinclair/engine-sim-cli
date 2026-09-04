@@ -51,6 +51,10 @@ std::unique_ptr<input::IInputProvider> buildTelemetryProvider(
             args.replay.telemetryPath, /*autoStart=*/true, /*autoGearbox=*/args.gearbox.automatic);
         applyTwinCouplingFlags(*replay, args.twin);
         applyTimeSlicing(*replay, args.replay);
+        // --no-blank-skip: arrival-row blank-skip toggle (default ON = skip
+        // blank USB-settle rows; the CLI is a thin veneer over the bridge's
+        // provider — the skip itself lives bridge-side).
+        replay->setBlankSkipEnabled(!args.replay.noBlankSkip);
         return replay;
     }
 
