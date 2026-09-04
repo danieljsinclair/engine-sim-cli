@@ -3,6 +3,7 @@
 
 #include "CLIconfig.h"
 #include "simulation/SimulationLoop.h"
+#include "TelemetryProviderFactory.h"
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
@@ -152,12 +153,16 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--pin-tau-ms", args.twin.pinTauMs,
         "PIN wheel-coupling compliance in milliseconds. The road speed signal\n"
-        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0, DEFAULT)\n"
-        "teleports engine rpm between levels - the audible 'piano keys'.\n"
-        "A positive tau makes the pin chase the road-implied speed with a\n"
-        "critically-damped response; ~150 ms is the tuned road value. 0 is\n"
-        "bit-identical to the rigid pin (the regression contract). Scoped to\n"
-        "the pin target only: the gearbox shift map still sees the raw speed.")
+        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0) teleports\n"
+        "engine rpm between levels - the audible 'piano keys'. A positive tau\n"
+        "makes the pin chase the road-implied speed with a critically-damped\n"
+        "response. DEFAULT 150 ms (the tuned road value); the stable window is\n"
+        "60-1000 ms - values below 60 risk drivetrain bifurcation (20-50 ms\n"
+        "runs away to 200+ mph), values above 3000 are over-damped (15000 ms\n"
+        "halves road speed); both print a warning. 0 or negative is EXACTLY\n"
+        "the rigid pin, bit-identical to the legacy behavior (the regression\n"
+        "contract). Scoped to the pin target only: the gearbox shift map still\n"
+        "sees the raw speed.")
         ->capture_default_str();
 
     app.add_flag("--effective-throttle", args.twin.effectiveThrottle,
@@ -348,6 +353,13 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
 
     resolveReplayGearboxDefault(args);
 
+    // --pin-tau-ms outside the stable window: warn-only (owner directive: a
+    // tuning toggle must never be restricted). tau <= 0 is the documented
+    // rigid passthrough = OFF, no warning.
+    if (const char* tauWarning = telemetry_detail::pinTauWarningText(args.twin.pinTauMs)) {
+        std::cerr << ANSIColors::warningMessage(std::string("WARNING: ") + tauWarning) << "\n";
+    }
+
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
         args.playAudio = true;
@@ -420,7 +432,7 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
 // ============================================================================
 // Shows the configuration on startup in a banner format
 // ============================================================================
-void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion = "unknown") {
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion /*= "unknown"*/) {
     // Verify build ID
     if (engineAPIVersion != nullptr) {
         std::cout << "[Bridge: " << engineAPIVersion << "]\n";
@@ -438,6 +450,10 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
         std::cout << "  Dyno Load: " << static_cast<int>(config.targetLoad * 100)
                   << "% (" << static_cast<int>(config.targetLoad * EngineSimDefaults::DYNO_MAX_TORQUE_FT_LBS) << " ft*lbs)\n";
     }
+    // Print the ACTUAL wiring: config.interactive alone lies on the
+    // replay+--interactive combo (the session is CSV-bounded, so
+    // config.interactive is false, yet the keyboard overlay IS wired —
+    // CLIMain keys the overlay off args.interactiveExplicit).
     std::cout << "  Interactive: " << (config.interactive ? "Yes" : "No") << "\n";
     std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";
     const char* audioModeLabel;

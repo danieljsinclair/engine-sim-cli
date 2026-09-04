@@ -71,9 +71,11 @@ struct TwinArgs {
     // speed signal updates only ~5.5 Hz in ~0.9 km/h held steps, so the rigid
     // pin teleports engine rpm between levels (the audible "piano keys"). A
     // positive tau makes the pin CHASE the road-implied speed with a
-    // critically-damped response (~150 ms is the tuned road value). 0 (the
-    // default) is EXACTLY the rigid pin, bit-identical to the legacy behavior.
-    double pinTauMs = 0.0;
+    // critically-damped response. Default 150 ms = the owner-tuned road value;
+    // the stable window is 60-1000 ms (see docs/architecture/pin-tau-compliance.md
+    // in engine-sim-bridge). 0 (or negative) is EXACTLY the rigid pin,
+    // bit-identical to the legacy behavior (the regression contract).
+    double pinTauMs = 150.0;
 
     // Coupling MODEL (--coupling-model): how the live clutch pressure is derived.
     // "torque-converter" (default — fluid-coupling pump/turbine + TR/K curves, the

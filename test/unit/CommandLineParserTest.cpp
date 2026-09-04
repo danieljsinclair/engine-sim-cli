@@ -308,13 +308,14 @@ TEST(CommandLineParserTest, DurationWithoutTelemetry_IsAllowed) {
     EXPECT_DOUBLE_EQ(args.duration, 5.0);
 }
 
-// --pin-tau-ms: PIN-coupling compliance time constant. Default 0 = the rigid
-// pin (bit-identical legacy behavior); the tuned road value is ~150.
-TEST(CommandLineParserTest, PinTauMsDefaultsToZero_RigidPin) {
+// --pin-tau-ms: PIN-coupling compliance time constant. Default 150 = the
+// owner-tuned road value (stable window 60-1000); explicit 0 = the rigid pin
+// (bit-identical legacy behavior).
+TEST(CommandLineParserTest, PinTauMsDefaultsTo150_TunedRoadValue) {
     const char* argv[] = {"engine-sim-cli", "--script", "v8.mr"};
     CommandLineArgs args;
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_DOUBLE_EQ(args.twin.pinTauMs, 0.0);
+    EXPECT_DOUBLE_EQ(args.twin.pinTauMs, 150.0);
 }
 
 TEST(CommandLineParserTest, PinTauMsParsesExplicitValue) {
