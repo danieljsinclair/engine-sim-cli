@@ -9,6 +9,7 @@ add_executable(unit_tests
     ConsolePresentationTest.cpp
     CLITimeParsingTest.cpp
     GearboxLogFilenameTest.cpp
+    ReplayGearboxDefaultTest.cpp
     InteractiveModeStateTest.cpp
     SignalStopControllerTest.cpp
     AudioTestConstants.cpp
