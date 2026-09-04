@@ -298,15 +298,18 @@ std::string generateTimestampedFilename(const std::string& prefix,
 }
 
 // Replay telemetry defaults the gearbox to AUTO unless the user explicitly
-// opted into manual control (--manual, or --interactive for the keyboard
-// overlay). A replay CSV carries only a PRND selector — there is no +/-
-// gear channel — so a manual replay can never select a gear and sits
-// stationary free-revving ("DM-", 0 mph, engine unloaded). The live path
-// is untouched: LiveTelemetryProvider has no manual gearbox mode to flip.
-// (Owner ruling 2026-09-03: replay must self-drive by default.)
+// opted into manual control with --manual. A replay CSV carries only a PRND
+// selector — there is no +/- gear channel — so a manual replay can never
+// select a gear and sits stationary free-revving ("DM-", 0 mph, engine
+// unloaded). --interactive (keyboard overlay on replay) does NOT opt out:
+// the overlay's gear keys win over the auto box per-keypress, so auto stays
+// the default there too. The live path is untouched: LiveTelemetryProvider
+// has no manual gearbox mode to flip.
+// (Owner ruling 2026-09-03: replay must self-drive by default — including
+// interactive replay.)
 void resolveReplayGearboxDefault(CommandLineArgs& args) {
     const bool replayWithoutAuto = !args.replay.telemetryPath.empty() && !args.gearbox.automatic;
-    if (replayWithoutAuto && !args.gearbox.manual && !args.interactiveExplicit) {
+    if (replayWithoutAuto && !args.gearbox.manual) {
         args.gearbox.automatic = true;
     }
 }
