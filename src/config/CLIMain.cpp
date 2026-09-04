@@ -156,6 +156,21 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
     // flag wiring + time-slice setters live in buildTelemetryProvider
     // (TelemetryProviderFactory.cpp); this branch owns lifecycle + run wiring.
     if (args.twin.liveTelemetry) {
+        // Unbuffer stdin: std::cin defaults to a tied, stdio-synced, ~8KB
+        // streambuf. The readiness probe (poll(2) below) signals that ANY bytes
+        // are ready on the pipe, but std::getline then blocks until the
+        // C++-side buffer accumulates a full line (vehicle-sim writes one
+        // ~80-byte row per ~20 ms — the buffer needs ~100 rows ≈ 2 s before
+        // the first getline returns). That is the regression the user reports
+        // as a 1-2 s throttle delay. Disabling sync + shrinking the streambuf
+        // to one byte makes every getline go to the OS, so any ready byte
+        // returns immediately. Deterministic file reads (--replay-telemetry)
+        // are NOT affected: this branch only runs for --live-telemetry.
+        std::cin.sync_with_stdio(false);
+        std::cin.tie(nullptr);
+        static char kCinUnbuf[1];
+        std::cin.rdbuf()->pubsetbuf(kCinUnbuf, sizeof(kCinUnbuf));
+
         // Readiness probe for the stdin pipe: poll(2) with zero timeout on
         // STDIN_FILENO. Injected into the LiveTelemetryProvider so its row
         // refill NEVER parks the simulation loop on a lagging writer
