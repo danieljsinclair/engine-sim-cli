@@ -128,13 +128,13 @@ TEST(CommandLineParserTest, ReplayTelemetryManualOptOut) {
 }
 
 TEST(CommandLineParserTest, ReplayTelemetryInteractiveKeepsManualDefault) {
-    // --interactive is deliberate keyboard control (the [ / ] overlay), so the
-    // replay default must NOT flip the gearbox to auto behind the user's back.
+    // Owner ruling (D2): replay auto-shift is the default INCLUDING with --interactive;
+    // --manual still opts out; gear keys still win when pressed (consistent with D1's keys-win).
     const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv", "--interactive"};
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(4, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_TRUE(args.gearbox.automatic);
     EXPECT_FALSE(args.gearbox.manual);
 }
 
