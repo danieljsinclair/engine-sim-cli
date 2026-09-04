@@ -432,7 +432,8 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
 // ============================================================================
 // Shows the configuration on startup in a banner format
 // ============================================================================
-void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion /*= "unknown"*/) {
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion /*= "unknown"*/,
+                      bool interactiveOverlay /*= false, see CLIconfig.h*/) {
     // Verify build ID
     if (engineAPIVersion != nullptr) {
         std::cout << "[Bridge: " << engineAPIVersion << "]\n";
@@ -454,7 +455,9 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
     // replay+--interactive combo (the session is CSV-bounded, so
     // config.interactive is false, yet the keyboard overlay IS wired —
     // CLIMain keys the overlay off args.interactiveExplicit).
-    std::cout << "  Interactive: " << (config.interactive ? "Yes" : "No") << "\n";
+    std::cout << "  Interactive: "
+              << ((config.interactive || interactiveOverlay) ? "Yes" : "No")
+              << (interactiveOverlay ? " (keyboard overlay)" : "") << "\n";
     std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";
     const char* audioModeLabel;
     if (config.deterministic) {

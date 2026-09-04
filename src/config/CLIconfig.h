@@ -179,7 +179,8 @@ struct CommandLineArgs {
 
 void printUsage(const char* progName);
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
-void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion);
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion,
+                      bool interactiveOverlay = false);
 
 // Parse a time string (plain seconds "30.5", mm:ss "1:30.5", or hh:mm:ss "0:01:30.5") into seconds.
 // Returns -1.0 on invalid input. Shared bridge version — see common/TimeParser.h.

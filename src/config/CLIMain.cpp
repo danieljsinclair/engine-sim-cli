@@ -579,7 +579,10 @@ int main(int argc, char* argv[]) {
         // diagnostics are DBG and stay silent); --verbose re-enables them.
         cliLogger->setMask(LogMask::runMask(args.output.verbose));
         SimulationConfig config = CreateSimulationConfig(args);
-        ShowConfigHeader(config, ISimulator::getVersion());
+        // interactiveExplicit = the ACTUAL keyboard-overlay wiring decision
+        // (createInputProvider keys off it below); config.interactive alone
+        // prints "No" on the CSV-bounded replay+--interactive combo.
+        ShowConfigHeader(config, ISimulator::getVersion(), args.interactiveExplicit);
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
