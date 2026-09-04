@@ -452,6 +452,10 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // at 0 for bit-identical legacy audio. Applied to AudioParameters at factory
     // build time via SimulatorInitHelpers::applySpanTame (see SimulatorFactory).
     config.engineConfig.spanTame = args.audio.spanTame;
+    // Output-stage volume leveling: forwarded unconditionally so 0 (the
+    // CommandLineArgs default) is the explicit OFF value — BridgeSimulator
+    // bypasses the tamer entirely at 0 for bit-identical legacy audio.
+    config.engineConfig.volumeTame = args.audio.volumeTame;
 
     // Paced-replay mode: the sim is paced to a recording (deterministic replay,
     // or live/replay telemetry whose warm-start prefix steps the full sim on the

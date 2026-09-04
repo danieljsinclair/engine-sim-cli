@@ -47,6 +47,13 @@ struct AudioTimingArgs {
     // re-normalizes it), so span taming lives at the output stage. Forwards to
     // the bridge's ISimulatorConfig.spanTame.
     float spanTame = 0.0f;
+
+    // Output-stage volume leveling (--volume-tame): lifts quiet-on-decel
+    // sections toward the session average and sits loud sections back, one
+    // smoothed gain at the int16->float conversion seam. 0.0 (the default) =
+    // feature OFF = fully bypassed = bit-identical audio; 1.0 = full
+    // leveling. Forwards to the bridge's ISimulatorConfig.volumeTame.
+    float volumeTame = 0.0f;
 };
 
 // The vehicle-twin telemetry input subsystem: --live-telemetry plus the

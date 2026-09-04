@@ -200,6 +200,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "is bit-identical to the legacy audio path.")
         ->check(CLI::Range(0.0, 1.0));
 
+    app.add_option("--volume-tame", args.audio.volumeTame,
+        "Output-stage volume leveling (0.0=off, 1.0=full). Lifts quiet-on-decel\n"
+        "sections toward the session average and sits loud sections back (max\n"
+        "+12 dB lift, max -3.1 dB cut, ~50 ms smoothed gain). Off (default) is\n"
+        "fully bypassed and bit-identical to the legacy audio path.")
+        ->check(CLI::Range(0.0, 1.0));
+
     // Mutual exclusions
     scriptOpt->excludes(engineConfigOpt);
     connectDemoOpt->excludes(scriptOpt);
