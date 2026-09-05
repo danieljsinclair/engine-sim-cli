@@ -71,3 +71,4 @@ __pycache__/
 *.pyc
 
 # Other unclassified files
+vehicle-sim/
