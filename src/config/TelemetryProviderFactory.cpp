@@ -34,8 +34,18 @@ std::unique_ptr<input::IInputProvider> buildTelemetryProvider(
         // row refill returns short instead of parking the loop thread on a
         // lagging writer. The CLI injects poll(2) with zero timeout on stdin
         // (fd 0); nullptr keeps the deterministic blocking behaviour.
+        //
+        // liveStream=true flips the provider into the no-pacing branch
+        // (tryReadNextRowLive): the LATEST available row is surfaced every
+        // frame instead of being held until the sim clock "catches up" to its
+        // timestamp. That is the 1–2s throttle-delay fix on the live pipe —
+        // a sparse recording under pacing adds 0.5–2s of input-to-audio lag
+        // that the engine has no way to hide. The provider is constructed
+        // with the 4-arg stream ctor (stream, autoStart, streamDataReady,
+        // liveStream).
         auto live = std::make_unique<input::LiveTelemetryProvider>(
-            std::cin, /*autoStart=*/true, std::move(streamDataReady));
+            std::cin, /*autoStart=*/true, std::move(streamDataReady),
+            /*liveStream=*/true);
         applyTwinCouplingFlags(*live, args.twin);
         applyTimeSlicing(*live, args.replay);
         return live;
