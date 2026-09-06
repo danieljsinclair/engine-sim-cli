@@ -4,6 +4,7 @@
 #include "presentation/CsvPresentation.h"
 #include "config/CliException.h"
 #include "simulation/EnginePhase.h"
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
@@ -51,19 +52,27 @@ void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
     if (!out_.is_open()) return;
     if (!csvEmissionEnabled_) return;
     if (!headerWritten_) {
-            out_ << "time_s,rpm,rpm_raw,engine_state,throttle_gas_pct,brake,ignition,"
-                 << "gear_selector,gear_auto,gear_physical,"
-                 << "clutch_pressure,road_implied_rpm,creep_relief_fired,"
-                 << "vehicle_speed_kmh,target_speed_kmh,sim_speed_mph,"
-                 << "engine_torque_nm,drivetrain_torque_nm,dyno_torque_nm,"
-                 << "starter_engaged,exhaust_flow_cm3s,synth_out_rms\n";
+            out_ << "wall_clock_ms,sim_time_s,rel_time_s,latency_ms,rpm,rpm_raw,engine_state,"
+                 << "throttle_gas_pct,brake,ignition,gear_selector,gear_auto,"
+                 << "gear_physical,clutch_pressure,road_implied_rpm,"
+                 << "creep_relief_fired,vehicle_speed_kmh,target_speed_kmh,"
+                 << "sim_speed_mph,engine_torque_nm,drivetrain_torque_nm,"
+                 << "dyno_torque_nm,starter_engaged,exhaust_flow_cm3s,"
+                 << "synth_out_rms\n";
             headerWritten_ = true;
     }
     const double timeS = s.drivetrain.replayTimestampS >= 0.0
                              ? s.drivetrain.replayTimestampS
                              : s.audio.timestamp;
+    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const int64_t inputTs = s.drivetrain.inputTimestampMs;
+    const int64_t latencyMs = (inputTs >= 0 && nowMs >= 0) ? (static_cast<int64_t>(nowMs) - inputTs) : -1;
     out_ << std::fixed << std::setprecision(3);
-    out_ << timeS << ','
+    out_ << static_cast<uint64_t>(nowMs) << ','  // wall_clock_ms
+         << timeS << ','                            // sim_time_s (absolute, from trace start)
+         << timeS << ','                            // rel_time_s (same as absolute for live)
+         << latencyMs << ','                        // latency_ms = wall_clock_ms - input_timestamp_ms
          << static_cast<long long>(std::round(s.engine.rpm)) << ','
          << static_cast<long long>(std::round(s.engine.rpmRaw)) << ','
          << phaseName(s.engine.phase) << ','
