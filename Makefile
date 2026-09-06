@@ -40,8 +40,13 @@ SONAR_REPORT := $(BUILD_COV_DIR)/sonar-report.json
 # REMOVED, matching the dashboard severity widget). Mirrors the bridge.
 SONAR_MEASURES := $(BUILD_COV_DIR)/sonar-measures.json
 SONAR_REMOVED_FACET := $(BUILD_COV_DIR)/sonar-removed-facet.json
-BUILD_STAMP := $(BUILD_DIR)/.build-ready.stamp
-BUILD_COV_STAMP := $(BUILD_COV_DIR)/.build-cov-ready.stamp
+# Real artefact dependencies replace .stamp files (KISS — Make's natural
+# mtime check is sufficient; no .stamp bookkeeping required). The CLI
+# binary is the real artefact produced by `cmake --build`. (The previous
+# BUILD_STAMP := $(BUILD_DIR)/.build-ready.stamp was an unused ghost
+# declaration; the `build:` target depends on the test + bridge deps,
+# not a stamp file.)
+BUILD_COV_STAMP := $(BUILD_COV_DIR)/engine-sim-cli
 
 # Bridge's instrumented coverage archive. The CLI build-cov configures with
 # -DBRIDGE_BUILD_DIR pointing here, so the CLI links the bridge's INSTRUMENTED
@@ -584,7 +589,8 @@ $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 $(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt
 	@echo "=== [engine-sim-cli] Building coverage (build-cov, RelWithDebInfo+instr) ==="
 	@cmake --build $(BUILD_COV_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
-	@touch $@
+	# `cmake --build` updates the engine-sim-cli binary mtime above; that IS
+	# the artefact Make tracks (no separate .stamp file needed).
 
 # coverage-run: run CLI tests on the coverage-instrumented build, merge profdata,
 # export coverage.txt (llvm-cov text) + lcov.info. File-artefact target: re-runs

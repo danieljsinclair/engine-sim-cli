@@ -156,13 +156,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0) teleports\n"
         "engine rpm between levels - the audible 'piano keys'. A positive tau\n"
         "makes the pin chase the road-implied speed with a critically-damped\n"
-        "response. DEFAULT 150 ms (the tuned road value); the stable window is\n"
-        "60-1000 ms - values below 60 risk drivetrain bifurcation (20-50 ms\n"
-        "runs away to 200+ mph), values above 3000 are over-damped (15000 ms\n"
-        "halves road speed); both print a warning. 0 or negative is EXACTLY\n"
-        "the rigid pin, bit-identical to the legacy behavior (the regression\n"
-        "contract). Scoped to the pin target only: the gearbox shift map still\n"
-        "sees the raw speed.")
+        "response. DEFAULT 150 ms (the owner-tuned road value, directive\n"
+        "2026-09-06); the stable window is 60-1000 ms - values below 60 risk\n"
+        "drivetrain bifurcation (20-50 ms runs away to 200+ mph), values above\n"
+        "3000 are over-damped (15000 ms halves road speed); both print a\n"
+        "warning. 0 or negative is EXACTLY the rigid pin, bit-identical to the\n"
+        "legacy behavior (the regression contract). Scoped to the pin target\n"
+        "only: the gearbox shift map still sees the raw speed.")
         ->capture_default_str();
 
     app.add_flag("--effective-throttle", args.twin.effectiveThrottle,
