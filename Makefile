@@ -646,6 +646,33 @@ $(SONAR_REPORT): $(COVERAGE_REPORT) $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES) $(
 			tail -n 20 $(BUILD_COV_DIR)/sonar-scanner.log; \
 			exit $$rc; \
 		fi
+	@echo "=== [engine-sim-cli] Waiting for SonarCloud Compute Engine to finish ==="
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+		CETASKID=$$(grep -E '^ceTaskId=' $(BUILD_COV_DIR)/.scannerwork/report-task.txt 2>/dev/null | cut -d= -f2); \
+		if [ -z "$$CETASKID" ]; then \
+			echo "ERROR: no ceTaskId in $(BUILD_COV_DIR)/.scannerwork/report-task.txt; cannot confirm analysis settled"; \
+			exit 1; \
+		fi; \
+		echo "  CE task: $$CETASKID"; \
+		dead=0; \
+		while [ $$dead -lt 60 ]; do \
+			status=$$(curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/ce/task?id=$$CETASKID" \
+				| python3 -c "import json,sys; print(json.load(sys.stdin).get('task',{}).get('status',''))" 2>/dev/null); \
+			if [ "$$status" = "SUCCESS" ]; then \
+				echo "  CE task SUCCESS after $$(($$dead * 2))s"; \
+				break; \
+			fi; \
+			if [ "$$status" = "FAILED" ] || [ "$$status" = "CANCELED" ]; then \
+				echo "ERROR: SonarCloud CE task $$status (id=$$CETASKID); report did not settle"; \
+				exit 1; \
+			fi; \
+			sleep 2; \
+			dead=$$((dead + 1)); \
+		done; \
+		if [ "$$status" != "SUCCESS" ]; then \
+			echo "ERROR: CE task did not settle within 120s (id=$$CETASKID)"; \
+			exit 1; \
+		fi
 	@echo "=== [engine-sim-cli] Caching SonarCloud issue report ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
 	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN" \
