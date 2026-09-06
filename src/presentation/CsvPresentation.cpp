@@ -44,7 +44,7 @@ bool CsvPresentation::Initialize(const PresentationConfig& /*config*/) {
     return true;
 }
 
-void CsvPresentation::Shutdown() {
+void CsvPresentation::Shutdown() noexcept {
     if (out_.is_open()) out_.close();
 }
 

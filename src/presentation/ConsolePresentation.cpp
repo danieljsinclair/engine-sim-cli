@@ -92,7 +92,7 @@ bool ConsolePresentation::Initialize(const PresentationConfig& config) {
     return true;
 }
 
-void ConsolePresentation::Shutdown() {
+void ConsolePresentation::Shutdown() noexcept {
     initialized_ = false;
 }
 

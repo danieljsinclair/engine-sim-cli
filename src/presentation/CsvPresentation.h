@@ -26,7 +26,7 @@ public:
     CsvPresentation& operator=(const CsvPresentation&) = delete;
 
     bool Initialize(const PresentationConfig& config) override;
-    void Shutdown() override;
+    void Shutdown() noexcept override;
 
     void ShowSimulatorStates(const EngineState& state) override;
     void ShowMessage(const std::string& message) override;

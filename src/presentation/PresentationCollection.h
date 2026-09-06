@@ -30,7 +30,7 @@ public:
     PresentationCollection& add(std::unique_ptr<IPresentation> child);
 
     bool Initialize(const PresentationConfig& config) override;
-    void Shutdown() override;
+    void Shutdown() noexcept override;
     void ShowSimulatorStates(const EngineState& state) override;
     void ShowMessage(const std::string& message) override;
     void ShowError(const std::string& error) override;
