@@ -7,7 +7,7 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
-#include <stdexcept>
+#include <exception>
 #include <utility>
 
 namespace presentation {
@@ -50,9 +50,13 @@ void CsvPresentation::Shutdown() noexcept {
     // this boundary; the stream is destroyed best-effort either way.
     try {
         if (out_.is_open()) out_.close();
-    } catch (...) {
-        // Deliberately empty: nothing recoverable to do during teardown, and
-        // rethrowing from a noexcept destructor path would terminate.
+    } catch (const std::exception& e) {
+        // Nothing recoverable during teardown — rethrowing from this noexcept
+        // path would terminate — so the failure is reported (not swallowed)
+        // and the stream is destroyed best-effort. cerr's default exception
+        // mask is goodbit, so this write cannot itself throw.
+        std::cerr << "CsvPresentation: close during Shutdown failed for '"
+                  << path_ << "': " << e.what() << '\n';
     }
 }
 
