@@ -20,6 +20,7 @@ add_executable(unit_tests
     ReplayTimeValidatorTest.cpp
     ExecutablePathTest.cpp
     CommandLineTorqueFlagsTest.cpp
+    PinTauGuardTest.cpp
     StopReasonReporterTest.cpp
     CsvOutFilenameTest.cpp
     SteeringGaugeTest.cpp

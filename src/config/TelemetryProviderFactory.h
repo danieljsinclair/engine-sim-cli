@@ -51,13 +51,26 @@ inline twin::CouplingModelKind parseCouplingModel(const std::string& model) {
         "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: " + model);
 }
 
-// --pin-tau-ms: negative is a typo'd flag value — fail fast rather than
-// silently running rigid.
-inline double validatedPinTauMs(double tauMs) {
-    if (tauMs < 0.0) {
-        throw CliException("--pin-tau-ms must be >= 0 (0 = rigid pin), got: " + std::to_string(tauMs));
+// --pin-tau-ms stability-window warning (owner directive: tuning toggles are
+// never restricted — warn, don't reject). Returns the warning text when tau
+// sits outside the stable window, nullptr when it is fine. tau <= 0 is the
+// documented rigid passthrough (OFF) and never warns. Any value is ACCEPTED:
+// PinTargetChase clamps tau <= 0 to rigid, and every positive value is a legal
+// (if ill-advised) experiment the owner may want to run.
+// Empirical map (see engine-sim-bridge docs/architecture/pin-tau-compliance.md):
+//   20-50 ms  drivetrain bifurcation (50 ms runs away to ~207 mph / 15.5k rpm)
+//   60-1000 ms  stable window (recommended; default 150)
+//   >3000 ms  over-damped (15000 ms halves road speed)
+inline const char* pinTauWarningText(double tauMs) {
+    if (tauMs > 0.0 && tauMs < 60.0) {
+        return "--pin-tau-ms 60-1000 is the stable window; below 60 ms the drivetrain can "
+               "bifurcate (20-50 ms bench runs ran away to ~207 mph). Continuing with your value.";
     }
-    return tauMs;
+    if (tauMs > 3000.0) {
+        return "--pin-tau-ms above 3000 ms is over-damped (15000 ms halves road speed on the "
+               "bench). 60-1000 ms is the stable window. Continuing with your value.";
+    }
+    return nullptr;
 }
 
 }  // namespace telemetry_detail
@@ -72,7 +85,10 @@ template <typename Provider>
 void applyTwinCouplingFlags(Provider& provider, const TwinArgs& twin) {
     provider.setWheelCouplingMode(telemetry_detail::parseWheelCouplingMode(twin.wheelCoupling));
     provider.setCouplingModel(telemetry_detail::parseCouplingModel(twin.couplingModel));
-    provider.setPinTauMs(telemetry_detail::validatedPinTauMs(twin.pinTauMs));
+    // Warn-only seam: pinTauWarningText (called at arg-parse time in
+    // CLIconfig.cpp processArgs) owns the console warning; every value passes
+    // through — tau <= 0 is rigid by PinTargetChase construction.
+    provider.setPinTauMs(twin.pinTauMs);
     twin::EffectiveThrottleConfig effectiveThrottle;
     effectiveThrottle.enabled = twin.effectiveThrottle;
     provider.setEffectiveThrottleConfig(effectiveThrottle);

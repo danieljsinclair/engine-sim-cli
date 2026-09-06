@@ -44,8 +44,16 @@ bool CsvPresentation::Initialize(const PresentationConfig& /*config*/) {
     return true;
 }
 
-void CsvPresentation::Shutdown() {
-    if (out_.is_open()) out_.close();
+void CsvPresentation::Shutdown() noexcept {
+    // ofstream::close() may throw (failing flush at close time). Teardown is
+    // called from the destructor chain and must never propagate — swallow at
+    // this boundary; the stream is destroyed best-effort either way.
+    try {
+        if (out_.is_open()) out_.close();
+    } catch (...) {
+        // Deliberately empty: nothing recoverable to do during teardown, and
+        // rethrowing from a noexcept destructor path would terminate.
+    }
 }
 
 void CsvPresentation::ShowSimulatorStates(const EngineState& s) {

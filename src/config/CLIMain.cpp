@@ -22,6 +22,7 @@
 #include "input/KeyboardInputProvider.h"
 #include "input/KeyboardInput.h"
 #include "input/OverlayInputProvider.h"
+#include "input/IArrivalStatePrimer.h"
 #include "io/IPresentation.h"
 #include "presentation/ConsolePresentation.h"
 #include "presentation/CsvPresentation.h"
@@ -86,6 +87,11 @@ struct InputContext {
     std::unique_ptr<input::IInputProvider> demoProvider;  // demo mode only (speed enhancer)
     std::unique_ptr<input::IInputProvider> provider;
     std::unique_ptr<::KeyboardInput> keyboard;  // owned for replay Q/P
+    // The replay core's arrival primer, exposed for SessionDependencies even
+    // when an overlay WRAPS the core (the overlay forwards the interface
+    // itself, but explicit DI is the primary route — see SimulationLoop's
+    // --start-from settle). Null outside the replay path.
+    input::IArrivalStatePrimer* arrivalPrimer = nullptr;
 };
 
 // Forward declaration: the keyboard/demo fallback path, defined after
@@ -205,6 +211,10 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         replay->setKeyboardInput(kb.get());
         // Validate time slicing against the parsed trace duration.
         validateReplayTimeSlicing(args, replay.get());
+        // Capture the core's primer BEFORE the overlay wrap takes ownership
+        // (#66): SessionDependencies gets the explicit pointer so the loop's
+        // --start-from settle works even through the wrapper.
+        ctx.arrivalPrimer = replay.get();
 
         // For replay + manual mode, build an overlay even without --interactive
         // so that [ / ] gear-shift keys work. The overlay requires a target.
@@ -442,6 +452,10 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // at 0 for bit-identical legacy audio. Applied to AudioParameters at factory
     // build time via SimulatorInitHelpers::applySpanTame (see SimulatorFactory).
     config.engineConfig.spanTame = args.audio.spanTame;
+    // Output-stage volume leveling: forwarded unconditionally so 0 (the
+    // CommandLineArgs default) is the explicit OFF value — BridgeSimulator
+    // bypasses the tamer entirely at 0 for bit-identical legacy audio.
+    config.engineConfig.volumeTame = args.audio.volumeTame;
 
     // Paced-replay mode: the sim is paced to a recording (deterministic replay,
     // or live/replay telemetry whose warm-start prefix steps the full sim on the
@@ -463,12 +477,13 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // (a one-shot pulse to CrankingController::engageStarter).
     config.startRequested = args.start.autoStart;
 
-    // --starter-delay: starter-then-ignition delay (McLaren mod), true
-    // milliseconds. An EXPLICIT value converts verbatim (0 = zero-delay
-    // combined start — a real setting, not the default); only an ABSENT flag
-    // falls back to the controller default.
+    // --cranking-delay (was --starter-delay, kept as hidden alias):
+    // starter-then-ignition delay (McLaren mod), true milliseconds. An
+    // EXPLICIT value converts verbatim (0 = zero-delay combined start — a
+    // real setting, not the default); only an ABSENT flag falls back to the
+    // controller default.
     config.startStopCrankDelayS = resolveCrankDelayS(
-        args.start.starterDelayMs, args.start.starterDelayExplicit,
+        args.start.crankingDelayMs, args.start.crankingDelayExplicit,
         input::VehicleStartController::kDefaultCrankDelayS);
 
     // Color the simulator label for CLI output
@@ -568,7 +583,10 @@ int main(int argc, char* argv[]) {
         // diagnostics are DBG and stay silent); --verbose re-enables them.
         cliLogger->setMask(LogMask::runMask(args.output.verbose));
         SimulationConfig config = CreateSimulationConfig(args);
-        ShowConfigHeader(config, ISimulator::getVersion());
+        // interactiveExplicit = the ACTUAL keyboard-overlay wiring decision
+        // (createInputProvider keys off it below); config.interactive alone
+        // prints "No" on the CSV-bounded replay+--interactive combo.
+        ShowConfigHeader(config, ISimulator::getVersion(), args.interactiveExplicit);
 
         auto inputCtx = createInputProvider(config, cliLogger.get(), args);
         auto* inputProvider = inputCtx.provider.get();
@@ -605,6 +623,9 @@ int main(int argc, char* argv[]) {
             deps.telemetryWriter = telemetry.get();
             deps.telemetryReader = telemetry.get();
             deps.logger = cliLogger.get();
+            // Explicit arrival primer for file-trace --start-from (#66):
+            // names the replay core even when an overlay wraps it.
+            deps.arrivalPrimer = inputCtx.arrivalPrimer;
 
             // Match gearbox-bearing providers to the preset's transmission while we
             // still own the simulator (createSession takes it by move below).
@@ -626,6 +647,11 @@ int main(int argc, char* argv[]) {
             stopController->attachSession(session.get());
             if (auto* kb = dynamic_cast<input::KeyboardInputProvider*>(inputCtx.provider.get())) kb->setSession(session.get());
             if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) replay->setSession(session.get());
+            // Overlay-wrapped replay/live: the WRAPPER forwards setSession to
+            // its core, so --end-at's session.stop() (and Q-quit) still reach
+            // the replay provider through the overlay. Without this the
+            // overlay path ran past --end-at forever (no session attached).
+            if (auto* overlay = dynamic_cast<input::OverlayInputProvider*>(inputCtx.provider.get())) overlay->setSession(session.get());
 
             result = session->run();
             // Detach before the session may be hot-swapped/recreated next loop

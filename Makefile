@@ -34,6 +34,11 @@ COVERAGE_REPORT := $(BUILD_COV_DIR)/coverage.txt
 # scripts/lcov_to_xml.py). Read by the scanner via sonar.coverageReportPaths.
 COVERAGE_XML := $(BUILD_COV_DIR)/coverage-sonar.xml
 SONAR_REPORT := $(BUILD_COV_DIR)/sonar-report.json
+# sonar-summary's LIVE curl output. Deliberately a DIFFERENT file from
+# SONAR_REPORT: the report is the sonar-scan stamp (its presence means
+# "scanned"); writing the summary GET into it made every later sonar-scan
+# a permanent no-op ("Nothing to be done"). Same fix as bridge 6a5482d.
+SONAR_LIVE := $(BUILD_COV_DIR)/sonar-live.json
 # Cached SonarCloud measures (coverage headline) + REMOVED-facet (issues whose
 # source was deleted). Both curled by sonar-summary so build_summary.py reads
 # the SAME numbers sonar_summary.py shows -- total = open + removed (OPEN union
@@ -641,6 +646,33 @@ $(SONAR_REPORT): $(COVERAGE_REPORT) $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES) $(
 			tail -n 20 $(BUILD_COV_DIR)/sonar-scanner.log; \
 			exit $$rc; \
 		fi
+	@echo "=== [engine-sim-cli] Waiting for SonarCloud Compute Engine to finish ==="
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+		CETASKID=$$(grep -E '^ceTaskId=' $(BUILD_COV_DIR)/.scannerwork/report-task.txt 2>/dev/null | cut -d= -f2); \
+		if [ -z "$$CETASKID" ]; then \
+			echo "ERROR: no ceTaskId in $(BUILD_COV_DIR)/.scannerwork/report-task.txt; cannot confirm analysis settled"; \
+			exit 1; \
+		fi; \
+		echo "  CE task: $$CETASKID"; \
+		dead=0; \
+		while [ $$dead -lt 60 ]; do \
+			status=$$(curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/ce/task?id=$$CETASKID" \
+				| python3 -c "import json,sys; print(json.load(sys.stdin).get('task',{}).get('status',''))" 2>/dev/null); \
+			if [ "$$status" = "SUCCESS" ]; then \
+				echo "  CE task SUCCESS after $$(($$dead * 2))s"; \
+				break; \
+			fi; \
+			if [ "$$status" = "FAILED" ] || [ "$$status" = "CANCELED" ]; then \
+				echo "ERROR: SonarCloud CE task $$status (id=$$CETASKID); report did not settle"; \
+				exit 1; \
+			fi; \
+			sleep 2; \
+			dead=$$((dead + 1)); \
+		done; \
+		if [ "$$status" != "SUCCESS" ]; then \
+			echo "ERROR: CE task did not settle within 120s (id=$$CETASKID)"; \
+			exit 1; \
+		fi
 	@echo "=== [engine-sim-cli] Caching SonarCloud issue report ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
 	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN" \
@@ -657,7 +689,7 @@ coverage-clean:
 	@rm -rf $(BUILD_COV_DIR)/profraw
 
 sonar-clean:
-	@rm -f $(SONAR_REPORT)
+	@rm -f $(SONAR_REPORT) $(SONAR_LIVE)
 	@rm -rf $(BUILD_COV_DIR)/.scannerwork
 
 # Sonar summary -- display issues from a LIVE SonarCloud report (DRY: bridge script).
@@ -671,10 +703,10 @@ sonar-summary:
 	@echo "=== [engine-sim-cli] BEGIN: SonarCloud issues summary ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
 	if [ -z "$$TOKEN" ]; then echo "  No token"; exit 0; fi; \
-	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN&facets=impactSeverities" > $(SONAR_REPORT) 2>/dev/null || true; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN&facets=impactSeverities" > $(SONAR_LIVE) 2>/dev/null || true; \
 	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=1&resolutions=REMOVED&facets=impactSeverities" > $(SONAR_REMOVED_FACET) 2>/dev/null || true; \
 	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=coverage,lines_to_cover,uncovered_lines" > $(SONAR_MEASURES) 2>/dev/null || true; \
-	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_REPORT) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli --removed-facet $(SONAR_REMOVED_FACET)
+	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_LIVE) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli --removed-facet $(SONAR_REMOVED_FACET)
 	@echo "=== [engine-sim-cli] END: SonarCloud issues summary ==="
 
 # Coverage summary -- emit the shared multi-line coverage block (SonarCloud-live
@@ -709,7 +741,7 @@ summary:
 		--test-log test.log \
 		--cov-measures $(SONAR_MEASURES) \
 		--local-cov $(BUILD_COV_DIR)/lcov.info --local-type lcov \
-		--sonar-report $(SONAR_REPORT) \
+		--sonar-report $(SONAR_LIVE) \
 		--removed-facet $(SONAR_REMOVED_FACET)
 	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary SUMMARY_QUIET=1
 

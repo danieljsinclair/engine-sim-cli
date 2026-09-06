@@ -23,6 +23,7 @@ struct ReplayArgs {
     std::string endAt;               // --end-at <time>: raw string, parsed after CLI
     double startFromS = -1.0;        // parsed seconds
     double endAtS = -1.0;            // parsed seconds
+    bool noBlankSkip = false;        // --no-blank-skip: anchor the arrival row exactly at the offset (default: skip blank USB-settle rows)
 };
 
 // Gearbox mode and logging (--auto / --manual / --gearbox-log).
@@ -46,6 +47,13 @@ struct AudioTimingArgs {
     // re-normalizes it), so span taming lives at the output stage. Forwards to
     // the bridge's ISimulatorConfig.spanTame.
     float spanTame = 0.0f;
+
+    // Output-stage volume leveling (--volume-tame): lifts quiet-on-decel
+    // sections toward the session average and sits loud sections back, one
+    // smoothed gain at the int16->float conversion seam. 0.0 (the default) =
+    // feature OFF = fully bypassed = bit-identical audio; 1.0 = full
+    // leveling. Forwards to the bridge's ISimulatorConfig.volumeTame.
+    float volumeTame = 0.0f;
 };
 
 // The vehicle-twin telemetry input subsystem: --live-telemetry plus the
@@ -70,10 +78,12 @@ struct TwinArgs {
     // speed signal updates only ~5.5 Hz in ~0.9 km/h held steps, so the rigid
     // pin teleports engine rpm between levels (the audible "piano keys"). A
     // positive tau makes the pin CHASE the road-implied speed with a
-    // critically-damped response. Default 150 ms = the tuned road value
+    // critically-damped response. Default 150 ms = the owner-tuned road value
     // (owner directive 2026-09-06: a flag-less road test must get the tuned
-    // compliance). Explicit --pin-tau-ms 0 is EXACTLY the rigid pin,
-    // bit-identical to the legacy behavior.
+    // compliance); the stable window is 60-1000 ms (see
+    // docs/architecture/pin-tau-compliance.md in engine-sim-bridge).
+    // 0 (or negative) is EXACTLY the rigid pin, bit-identical to the legacy
+    // behavior (the regression contract).
     double pinTauMs = 150.0;
 
     // Coupling MODEL (--coupling-model): how the live clutch pressure is derived.
@@ -100,12 +110,12 @@ struct TwinArgs {
 };
 
 // Resolve the VehicleStartController crank delay (seconds) from the parsed
-// start args. An EXPLICIT --starter-delay converts ms->s verbatim (0 is a
+// start args. An EXPLICIT --cranking-delay converts ms->s verbatim (0 is a
 // meaningful zero-delay combined start); only an ABSENT flag falls back to the
 // controller default. Pure so the CLI conversion is unit-testable.
-inline double resolveCrankDelayS(int starterDelayMs, bool explicitMs, double defaultS) {
+inline double resolveCrankDelayS(int crankingDelayMs, bool explicitMs, double defaultS) {
     return explicitMs
-        ? static_cast<double>(starterDelayMs) / 1000.0
+        ? static_cast<double>(crankingDelayMs) / 1000.0
         : defaultS;
 }
 
@@ -148,15 +158,16 @@ struct CommandLineArgs {
     };
     OutputArgs output;
 
-    // Start-control knobs (--start / --starter-delay). Grouped so
+    // Start-control knobs (--start / --cranking-delay). Grouped so
     // CommandLineArgs stays under the struct-field threshold (S1820).
     struct StartArgs {
         bool autoStart = false;      // --start: auto-crank the engine (implicit with --replay-telemetry)
-        int starterDelayMs = 0;      // --starter-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start
-        // True only when --starter-delay appeared on the command line. The
-        // value 0 is MEANINGFUL (zero-delay combined start) and must not fall
-        // back to the controller default — only an ABSENT flag does.
-        bool starterDelayExplicit = false;
+        int crankingDelayMs = 0;     // --cranking-delay <int-ms>: starter-then-ignition delay (McLaren mod). 0 = combined start
+        // True only when --cranking-delay (or its --starter-delay alias)
+        // appeared on the command line. The value 0 is MEANINGFUL (zero-delay
+        // combined start) and must not fall back to the controller default —
+        // only an ABSENT flag does.
+        bool crankingDelayExplicit = false;
     };
     StartArgs start;
 
@@ -177,7 +188,8 @@ struct CommandLineArgs {
 
 void printUsage(const char* progName);
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args);
-void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion);
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion,
+                      bool interactiveOverlay = false);
 
 // Parse a time string (plain seconds "30.5", mm:ss "1:30.5", or hh:mm:ss "0:01:30.5") into seconds.
 // Returns -1.0 on invalid input. Shared bridge version — see common/TimeParser.h.

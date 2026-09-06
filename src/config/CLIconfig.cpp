@@ -3,6 +3,7 @@
 
 #include "CLIconfig.h"
 #include "simulation/SimulationLoop.h"
+#include "TelemetryProviderFactory.h"
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
@@ -39,7 +40,7 @@ void printUsage(const char* progName) {
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --deterministic      Headless fixed-timestep replay: reproducible per-frame output (gate/diagnosis mode)\n";
     std::cout << "  --verbose            Show DEBUG-level console logging (startup discards, sync-pull buffer fills)\n";
-    std::cout << "  --starter-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000)\n";
+    std::cout << "  --cranking-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000; --starter-delay accepted as alias)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
@@ -104,26 +105,33 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    auto starterDelayOpt = app.add_option("--starter-delay", args.start.starterDelayMs,
+    auto crankingDelayOpt = app.add_option("--cranking-delay,--starter-delay", args.start.crankingDelayMs,
         "Starter-then-ignition delay in MILLISECONDS (true ms scale, linear: "
         "1000 = one second of cranking before ignition; max 10000 = 10 s). "
         "0 = zero-delay combined start (starter+ignition together). "
         "ABSENT = 500 ms default. Only applies to brake-held starts; a gear "
         "start ignites instantly, and selecting a drive gear mid-crank fires "
         "ignition immediately (safety fast-forward — truncates the delay). "
-        "Per-engine .mr starter_torque/speed still apply.")
+        "Per-engine .mr starter_torque/speed still apply. "
+        "(--starter-delay is the old name, still accepted.)")
         ->check(CLI::Range(0, 10000));
     // Explicitness is tracked separately: the VALUE 0 is meaningful (combined
     // start) and must not fall back to the 500 ms default — only an ABSENT
     // flag does.
-    starterDelayOpt->each([&args](const std::string&) {
-        args.start.starterDelayExplicit = true;
+    crankingDelayOpt->each([&args](const std::string&) {
+        args.start.crankingDelayExplicit = true;
         return std::string();
     });
     auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
     app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss); file replay skips there instantly — rows before the offset are never simulated (arrival state is synthesized at the offset)");
     app.add_option("--end-at", args.replay.endAt, "Stop replay/live-telemetry at this time (seconds or mm:ss); plays to input end if past it");
+    app.add_flag("--no-blank-skip", args.replay.noBlankSkip,
+        "With --start-from: anchor the arrival state exactly on the first row "
+        "at/after the offset, blank or not. DEFAULT (skip ON) walks forward "
+        "past blank USB-settle rows to the first row carrying engine data — "
+        "a blank row holds no operating point to warm-boot from. Diagnostic "
+        "escape hatch to A/B what the skip papers over.");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
     auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
@@ -145,13 +153,16 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--pin-tau-ms", args.twin.pinTauMs,
         "PIN wheel-coupling compliance in milliseconds. The road speed signal\n"
-        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0)\n"
-        "teleports engine rpm between levels - the audible 'piano keys'.\n"
-        "A positive tau makes the pin chase the road-implied speed with a\n"
-        "critically-damped response; DEFAULT 150 ms is the tuned road value\n"
-        "(owner directive 2026-09-06). --pin-tau-ms 0 is bit-identical to the\n"
-        "rigid pin (the regression contract). Scoped to the pin target only:\n"
-        "the gearbox shift map still sees the raw speed.")
+        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0) teleports\n"
+        "engine rpm between levels - the audible 'piano keys'. A positive tau\n"
+        "makes the pin chase the road-implied speed with a critically-damped\n"
+        "response. DEFAULT 150 ms (the owner-tuned road value, directive\n"
+        "2026-09-06); the stable window is 60-1000 ms - values below 60 risk\n"
+        "drivetrain bifurcation (20-50 ms runs away to 200+ mph), values above\n"
+        "3000 are over-damped (15000 ms halves road speed); both print a\n"
+        "warning. 0 or negative is EXACTLY the rigid pin, bit-identical to the\n"
+        "legacy behavior (the regression contract). Scoped to the pin target\n"
+        "only: the gearbox shift map still sees the raw speed.")
         ->capture_default_str();
 
     app.add_flag("--effective-throttle", args.twin.effectiveThrottle,
@@ -187,6 +198,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "pinned: ratio R(x)=1+5x, makeup gain m(x)=10^(12*(1-1/R)/20),\n"
         "knee [-18,-6] dBFS, safety soft-clip at 0.90/0.95. Off (default)\n"
         "is bit-identical to the legacy audio path.")
+        ->check(CLI::Range(0.0, 1.0));
+
+    app.add_option("--volume-tame", args.audio.volumeTame,
+        "Output-stage volume leveling (0.0=off, 1.0=full). Lifts quiet-on-decel\n"
+        "sections toward the session average and sits loud sections back (max\n"
+        "+12 dB lift, max -3.1 dB cut, ~50 ms smoothed gain). Off (default) is\n"
+        "fully bypassed and bit-identical to the legacy audio path.")
         ->check(CLI::Range(0.0, 1.0));
 
     // Mutual exclusions
@@ -342,6 +360,13 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
 
     resolveReplayGearboxDefault(args);
 
+    // --pin-tau-ms outside the stable window: warn-only (owner directive: a
+    // tuning toggle must never be restricted). tau <= 0 is the documented
+    // rigid passthrough = OFF, no warning.
+    if (const char* tauWarning = telemetry_detail::pinTauWarningText(args.twin.pinTauMs)) {
+        std::cerr << ANSIColors::warningMessage(std::string("WARNING: ") + tauWarning) << "\n";
+    }
+
     // Implicit settings when connectDemo is true
     if (args.connectDemo) {
         args.playAudio = true;
@@ -414,7 +439,8 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
 // ============================================================================
 // Shows the configuration on startup in a banner format
 // ============================================================================
-void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion = "unknown") {
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion /*= "unknown"*/,
+                      bool interactiveOverlay /*= false, see CLIconfig.h*/) {
     // Verify build ID
     if (engineAPIVersion != nullptr) {
         std::cout << "[Bridge: " << engineAPIVersion << "]\n";
@@ -432,7 +458,13 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
         std::cout << "  Dyno Load: " << static_cast<int>(config.targetLoad * 100)
                   << "% (" << static_cast<int>(config.targetLoad * EngineSimDefaults::DYNO_MAX_TORQUE_FT_LBS) << " ft*lbs)\n";
     }
-    std::cout << "  Interactive: " << (config.interactive ? "Yes" : "No") << "\n";
+    // Print the ACTUAL wiring: config.interactive alone lies on the
+    // replay+--interactive combo (the session is CSV-bounded, so
+    // config.interactive is false, yet the keyboard overlay IS wired —
+    // CLIMain keys the overlay off args.interactiveExplicit).
+    std::cout << "  Interactive: "
+              << ((config.interactive || interactiveOverlay) ? "Yes" : "No")
+              << (interactiveOverlay ? " (keyboard overlay)" : "") << "\n";
     std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";
     const char* audioModeLabel;
     if (config.deterministic) {

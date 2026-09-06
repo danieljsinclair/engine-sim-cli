@@ -21,7 +21,7 @@ bool PresentationCollection::Initialize(const PresentationConfig& config) {
     return !children_.empty();
 }
 
-void PresentationCollection::Shutdown() {
+void PresentationCollection::Shutdown() noexcept {
     // Reverse order: children shut down in LIFO (mirror construction order).
     for (auto it = children_.rbegin(); it != children_.rend(); ++it) {
         if (*it) (*it)->Shutdown();
