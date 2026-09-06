@@ -145,12 +145,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--pin-tau-ms", args.twin.pinTauMs,
         "PIN wheel-coupling compliance in milliseconds. The road speed signal\n"
-        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0, DEFAULT)\n"
+        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0)\n"
         "teleports engine rpm between levels - the audible 'piano keys'.\n"
         "A positive tau makes the pin chase the road-implied speed with a\n"
-        "critically-damped response; ~150 ms is the tuned road value. 0 is\n"
-        "bit-identical to the rigid pin (the regression contract). Scoped to\n"
-        "the pin target only: the gearbox shift map still sees the raw speed.")
+        "critically-damped response; DEFAULT 150 ms is the tuned road value\n"
+        "(owner directive 2026-09-06). --pin-tau-ms 0 is bit-identical to the\n"
+        "rigid pin (the regression contract). Scoped to the pin target only:\n"
+        "the gearbox shift map still sees the raw speed.")
         ->capture_default_str();
 
     app.add_flag("--effective-throttle", args.twin.effectiveThrottle,
