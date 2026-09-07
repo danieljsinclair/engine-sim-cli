@@ -2,12 +2,16 @@
 #include "presentation/ConsolePresentation.h"
 #include "presentation/SteeringGauge.h"
 #include "simulator/GearConventions.h"
+#include "simulation/EnginePhase.h"
 #include "config/ANSIColors.h"
 #include "io/IPresentation.h"
 
 #include <iostream>
 #include <sstream>
 #include <streambuf>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace presentation;
 using GS = bridge::GearSelector;
@@ -571,6 +575,39 @@ TEST(ConsolePresentationSteeringTest, SteeringStyleArrows_RendersArrowGlyph) {
         << "arrows style must render the right arrow at full-right steering";
     EXPECT_EQ(line.find(presentation::SteeringGauge::GLYPH_3), std::string::npos)
         << "arrows style must not render braille glyphs";
+}
+
+// ============================================================================
+// F8 characterization: console phase-name rendering.
+//
+// F8 (consolidation wave A) consolidates phase-name strings under the bridge
+// (EnginePhaseName / PresentationStateBuilders). The console renders the
+// bridge's EnginePhaseName VERBATIM, colours included. These literals are
+// pinned byte-for-byte — deliberately NOT computed via EnginePhaseName(),
+// which would be self-fulfilling. The leading spaces on "Stopped"/"Running"
+// are alignment padding baked into the current strings; the ANSI colour codes
+// are part of the operator-visible output. A consolidation that renames,
+// recolours, or re-pads any phase must fail HERE first.
+// ============================================================================
+
+TEST(ConsolePresentationPhaseTest, PhaseRendersExactColoredName) {
+    const std::vector<std::pair<EnginePhase, std::string>> table = {
+        {EnginePhase::Stopped,  "\033[31m Stopped\033[0m"},   // RED, leading pad
+        {EnginePhase::Cranking, "\033[33mCranking\033[0m"},   // YELLOW
+        {EnginePhase::Rollover, "\033[36mRollover\033[0m"},   // CYAN
+        {EnginePhase::Running,  "\033[32m Running\033[0m"},   // GREEN, leading pad
+        {EnginePhase::Stopping, "\033[35mStopping\033[0m"},   // ORANGE
+    };
+    for (const auto& [phase, literal] : table) {
+        EngineState state = makeState();
+        state.engine.phase = phase;
+
+        const std::string line = renderStateLine(state);
+
+        EXPECT_NE(line.find(literal), std::string::npos)
+            << "phase " << static_cast<int>(phase)
+            << " must render the exact literal <" << literal << ">";
+    }
 }
 
 TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {
