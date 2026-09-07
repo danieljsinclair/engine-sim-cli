@@ -30,7 +30,7 @@
 #include "common/ILogging.h"
 #include "config/ANSIColors.h"
 #include "config/StopReasonReporter.h"
-#include <Verification.h>
+#include "common/Verification.h"
 #include <poll.h>
 
 // Bridge headers for connect-demo mode

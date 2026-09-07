@@ -24,7 +24,7 @@
 
 #include <gtest/gtest.h>
 
-#include <Verification.h>
+#include "common/Verification.h"
 
 #include <stdexcept>
 
