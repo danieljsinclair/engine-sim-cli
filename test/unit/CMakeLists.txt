@@ -26,6 +26,9 @@ add_executable(unit_tests
     StopReasonReporterTest.cpp
     CsvOutFilenameTest.cpp
     SteeringGaugeTest.cpp
+    # Consolidation wave B characterization nets (F2/F5) — see each file's
+    # header for the pinned seam and the .cpp-include technique.
+    TelemetryProviderFactoryCharacterizationTest.cpp
     # Required support code
     ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
@@ -37,6 +40,9 @@ add_executable(unit_tests
     ../../src/config/ExecutablePath.cpp
     ../../src/presentation/ConsolePresentation.cpp
     ../../src/presentation/CsvPresentation.cpp
+    # Link closure for GearboxReconfigureCharacterizationTest, which compiles
+    # CLIMain.cpp into its TU (CLIMain constructs a PresentationCollection).
+    ../../src/presentation/PresentationCollection.cpp
     ../../src/input/KeyboardInput.cpp
     ../../test/mocks/MockDataSimulator.cpp
     ../../test/mocks/MockAudioUnit.cpp
