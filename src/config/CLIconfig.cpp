@@ -3,6 +3,7 @@
 
 #include "CLIconfig.h"
 #include "simulation/SimulationLoop.h"
+#include "input/ReplayTelemetryProvider.h"
 #include "TelemetryProviderFactory.h"
 #include "ANSIColors.h"
 
@@ -310,20 +311,15 @@ std::string generateTimestampedFilename(const std::string& prefix,
 }
 
 // Replay telemetry defaults the gearbox to AUTO unless the user explicitly
-// opted into manual control with --manual. A replay CSV carries only a PRND
-// selector — there is no +/- gear channel — so a manual replay can never
-// select a gear and sits stationary free-revving ("DM-", 0 mph, engine
-// unloaded). --interactive (keyboard overlay on replay) does NOT opt out:
-// the overlay's gear keys win over the auto box per-keypress, so auto stays
-// the default there too. The live path is untouched: LiveTelemetryProvider
-// has no manual gearbox mode to flip.
-// (Owner ruling 2026-09-03: replay must self-drive by default — including
-// interactive replay.)
+// opted into manual with --manual (owner ruling 2026-09-03: replay must
+// self-drive by default — including interactive replay; the live path is not
+// auto-defaulted). The predicate itself is bridge-side
+// (input::resolveReplayGearboxDefault, ReplayTelemetryProvider.h,
+// consolidation wave B) — it resolves the provider's autoGearbox ctor
+// argument; this is the thin CLI shell over the parsed CommandLineArgs.
 void resolveReplayGearboxDefault(CommandLineArgs& args) {
-    const bool replayWithoutAuto = !args.replay.telemetryPath.empty() && !args.gearbox.automatic;
-    if (replayWithoutAuto && !args.gearbox.manual) {
-        args.gearbox.automatic = true;
-    }
+    args.gearbox.automatic = input::resolveReplayGearboxDefault(
+        !args.replay.telemetryPath.empty(), args.gearbox.automatic, args.gearbox.manual);
 }
 
 }  // namespace
