@@ -29,6 +29,7 @@ add_executable(unit_tests
     # Consolidation wave B characterization nets (F2/F5) — see each file's
     # header for the pinned seam and the .cpp-include technique.
     TelemetryProviderFactoryCharacterizationTest.cpp
+    GearboxReconfigureCharacterizationTest.cpp
     # Required support code
     ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
