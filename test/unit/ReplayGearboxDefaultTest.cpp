@@ -95,3 +95,34 @@ TEST(ReplayGearboxDefault, InteractiveWithoutReplay_KeepsManualDefault) {
     EXPECT_FALSE(args.gearbox.manual)
         << "No flag was passed; neither mode should be explicitly set";
 }
+
+// ============================================================================
+// F6 characterization net (consolidation wave B, 2026-09-07).
+// resolveReplayGearboxDefault (CLIconfig.cpp, anonymous namespace) moves
+// CLI-side -> bridge. The D2 companion suite above already pins: replay
+// default->auto (interactive and plain), --manual opt-out (interactive),
+// explicit --auto, and the replay-scoped non-replay default. Missing branches
+// pinned here: the non-interactive --manual opt-out, and the LIVE path
+// (stdin CSV, telemetryPath empty) which the resolution must NOT touch.
+// ============================================================================
+
+TEST(ReplayGearboxDefault, PlainReplay_ManualOptsOutWithoutInteractive) {
+    // The --interactive variant is pinned above; the opt-out must not depend
+    // on it — the branch is `manual` alone.
+    auto args = parseArgv({"--replay-telemetry", "capture.csv", "--manual"});
+    EXPECT_TRUE(args.gearbox.manual);
+    EXPECT_FALSE(args.gearbox.automatic)
+        << "--manual is the explicit opt-out with or without --interactive";
+}
+
+TEST(ReplayGearboxDefault, LiveTelemetry_IsNotAutoDefaulted) {
+    // --live-telemetry reads stdin, so replay.telemetryPath stays empty: the
+    // auto default is REPLAY-scoped (LiveTelemetryProvider has no manual
+    // gearbox mode to flip). The move must keep the replay-path predicate.
+    auto args = parseArgv({"--live-telemetry"});
+    EXPECT_TRUE(args.twin.liveTelemetry);
+    EXPECT_TRUE(args.replay.telemetryPath.empty());
+    EXPECT_FALSE(args.gearbox.automatic)
+        << "the auto default must not leak onto the live-telemetry path";
+    EXPECT_FALSE(args.gearbox.manual);
+}

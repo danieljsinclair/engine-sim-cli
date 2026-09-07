@@ -44,6 +44,7 @@
 #include "input/IKeyboardInput.h"
 #include "input/ReplayTelemetryProvider.h"
 #include "input/LiveTelemetryProvider.h"
+#include "input/GearboxReconfiguration.h"
 #include "simulator/BridgeSimulator.h"
 #include "twin/IceVehicleProfile.h"
 #include "twin/WheelCoupling.h"
@@ -503,57 +504,18 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
 }
 
 // Reconfigure gearbox-bearing input providers to match the simulator's actual
-// transmission ratios. Localizes the BridgeSimulator/provider casts into one
-// cohesive unit (SRP) so the run loop stays flat. Open/Closed note: the cast
-// here is the seam — providers expose reconfigureProfile() but it is not yet on
-// the shared IInputProvider interface (that lives in engine-sim-bridge). When it
-// is promoted there, this helper collapses to a single polymorphic call.
+// transmission ratios. The recipe + the Bug-C3 fail-fast policy are
+// bridge-side (input::reconfigureGearboxProviders, input/
+// GearboxReconfiguration.h — consolidation wave B). This forwarder keeps the
+// CLI seam (InputContext in, CliException out) so the run loop and the
+// characterization net see the same signature and observable: the bridge's
+// refusal is mapped to CliException with the message unchanged.
 void reconfigureGearboxProviders(ISimulator* simulator, const InputContext& inputCtx) {
-    auto* bridgeSim = dynamic_cast<BridgeSimulator*>(simulator);
-    if (!bridgeSim) return;
-
-    const auto* rawSim = bridgeSim->getInternalSimulator();
-    const auto* trans = rawSim ? rawSim->getTransmission() : nullptr;
-    const auto* vehicle = rawSim ? rawSim->getVehicle() : nullptr;
-
-    // The LIVE path (--live-telemetry) builds its twin with a hardcoded
-    // zf8hp45 default profile. If the named .mr did NOT supply a transmission +
-    // vehicle, that default would silently drive the engine (Bug C3). Fail fast
-    // rather than hiding the geometry mismatch — determinism over silent C63.
-    if (const auto* live = dynamic_cast<input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
-        (void)live;
-        if (!trans || !vehicle || trans->getGearCount() <= 0) {
-            throw CliException(
-                "Live telemetry requested but the loaded script supplies no transmission/"
-                "vehicle geometry. The auto-gearbox twin has no ratios to match against. "
-                "Add a `vehicle` + `transmission` node (or `import` a shared block such as "
-                "tesla_y_performance.mr) to the .mr. Refusing to silently fall back to zf8hp45.");
-        }
-    }
-
-    // Replay / demo paths may legitimately run on the default profile when no
-    // geometry is present (legacy scripts), so leave the provider's default.
-    if (!trans || !vehicle || trans->getGearCount() <= 0) return;
-
-    std::vector<double> ratios;
-    ratios.reserve(static_cast<size_t>(trans->getGearCount()));
-    for (int g = 0; g < trans->getGearCount(); ++g) {
-        ratios.push_back(trans->getGearRatio(g));
-    }
-
-    // Replay path
-    if (auto* replay = dynamic_cast<input::ReplayTelemetryProvider*>(inputCtx.provider.get())) {
-        replay->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
-    }
-    // Live --live-telemetry path (CSV stdin drives the twin). The named engine
-    // loaded via --script may have different ratios than the twin's default ZF
-    // profile, so reconfigure the box to match (e.g. a C63 M156).
-    if (auto* live = dynamic_cast<input::LiveTelemetryProvider*>(inputCtx.provider.get())) {
-        live->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
-    }
-    // Keyboard --auto path (via DemoInputProvider)
-    if (auto* demo = dynamic_cast<input::DemoInputProvider*>(inputCtx.demoProvider.get())) {
-        demo->reconfigureProfile(ratios, vehicle->getDiffRatio(), vehicle->getTireRadius());
+    try {
+        input::reconfigureGearboxProviders(simulator, inputCtx.provider.get(),
+                                           inputCtx.demoProvider.get());
+    } catch (const input::GearboxReconfigurationRefusal& e) {
+        throw CliException(e.what());
     }
 }
 

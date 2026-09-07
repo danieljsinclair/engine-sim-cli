@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "config/TelemetryProviderFactory.h"
 
 namespace {
@@ -55,6 +57,63 @@ TEST(PinTauGuardTest, WarningNamesTheFlag) {
     const char* high = telemetry_detail::pinTauWarningText(5000.0);
     ASSERT_NE(high, nullptr);
     EXPECT_NE(std::string(high).find("--pin-tau-ms"), std::string::npos);
+}
+
+// ============================================================================
+// F7 characterization net (consolidation wave B, 2026-09-07).
+// pinTauWarningText moves CLI-side -> bridge twin/PinTargetChase.h. The move
+// must carry the exact strings and the exact threshold boundaries verbatim;
+// these pin both so any drift (typo, boundary nudge, swapped branch) fails
+// before review. Strings are pinned with FULL equality because the text is
+// the deliverable being relocated — this intentionally overrides the usual
+// "intent not exact message" rule for error assertions.
+// ============================================================================
+
+TEST(PinTauGuardTest, LowWarningTextIsExact) {
+    // 0 < tau < 60: the bifurcation warning, character for character.
+    EXPECT_STREQ(telemetry_detail::pinTauWarningText(30.0),
+                 "--pin-tau-ms 60-1000 is the stable window; below 60 ms the drivetrain "
+                 "can bifurcate (20-50 ms bench runs ran away to ~207 mph). Continuing "
+                 "with your value.");
+}
+
+TEST(PinTauGuardTest, HighWarningTextIsExact) {
+    // tau > 3000: the over-damped warning, character for character.
+    EXPECT_STREQ(telemetry_detail::pinTauWarningText(5000.0),
+                 "--pin-tau-ms above 3000 ms is over-damped (15000 ms halves road speed "
+                 "on the bench). 60-1000 ms is the stable window. Continuing with your "
+                 "value.");
+}
+
+TEST(PinTauGuardTest, SixtyMsBoundaryJustEitherSide) {
+    // 60.0 is INSIDE the stable window (no warning); anything under it warns.
+    EXPECT_NE(telemetry_detail::pinTauWarningText(59.999999), nullptr);
+    EXPECT_EQ(telemetry_detail::pinTauWarningText(60.0), nullptr);
+}
+
+TEST(PinTauGuardTest, ThreeThousandMsBoundaryJustEitherSide) {
+    // 3000.0 is still silent; anything above it warns.
+    EXPECT_EQ(telemetry_detail::pinTauWarningText(3000.0), nullptr);
+    EXPECT_NE(telemetry_detail::pinTauWarningText(3000.000001), nullptr);
+}
+
+TEST(PinTauGuardTest, ZeroBoundaryJustEitherSide) {
+    // tau > 0 is the warn domain's lower edge: the first positive value warns,
+    // exactly 0.0 (rigid OFF) is silent — the (0, 60) open interval.
+    EXPECT_NE(telemetry_detail::pinTauWarningText(0.000001), nullptr);
+    EXPECT_EQ(telemetry_detail::pinTauWarningText(0.0), nullptr);
+}
+
+TEST(PinTauGuardTest, BranchesDoNotCross) {
+    // 30 ms selects the LOW text and never the high text; 5000 ms the reverse.
+    const char* low = telemetry_detail::pinTauWarningText(30.0);
+    ASSERT_NE(low, nullptr);
+    EXPECT_EQ(std::string(low).find("over-damped"), std::string::npos)
+        << "sub-60 tau must get the bifurcation warning, not the over-damped one";
+    const char* high = telemetry_detail::pinTauWarningText(5000.0);
+    ASSERT_NE(high, nullptr);
+    EXPECT_EQ(std::string(high).find("bifurcate"), std::string::npos)
+        << "over-3000 tau must get the over-damped warning, not the bifurcation one";
 }
 
 }  // namespace

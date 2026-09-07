@@ -6,95 +6,100 @@
 // with the caller (CLIMain) — validation needs the parsed trace duration,
 // which only exists after Initialize() opens the file. Pinned by
 // test/unit/CLIMainS3776S1820Test.cpp Section B (SLIPLOCK_REFACTOR_EXPOSED).
+//
+// The twin coupling parse+apply RECIPE itself is bridge-side
+// (input/TwinCouplingRecipe.h; string->enum resolution in
+// twin/CouplingConfig.h — consolidation wave B). This factory stays the CLI's
+// construction seam and keeps the thin typed seams below so the CLI fail-fast
+// remains CliException with the same messages.
 
 #ifndef CLI_TELEMETRY_PROVIDER_FACTORY_H
 #define CLI_TELEMETRY_PROVIDER_FACTORY_H
 
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "io/IInputProvider.h"
 #include "config/CLIconfig.h"
 #include "config/CliException.h"
+#include "input/TwinCouplingRecipe.h"
 #include "twin/CouplingModelSelector.h"
-#include "twin/EffectiveThrottle.h"
+#include "twin/PinTargetChase.h"
 #include "twin/UpstreamTorqueHint.h"
 #include "twin/WheelCoupling.h"
 
 class CommandLineArgs;
 class ILogging;
 
-// Named detail namespace (S1000): pure parse/validate helpers shared by the
-// coupling-flag template below. inline keeps them ODR-safe across TUs now
-// they no longer have internal linkage.
+// Named detail namespace (S1000): thin CLI seams over the bridge's shared
+// twin-coupling recipe (input/TwinCouplingRecipe.h; string->enum resolution
+// in twin/CouplingConfig.h). The mapping + fail-fast messages live
+// bridge-side; these wrappers keep the CLI's typed CliException surface (the
+// bridge throws std::invalid_argument with the identical text; the seam maps
+// it, message unchanged). inline keeps them ODR-safe across TUs.
 namespace telemetry_detail {
 
 // --wheel-coupling: free / pin / torque. Fail-fast on anything else rather
 // than silently falling back to FREE (a typo'd mode must never quietly
 // re-couple the twin).
 inline twin::WheelCouplingMode parseWheelCouplingMode(const std::string& mode) {
-    if (mode == "free") return twin::WheelCouplingMode::Free;
-    if (mode == "pin") return twin::WheelCouplingMode::Pin;
-    if (mode == "torque") return twin::WheelCouplingMode::Torque;
-    throw CliException("--wheel-coupling must be 'free', 'pin' or 'torque', got: " + mode);
+    try {
+        return twin::resolveWheelCouplingMode(mode);
+    } catch (const std::invalid_argument& e) {
+        throw CliException(e.what());
+    }
 }
 
 // --coupling-model: clutch-map (smooth governor fallback) / torque-converter
 // (default) / legacy (historical bang-bang relief, kept for A/B). Fail-fast
 // on a typo, mirroring --wheel-coupling.
 inline twin::CouplingModelKind parseCouplingModel(const std::string& model) {
-    if (model == "clutch-map") return twin::CouplingModelKind::ClutchMap;
-    if (model == "torque-converter") return twin::CouplingModelKind::TorqueConverter;
-    if (model == "legacy") return twin::CouplingModelKind::Legacy;
-    throw CliException(
-        "--coupling-model must be 'clutch-map', 'torque-converter' or 'legacy', got: " + model);
+    try {
+        return twin::resolveCouplingModel(model);
+    } catch (const std::invalid_argument& e) {
+        throw CliException(e.what());
+    }
 }
 
 // --pin-tau-ms stability-window warning (owner directive: tuning toggles are
-// never restricted — warn, don't reject). Returns the warning text when tau
-// sits outside the stable window, nullptr when it is fine. tau <= 0 is the
-// documented rigid passthrough (OFF) and never warns. Any value is ACCEPTED:
-// PinTargetChase clamps tau <= 0 to rigid, and every positive value is a legal
-// (if ill-advised) experiment the owner may want to run.
-// Empirical map (see engine-sim-bridge docs/architecture/pin-tau-compliance.md):
-//   20-50 ms  drivetrain bifurcation (50 ms runs away to ~207 mph / 15.5k rpm)
-//   60-1000 ms  stable window (recommended; default 150)
-//   >3000 ms  over-damped (15000 ms halves road speed)
+// never restricted — warn, don't reject): thresholds + text live bridge-side
+// in twin/PinTargetChase.h (consolidation wave B), beside the filter they
+// describe. Returns the warning text when tau sits outside the stable window,
+// nullptr when it is fine. tau <= 0 is the documented rigid passthrough (OFF)
+// and never warns; every value is ACCEPTED (warn-only, owner directive
+// 2026-09-04). Pinned VERBATIM by PinTauGuardTest.
 inline const char* pinTauWarningText(double tauMs) {
-    if (tauMs > 0.0 && tauMs < 60.0) {
-        return "--pin-tau-ms 60-1000 is the stable window; below 60 ms the drivetrain can "
-               "bifurcate (20-50 ms bench runs ran away to ~207 mph). Continuing with your value.";
-    }
-    if (tauMs > 3000.0) {
-        return "--pin-tau-ms above 3000 ms is over-damped (15000 ms halves road speed on the "
-               "bench). 60-1000 ms is the stable window. Continuing with your value.";
-    }
-    return nullptr;
+    return twin::pinTauWarningText(tauMs);
 }
 
 }  // namespace telemetry_detail
 
-// Apply the shared twin coupling flags to a coupling-bearing provider, in the
-// historical order (coupling mode, coupling model, tau, torque toggles).
-// Template over the concrete provider: live, replay and demo expose the same
-// setter surface. The torque toggles are forwarded unconditionally: the
-// disabled configs are inert no-ops on the twin (set-disabled is provably
-// identical to never-set), so the default path stays byte-identical.
+// Apply the shared twin coupling flags to a coupling-bearing provider.
+// Thin CLI adapter over the bridge recipe (input::applyTwinCouplingFlags):
+// converts TwinArgs to input::TwinCouplingRecipe and maps the bridge's
+// std::invalid_argument fail-fast to the CLI's CliException (same message).
+// The setter ORDER and the store + re-apply-with-TWIN-defaults contract
+// (Free/ClutchMap/0.0 — the 2026-09-06 factory-ordering regression fix) live
+// in the bridge header; semantics are identical to the pre-move inline
+// version pinned by the characterization nets.
 template <typename Provider>
 void applyTwinCouplingFlags(Provider& provider, const TwinArgs& twin) {
-    provider.setWheelCouplingMode(telemetry_detail::parseWheelCouplingMode(twin.wheelCoupling));
-    provider.setCouplingModel(telemetry_detail::parseCouplingModel(twin.couplingModel));
+    input::TwinCouplingRecipe recipe;
+    recipe.wheelCoupling = twin.wheelCoupling;
+    recipe.couplingModel = twin.couplingModel;
     // Warn-only seam: pinTauWarningText (called at arg-parse time in
     // CLIconfig.cpp processArgs) owns the console warning; every value passes
     // through — tau <= 0 is rigid by PinTargetChase construction.
-    provider.setPinTauMs(twin.pinTauMs);
-    twin::EffectiveThrottleConfig effectiveThrottle;
-    effectiveThrottle.enabled = twin.effectiveThrottle;
-    provider.setEffectiveThrottleConfig(effectiveThrottle);
-    twin::TorqueInformedGearboxConfig torqueInformedGearbox;
-    torqueInformedGearbox.enabled = twin.torqueInformedGearbox;
-    provider.setTorqueInformedGearboxConfig(torqueInformedGearbox);
+    recipe.pinTauMs = twin.pinTauMs;
+    recipe.effectiveThrottle = twin.effectiveThrottle;
+    recipe.torqueInformedGearbox = twin.torqueInformedGearbox;
+    try {
+        input::applyTwinCouplingFlags(provider, recipe);
+    } catch (const std::invalid_argument& e) {
+        throw CliException(e.what());
+    }
 }
 
 // Build the telemetry provider for --live-telemetry (LiveTelemetryProvider on
