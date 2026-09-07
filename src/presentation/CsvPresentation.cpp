@@ -3,7 +3,7 @@
 
 #include "presentation/CsvPresentation.h"
 #include "config/CliException.h"
-#include "simulation/EnginePhase.h"
+#include "simulation/PresentationStateBuilders.h"
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -11,20 +11,6 @@
 #include <utility>
 
 namespace presentation {
-
-namespace {
-// One-line name for the engine phase (plain text — no ANSI; the console's
-// EnginePhaseName is colored, which we don't want in a CSV column).
-const char* phaseName(EnginePhase phase) {
-    switch (phase) {
-        case EnginePhase::Stopped:   return "Stopped";
-        case EnginePhase::Cranking:  return "Cranking";
-        case EnginePhase::Stopping:  return "Stopping";
-        case EnginePhase::Running:   return "Running";
-        default: return "Unknown";
-    }
-}
-}  // namespace
 
 // ============================ CsvPresentation ============================
 
@@ -79,7 +65,7 @@ void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
     const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     const int64_t inputTs = s.drivetrain.inputTimestampMs;
-    const int64_t latencyMs = (inputTs >= 0 && nowMs >= 0) ? (static_cast<int64_t>(nowMs) - inputTs) : -1;
+    const int64_t latencyMs = builders::inputLatencyMs(static_cast<int64_t>(nowMs), inputTs);
     out_ << std::fixed << std::setprecision(3);
     out_ << static_cast<uint64_t>(nowMs) << ','  // wall_clock_ms
          << timeS << ','                            // sim_time_s (absolute, from trace start)
@@ -87,7 +73,7 @@ void CsvPresentation::ShowSimulatorStates(const EngineState& s) {
          << latencyMs << ','                        // latency_ms = wall_clock_ms - input_timestamp_ms
          << static_cast<long long>(std::round(s.engine.rpm)) << ','
          << static_cast<long long>(std::round(s.engine.rpmRaw)) << ','
-         << phaseName(s.engine.phase) << ','
+         << builders::csvPhaseName(s.engine.phase) << ','
          << static_cast<int>(std::round(s.controls.throttle * 100.0)) << ','
          // brake: binary vehicle brake-light state (canonical brakeLight; the
          // analog pedal level was removed with the startStop brake refactor).

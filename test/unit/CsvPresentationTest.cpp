@@ -218,6 +218,78 @@ TEST_F(CsvPresentationTest, LatencyIsWallClockMinusInputTimestamp) {
     EXPECT_LT(latency, 60000);
 }
 
+// --- F8 characterization: phase-name strings + latency_ms ------------------
+//
+// F8 (consolidation wave A) removes the CLI-side re-derivations
+// (CsvPresentation.cpp phaseName() and the latency computation) in favour of
+// the bridge-owned equivalents. These tests pin the exact CURRENT observable
+// output so the consolidation cannot silently change the CSV contract.
+
+TEST_F(CsvPresentationTest, EngineStateColumn_FullPhaseNameTable) {
+    // The engine_state column: the exact plain-text name per phase. NOTE the
+    // deliberate divergence pinned here: the CSV's local phaseName() maps
+    // Rollover -> "Unknown" (it has no Rollover case), while the console
+    // renders the bridge's colored "Rollover". "Unknown" IS the current CSV
+    // behaviour — any phase-name consolidation must preserve this column
+    // byte-for-byte or consciously change it with owner sign-off, never
+    // silently.
+    const std::vector<std::pair<EnginePhase, const char*>> table = {
+        {EnginePhase::Stopped, "Stopped"},
+        {EnginePhase::Cranking, "Cranking"},
+        {EnginePhase::Rollover, "Unknown"},  // divergence from console name
+        {EnginePhase::Running, "Running"},
+        {EnginePhase::Stopping, "Stopping"},
+    };
+    for (const auto& [phase, expected] : table) {
+        {
+            CsvPresentation presentation(path_.string());
+            presentation.Initialize(PresentationConfig{});
+            EngineState state = makeCsvState();
+            state.engine.phase = phase;
+            presentation.ShowSimulatorStates(state);
+        }
+        const auto fields = split(readLines().at(1));
+        ASSERT_EQ(fields.size(), static_cast<size_t>(kColCount));
+        EXPECT_EQ(fields[kColEngineState], expected)
+            << "phase " << static_cast<int>(phase) << " must render as \""
+            << expected << "\" in the engine_state column";
+    }
+}
+
+TEST_F(CsvPresentationTest, LatencyColumn_EqualsWallClockMinusInputTimestampExactly) {
+    // The latency identity, with ZERO timing tolerance: wall_clock_ms and
+    // latency_ms are both derived from the single nowMs captured inside one
+    // ShowSimulatorStates call, so latency_ms == wall_clock_ms - inputTs must
+    // hold exactly on the same row. A fixed inputTs keeps the arithmetic
+    // human-checkable when this fails.
+    constexpr int64_t kInputTs = 1000;
+    {
+        CsvPresentation presentation(path_.string());
+        presentation.Initialize(PresentationConfig{});
+        EngineState state = makeCsvState();
+        state.drivetrain.inputTimestampMs = kInputTs;
+        presentation.ShowSimulatorStates(state);
+    }
+    const auto fields = split(readLines().at(1));
+    const long long wall = std::stoll(fields[kColWallClockMs]);
+    const long long latency = std::stoll(fields[kColLatencyMs]);
+    EXPECT_EQ(latency, wall - kInputTs)
+        << "latency_ms must equal wall_clock_ms - input_timestamp_ms exactly";
+}
+
+TEST_F(CsvPresentationTest, LatencyColumn_AnyNegativeInputTimestampRendersSentinel) {
+    // The guard is inputTs >= 0, not == -1: any negative timestamp means
+    // "source reports no timestamps" and renders the -1 sentinel.
+    {
+        CsvPresentation presentation(path_.string());
+        presentation.Initialize(PresentationConfig{});
+        EngineState state = makeCsvState();
+        state.drivetrain.inputTimestampMs = -5;
+        presentation.ShowSimulatorStates(state);
+    }
+    EXPECT_EQ(split(readLines().at(1))[kColLatencyMs], "-1");
+}
+
 TEST_F(CsvPresentationTest, ReplayTimestampOverridesAudioClockWhenReported) {
     {
         CsvPresentation presentation(path_.string());

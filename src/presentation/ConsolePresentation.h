@@ -25,8 +25,11 @@ char gearChar(int selector, int physicalGear);
 
 // Composes the 3-character gear readout "[selector][mode][gear]" (no framing).
 // field1 = selectorChar(selector); field2 = autoMode ? 'A' : 'M';
-// field3 = autoMode ? gearChar(selector, physical) : selectorChar(selector)
-//   (manual: selector == gear, so field-3 mirrors field-1).
+// field3 = autoMode ? gearChar(selector, physical)
+//                   : manualGearChar(selector)  [bridge::GearConventions]:
+//   manual field-3 is P/R/N for engaged transmission states, the digit for
+//   manual gears 1-8, and '-' when DRIVE is selected in manual — no gear is
+//   engaged yet ("DM-" is the pinned render; there is no "DMD").
 // Pure and public so the composite is testable without friend hacks.
 std::string gearTriple(int selector, bool autoMode, int physicalGear);
 

@@ -2,12 +2,16 @@
 #include "presentation/ConsolePresentation.h"
 #include "presentation/SteeringGauge.h"
 #include "simulator/GearConventions.h"
+#include "simulation/EnginePhase.h"
 #include "config/ANSIColors.h"
 #include "io/IPresentation.h"
 
 #include <iostream>
 #include <sstream>
 #include <streambuf>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace presentation;
 using GS = bridge::GearSelector;
@@ -131,6 +135,144 @@ TEST(GearTripleTest, Auto_DerivesGearFromPhysics) {
     EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::DRIVE), true, 1), "DA1");
     EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::DRIVE), true, 2), "DA2");
     EXPECT_EQ(presentation::gearTriple(static_cast<int>(GS::DRIVE), true, 3), "DA3");
+}
+
+// ============================================================================
+// F4 characterization: the FULL gear-naming mapping table.
+//
+// F4 (consolidation wave A) moves/renames the gear-naming semantics at
+// ConsolePresentation.cpp:20-79 (gearSelectorChar / gearChar / manualGearChar
+// / gearTriple). These table tests pin EVERY cell of the CURRENT mapping —
+// every selector value the table can reach (PARK=-2, REVERSE=-1, NEUTRAL=0,
+// manual digits 1-8, DRIVE=99, plus invalid values) across both modes and the
+// physical-gear range — so the move cannot change a single glyph.
+//
+// Selector encoding: bridge GearSelector (PARK=-2, REVERSE=-1, NEUTRAL=0,
+// DRIVE=99, 1-8 = manual gear numbers). Physical gear: 0=neutral, 1-8=gear,
+// anything else invalid.
+// ============================================================================
+
+namespace {
+
+struct SelectorCharRow {
+    int selector;
+    char expected;
+};
+
+struct GearCharRow {
+    int selector;
+    int physical;
+    char expected;
+};
+
+struct TripleRow {
+    int selector;
+    bool autoMode;
+    int physical;
+    const char* expected;
+};
+
+std::string describeTriple(const TripleRow& row) {
+    std::ostringstream desc;
+    desc << "selector=" << row.selector << " auto=" << row.autoMode
+         << " physical=" << row.physical;
+    return desc.str();
+}
+
+}  // namespace
+
+TEST(GearSelectorCharTableTest, FullMappingTable) {
+    const std::vector<SelectorCharRow> table = {
+        // Enum positions.
+        {-2, 'P'}, {-1, 'R'}, {0, 'N'}, {99, 'D'},
+        // Manual gear numbers render as their digit (regression: '1' once
+        // fell through to '?').
+        {1, '1'}, {2, '2'}, {3, '3'}, {4, '4'},
+        {5, '5'}, {6, '6'}, {7, '7'}, {8, '8'},
+        // Invalid: below PARK, above the manual range, either side of DRIVE,
+        // and arbitrary junk.
+        {-3, '?'}, {-99, '?'}, {9, '?'}, {50, '?'}, {98, '?'}, {100, '?'},
+    };
+    for (const auto& row : table) {
+        EXPECT_EQ(presentation::gearSelectorChar(row.selector), row.expected)
+            << "gearSelectorChar(" << row.selector << ")";
+    }
+}
+
+TEST(GearCharTableTest, FullMappingTable) {
+    const std::vector<GearCharRow> table = {
+        // PARK/REVERSE selector wins; the physical gear is IGNORED (the
+        // physics has no reverse/park gear).
+        {-2, 0, 'P'}, {-2, 5, 'P'}, {-2, 9, 'P'},
+        {-1, 0, 'R'}, {-1, 7, 'R'},
+        // NEUTRAL selector: follows the physical gear.
+        {0, 0, 'N'}, {0, 4, '4'}, {0, 9, '?'},
+        // DRIVE selector: 0 is the ratio-not-engaged transient -> 'N';
+        // 1-8 are the gears; out of range -> '?'.
+        {99, 0, 'N'},
+        {99, 1, '1'}, {99, 2, '2'}, {99, 3, '3'}, {99, 4, '4'},
+        {99, 5, '5'}, {99, 6, '6'}, {99, 7, '7'}, {99, 8, '8'},
+        {99, 9, '?'}, {99, -1, '?'},
+        // Manual-digit selectors behave like DRIVE here: gearChar reads the
+        // physical gear, not the requested digit.
+        {3, 0, 'N'}, {3, 5, '5'}, {3, 9, '?'},
+    };
+    for (const auto& row : table) {
+        EXPECT_EQ(presentation::gearChar(row.selector, row.physical), row.expected)
+            << "gearChar(selector=" << row.selector << ", physical=" << row.physical << ")";
+    }
+}
+
+TEST(GearTripleTableTest, AutoMode_FullMappingTable) {
+    const std::vector<TripleRow> table = {
+        // PARK/REVERSE: physical gear ignored in every field.
+        {-2, true, 0, "PAP"}, {-2, true, 5, "PAP"}, {-2, true, 9, "PAP"},
+        {-1, true, 0, "RAR"}, {-1, true, 7, "RAR"},
+        // NEUTRAL: field-3 follows the physical gear.
+        {0, true, 0, "NAN"}, {0, true, 4, "NA4"}, {0, true, 9, "NA?"},
+        // DRIVE: full physical range.
+        {99, true, 0, "DAN"},
+        {99, true, 1, "DA1"}, {99, true, 2, "DA2"}, {99, true, 3, "DA3"},
+        {99, true, 4, "DA4"}, {99, true, 5, "DA5"}, {99, true, 6, "DA6"},
+        {99, true, 7, "DA7"}, {99, true, 8, "DA8"},
+        {99, true, 9, "DA?"},
+        // Manual-digit selectors in auto mode: field-1 is the digit,
+        // field-3 still reads the physical gear.
+        {2, true, 3, "2A3"}, {2, true, 0, "2AN"},
+        // Invalid selector: '?' in field-1, field-3 still derives normally.
+        {9, true, 2, "?A2"}, {9, true, 9, "?A?"},
+    };
+    for (const auto& row : table) {
+        EXPECT_EQ(presentation::gearTriple(row.selector, row.autoMode, row.physical),
+                  row.expected)
+            << describeTriple(row);
+    }
+}
+
+TEST(GearTripleTableTest, ManualMode_FullMappingTable) {
+    const std::vector<TripleRow> table = {
+        // Engaged transmission states mirror into field-3.
+        {-2, false, 0, "PMP"}, {-2, false, 5, "PMP"},
+        {-1, false, 0, "RMR"}, {-1, false, 5, "RMR"},
+        {0, false, 0, "NMN"}, {0, false, 5, "NMN"},
+        // DRIVE in manual = no gear selected yet -> '-' (anti-"DMD" fix).
+        {99, false, 0, "DM-"}, {99, false, 5, "DM-"},
+        // Manual gear digits mirror; the PHYSICAL gear is ignored in manual
+        // (field-3 shows the driver's selection, not the physics).
+        {1, false, 9, "1M1"}, {2, false, 8, "2M2"}, {3, false, 7, "3M3"},
+        {4, false, 6, "4M4"}, {5, false, 5, "5M5"}, {6, false, 4, "6M6"},
+        {7, false, 3, "7M7"}, {8, false, 0, "8M8"},
+        // Invalid selectors render '?' in BOTH fields.
+        {9, false, 3, "?M?"},
+        {50, false, 3, "?M?"},
+        {100, false, 3, "?M?"},
+        {-3, false, 3, "?M?"},
+    };
+    for (const auto& row : table) {
+        EXPECT_EQ(presentation::gearTriple(row.selector, row.autoMode, row.physical),
+                  row.expected)
+            << describeTriple(row);
+    }
 }
 
 // gearSelectorChar is now a public free function in the presentation namespace
@@ -571,6 +713,39 @@ TEST(ConsolePresentationSteeringTest, SteeringStyleArrows_RendersArrowGlyph) {
         << "arrows style must render the right arrow at full-right steering";
     EXPECT_EQ(line.find(presentation::SteeringGauge::GLYPH_3), std::string::npos)
         << "arrows style must not render braille glyphs";
+}
+
+// ============================================================================
+// F8 characterization: console phase-name rendering.
+//
+// F8 (consolidation wave A) consolidates phase-name strings under the bridge
+// (EnginePhaseName / PresentationStateBuilders). The console renders the
+// bridge's EnginePhaseName VERBATIM, colours included. These literals are
+// pinned byte-for-byte — deliberately NOT computed via EnginePhaseName(),
+// which would be self-fulfilling. The leading spaces on "Stopped"/"Running"
+// are alignment padding baked into the current strings; the ANSI colour codes
+// are part of the operator-visible output. A consolidation that renames,
+// recolours, or re-pads any phase must fail HERE first.
+// ============================================================================
+
+TEST(ConsolePresentationPhaseTest, PhaseRendersExactColoredName) {
+    const std::vector<std::pair<EnginePhase, std::string>> table = {
+        {EnginePhase::Stopped,  "\033[31m Stopped\033[0m"},   // RED, leading pad
+        {EnginePhase::Cranking, "\033[33mCranking\033[0m"},   // YELLOW
+        {EnginePhase::Rollover, "\033[36mRollover\033[0m"},   // CYAN
+        {EnginePhase::Running,  "\033[32m Running\033[0m"},   // GREEN, leading pad
+        {EnginePhase::Stopping, "\033[35mStopping\033[0m"},   // ORANGE
+    };
+    for (const auto& [phase, literal] : table) {
+        EngineState state = makeState();
+        state.engine.phase = phase;
+
+        const std::string line = renderStateLine(state);
+
+        EXPECT_NE(line.find(literal), std::string::npos)
+            << "phase " << static_cast<int>(phase)
+            << " must render the exact literal <" << literal << ">";
+    }
 }
 
 TEST(ConsolePresentationSteeringTest, SteeringAbsent_RendersNothing) {
