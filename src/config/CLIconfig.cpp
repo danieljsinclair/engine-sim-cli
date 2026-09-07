@@ -3,12 +3,9 @@
 
 #include "CLIconfig.h"
 #include "simulation/SimulationLoop.h"
-#include "input/ReplayTelemetryProvider.h"
-#include "TelemetryProviderFactory.h"
 #include "ANSIColors.h"
 
 #include <CLI/CLI.hpp>
-#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <iostream>
@@ -28,37 +25,28 @@ void printUsage(const char* progName) {
     std::cout << "  --script <path>      Path to engine config (.mr script or .json preset)\n";
     std::cout << "  --load <0-100>       Dyno load torque percentage (engine works against this)\n";
     std::cout << "  --interactive        Enable interactive keyboard control\n";
-
-    std::cout << "  --duration <seconds> Run for N seconds; with --replay-telemetry/--live-telemetry:\n"
-                 "                       window from the start point (same as --end-at start+N)\n";
+    std::cout << "  --play, --play-audio Play audio to speakers in real-time\n";
+    std::cout << "  --duration <seconds> Duration in seconds (default: 3.0, ignored in interactive)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --connect-demo       Run VirtualICE twin demo (gearbox mode per --auto/--manual)\n";
-    std::cout << "  --auto               Use automatic gearbox (default for --replay-telemetry: a\n"
-                 "                       PRND-only CSV cannot shift a manual box)\n";
-    std::cout << "  --manual             Use manual gearbox (default except --replay-telemetry)\n";
+    std::cout << "  --auto               Use automatic gearbox (default in --connect-demo is manual)\n";
+    std::cout << "  --manual             Use manual gearbox (default)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
-    std::cout << "  --deterministic      Headless fixed-timestep replay: reproducible per-frame output (gate/diagnosis mode)\n";
-    std::cout << "  --verbose            Show DEBUG-level console logging (startup discards, sync-pull buffer fills)\n";
-    std::cout << "  --cranking-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000; --starter-delay accepted as alias)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
     std::cout << "  --sim-freq <Hz>      Physics Hz (default: " << EngineSimDefaults::SIMULATION_FREQUENCY
               << ", range: " << (EngineSimDefaults::SIMULATION_FREQUENCY / 10) << "-" << (EngineSimDefaults::SIMULATION_FREQUENCY * 10) << ")\n";
     std::cout << "  --synth-latency <s>  Synthesizer latency in seconds (default: " << EngineSimDefaults::TARGET_SYNTH_LATENCY << ")\n";
     std::cout << "  --pre-fill-ms <ms>   Pre-fill buffer ms for sync-pull mode (default: " << EngineSimDefaults::DEFAULT_PREFILL_MS << ")\n";
     std::cout << "  --diagnostic-frames  Show per-frame audio buffer timing line (req=/got=/took=/room=)\n";
-    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n";
-    std::cout << "  --csv-out <file>     Write machine-parseable per-frame CSV (all fields: timecode, rpm,\n";
-    std::cout << "                       gas, gear, clutch%, roadImpliedRpm, creepReliefFired, torques, state)\n";
-    std::cout << "                       to <file> alongside the console line (for automated smoke-tests)\n\n";
+    std::cout << "  --diagnostic-freq    Show per-frame update-call frequency line (calls=/need/kfps)\n\n";
     std::cout << "NOTES:\n";
     std::cout << "  Default: cycles through all .json presets in engine-sim-bridge/preset/\n";
     std::cout << "  --load enables dyno brake mode (physics-driven RPM, not rev limiter)\n";
     std::cout << "  Default mode is sync-pull (synchronous render in audio callback)\n";
     std::cout << "  Use --threaded for cursor-chasing circular buffer mode\n";
-    std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n";
-    std::cout << "  --live-telemetry can be combined with --interactive (keyboard overlay on CSV stdin)\n\n";
+    std::cout << "  --sim-freq affects both modes - lower values reduce CPU load\n\n";
     std::cout << "Interactive Controls:\n";
     std::cout << "  A                      Toggle ignition on/off (starts ON)\n";
     std::cout << "  S                      Toggle starter motor on/off\n";
@@ -73,18 +61,16 @@ void printUsage(const char* progName) {
     std::cout << "  P                      Cycle to next engine preset (in .json preset mode)\n";
     std::cout << "  Q/ESC                  Quit\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << progName << " --interactive              # Cycle presets, interactive\n";
-    std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive\n";
-    std::cout << "  " << progName << " --sine --interactive\n";
-    std::cout << "  " << progName << " --load 75                   # Default presets with load\n";
-    std::cout << "  " << progName << " --live-telemetry --script C63_M156_V3.mr --silent < recording.csv  # Drive a named engine from CSV\n";
+    std::cout << "  " << progName << " --interactive --play              # Cycle presets, interactive\n";
+    std::cout << "  " << progName << " --script v8_engine.mr --load 50 --interactive --play\n";
+    std::cout << "  " << progName << " --sine --interactive --play\n";
+    std::cout << "  " << progName << " --load 75 --play                   # Default presets with load\n";
 }
 
 // Forward declaration — defined below parseArguments.
 bool processArgs(CommandLineArgs& args, const std::string& scriptPath,
                  const std::string& positionalEngineConfig, double loadArg,
-                 bool threadedFlag, bool silentFlag,
-                 bool interactiveExplicit = false);
+                 bool threadedFlag, bool silentFlag);
 
 bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     CLI::App app{"Engine Simulator CLI v2.0"};
@@ -97,176 +83,46 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--load", loadArg, "Dyno load torque percentage (engine works against this)") ->check(CLI::Range(0.0, 100.0));
     app.add_option("--output", args.outputWav, "Output WAV file path");
-    app.add_option("--duration", args.duration,
-                   "Run for N seconds; with --replay-telemetry/--live-telemetry: window from the "
-                   "start point (same as --end-at start+N); mutually exclusive with --end-at");
+    app.add_option("--duration", args.duration, "Duration in seconds (default: 3.0, ignored in interactive)");
     app.add_option("--sim-freq", args.audio.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
     app.add_option("--synth-latency", args.audio.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
     app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
-    app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
-    auto crankingDelayOpt = app.add_option("--cranking-delay,--starter-delay", args.start.crankingDelayMs,
-        "Starter-then-ignition delay in MILLISECONDS (true ms scale, linear: "
-        "1000 = one second of cranking before ignition; max 10000 = 10 s). "
-        "0 = zero-delay combined start (starter+ignition together). "
-        "ABSENT = 500 ms default. Only applies to brake-held starts; a gear "
-        "start ignites instantly, and selecting a drive gear mid-crank fires "
-        "ignition immediately (safety fast-forward — truncates the delay). "
-        "Per-engine .mr starter_torque/speed still apply. "
-        "(--starter-delay is the old name, still accepted.)")
-        ->check(CLI::Range(0, 10000));
-    // Explicitness is tracked separately: the VALUE 0 is meaningful (combined
-    // start) and must not fall back to the 500 ms default — only an ABSENT
-    // flag does.
-    crankingDelayOpt->each([&args](const std::string&) {
-        args.start.crankingDelayExplicit = true;
-        return std::string();
-    });
-    auto replayTelemetryOpt = app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
+    app.add_flag("--start", args.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
+    app.add_option("--replay-telemetry", args.replay.telemetryPath, "Replay a timecoded telemetry CSV (time_s,throttle_pct,road_speed_kmh,gear,clutch_pct) as the input source (implies --start)");
 
-    app.add_option("--start-from", args.replay.startFrom, "Start replay/live-telemetry at this time (seconds, mm:ss, or hh:mm:ss); file replay skips there instantly — rows before the offset are never simulated (arrival state is synthesized at the offset)");
-    app.add_option("--end-at", args.replay.endAt, "Stop replay/live-telemetry at this time (seconds or mm:ss); plays to input end if past it");
-    app.add_flag("--no-blank-skip", args.replay.noBlankSkip,
-        "With --start-from: anchor the arrival state exactly on the first row "
-        "at/after the offset, blank or not. DEFAULT (skip ON) walks forward "
-        "past blank USB-settle rows to the first row carrying engine data — "
-        "a blank row holds no operating point to warm-boot from. Diagnostic "
-        "escape hatch to A/B what the skip papers over.");
+    app.add_option("--start-from", args.replay.startFrom, "Start replay at this time (seconds, mm:ss, or hh:mm:ss)")
+        ->needs("--replay-telemetry");
+    app.add_option("--end-at", args.replay.endAt, "Stop replay at this time (seconds or mm:ss)")
+        ->needs("--replay-telemetry");
     app.add_option("output_wav", args.outputWav, "Output WAV file") ->required(false);
 
     auto connectDemoOpt = app.add_flag("--connect-demo", args.connectDemo, "Run VirtualICE twin demo with automatic gearbox");
     auto scriptOpt = app.add_option("--script", scriptPath, "Path to engine config (.mr script or .json preset)");
     auto engineConfigOpt = app.add_option("engine_config", positionalEngineConfig, "Engine configuration file") ->required(false);
 
-    auto liveTelemetryOpt = app.add_flag("--live-telemetry", args.twin.liveTelemetry, "Read live telemetry CSV from stdin (vehicle-sim --stdout-csv piped in) as the input source (implies --start)");
-
-    app.add_option("--wheel-coupling", args.twin.wheelCoupling,
-        "Live clutch wheel-coupling mode - which wheel speed drives the\n"
-        "slip math. Valid options:\n"
-        "  pin    - mirrors replay: pins sim vehicle speed to the CSV speed\n"
-        "           (DEFAULT; the road-driven path the road-test tunes against)\n"
-        "  free   - leaves sim speed independent so the mph-vs-target\n"
-        "           diagnostic stays visible\n"
-        "  torque - MATCH mode: injects recorded motor_torque_nm at the\n"
-        "           transmission input so road speed emerges from the solver")
-        ->capture_default_str();
-
-    app.add_option("--pin-tau-ms", args.twin.pinTauMs,
-        "PIN wheel-coupling compliance in milliseconds. The road speed signal\n"
-        "updates only ~5.5 Hz in held steps, so the rigid pin (tau 0) teleports\n"
-        "engine rpm between levels - the audible 'piano keys'. A positive tau\n"
-        "makes the pin chase the road-implied speed with a critically-damped\n"
-        "response. DEFAULT 150 ms (the owner-tuned road value, directive\n"
-        "2026-09-06); the stable window is 60-1000 ms - values below 60 risk\n"
-        "drivetrain bifurcation (20-50 ms runs away to 200+ mph), values above\n"
-        "3000 are over-damped (15000 ms halves road speed); both print a\n"
-        "warning. 0 or negative is EXACTLY the rigid pin, bit-identical to the\n"
-        "legacy behavior (the regression contract). Scoped to the pin target\n"
-        "only: the gearbox shift map still sees the raw speed.")
-        ->capture_default_str();
-
-    app.add_flag("--effective-throttle", args.twin.effectiveThrottle,
-        "Derive the twin's ENGINE-DRIVE throttle from the commanded motor\n"
-        "torque when Autopilot holds speed with the pedal at rest (pedal 0.00\n"
-        "+ positive torque renders the engine silent today). While the pedal\n"
-        "sits at/below the 2% foot-off deadband and commanded torque is at or\n"
-        "above 20 Nm, effective = max(pedal, torque/600 Nm) - regen contributes\n"
-        "zero. DEFAULT OFF; off is bit-identical to today's output. Scoped to\n"
-        "the engine drive only (gearbox/coupling/pin keep the raw signal).");
-
-    app.add_flag("--torque-informed-gearbox", args.twin.torqueInformedGearbox,
-        "Feed the commanded motor torque (sign + magnitude) into the gearbox\n"
-        "shift DECISION as a demand hint: pull -> +torque/600*0.30 bias, AP\n"
-        "braking -> +|torque|/1000*0.30 (positive both ways - braking must\n"
-        "never read as lift-off coast). Below 20 Nm is true coast (no bias).\n"
-        "DEFAULT OFF; off is bit-identical to today's decisions. Decision\n"
-        "input only - never physics, never road speed.");
-
-    app.add_option("--coupling-model", args.twin.couplingModel,
-        "Live clutch coupling model - how the live twin derives the\n"
-        "engine<->drivetrain clutch pressure each frame. Valid options:\n"
-        "  torque-converter - fluid-coupling pump/turbine + TR/K curves\n"
-        "                     (DEFAULT; the chosen approach)\n"
-        "  clutch-map       - declarative smooth governor curve (never opens the\n"
-        "                     clutch, so it cannot bang-bang oscillate; fallback)\n"
-        "  legacy           - historical slip-lock + binary creep-drag relief\n"
-        "                     (the path that oscillated; kept for A/B comparison)")
-        ->capture_default_str();
-
-    app.add_option("--span-tame", args.audio.spanTame,
-        "Output-stage span taming (0.0=off, 1.0=full). Soft-knee compressor\n"
-        "pinned: ratio R(x)=1+5x, makeup gain m(x)=10^(12*(1-1/R)/20),\n"
-        "knee [-18,-6] dBFS, safety soft-clip at 0.90/0.95. Off (default)\n"
-        "is bit-identical to the legacy audio path.")
-        ->check(CLI::Range(0.0, 1.0));
-
-    app.add_option("--volume-tame", args.audio.volumeTame,
-        "Output-stage volume leveling (0.0=off, 1.0=full). Lifts quiet-on-decel\n"
-        "sections toward the session average and sits loud sections back (max\n"
-        "+12 dB lift, max -3.1 dB cut, ~50 ms smoothed gain). Off (default) is\n"
-        "fully bypassed and bit-identical to the legacy audio path.")
-        ->check(CLI::Range(0.0, 1.0));
-
     // Mutual exclusions
     scriptOpt->excludes(engineConfigOpt);
     connectDemoOpt->excludes(scriptOpt);
     connectDemoOpt->excludes(engineConfigOpt);
-    // --live-telemetry COMBINES with --script so the user can drive a NAMED
-    // engine from CSV stdin (e.g. the C63 V3). Without this, --live-telemetry is
-    // locked to preset[0] (the alphabetical first preset): resolveConfigPaths only
-    // scans the preset dir when engineConfig is empty, so the named .mr never
-    // loads. (The positional engine_config stays excluded — output_wav is the
-    // first positional, so a bare positional never reaches engine_config.) Live
-    // CSV is still mutually exclusive with the other input sources.
-    liveTelemetryOpt->excludes(engineConfigOpt);
-    liveTelemetryOpt->excludes(connectDemoOpt);
-    liveTelemetryOpt->excludes(replayTelemetryOpt);
 
     bool threadedFlag = false;
     bool silentFlag = false;
-    bool interactiveExplicit = false;
-    auto interactiveOpt = app.add_flag("--interactive", interactiveExplicit, "Enable interactive keyboard control (can be combined with --replay-telemetry for keyboard overlay on file replay)");
-    // --live-telemetry reads CSV from stdin, so --interactive (keyboard) is
-    // incompatible — the keyboard can't read stdin that the CSV is consuming.
-    // Keep them mutually exclusive. --replay-telemetry (file-based) CAN combine
-    // with --interactive for keyboard overlay (handled in CLIMain).
-    liveTelemetryOpt->excludes(interactiveOpt);
+    app.add_flag("--play,--play-audio", args.playAudio, "Play audio to speakers in real-time");
+    app.add_flag("--interactive", args.interactive, "Enable interactive keyboard control");
+    app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
     app.add_flag("--silent", silentFlag, "Run full audio pipeline at zero volume (for testing)");
-    auto threadedOpt = app.add_flag("--threaded", threadedFlag, "Use threaded circular buffer (cursor-chasing) (sync-pull is default)");
-    auto deterministicOpt = app.add_flag("--deterministic", args.deterministic,
-        "Headless fixed-timestep replay: physics advances on the loop thread at the "
-        "fixed update interval (no audio callback thread, no wall-clock pacing). "
-        "Identical invocations produce identical per-frame output — the reproducible "
-        "mode for gate runs and diagnosis. Implies --silent audio behavior.");
-    // Headless mode has no audio strategy choice and no speakers.
-    deterministicOpt->excludes(threadedOpt);
-    app.add_flag("--verbose", args.output.verbose,
-        "Enable DEBUG-level console logging (startup zero-drain discards, "
-        "sync-pull buffer fills). Default output is INFO+ only.");
     app.add_option("--gearbox-log", args.gearbox.logPath, "Log gearbox decisions to CSV file")->expected(0, 1);
     app.add_flag("--sine", args.sineMode, "Generate 440Hz sine wave test tone (no engine sim)");
-    auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox (default for --replay-telemetry)");
-    auto manualFlag = app.add_flag("--manual", args.gearbox.manual, "Use manual gearbox (default except --replay-telemetry)");
+    auto autoFlag = app.add_flag("--auto", args.gearbox.automatic, "Use automatic gearbox");
+    auto manualFlag = app.add_flag("--manual", args.gearbox.manual, "Use manual gearbox (default)");
     autoFlag->excludes(manualFlag);
 
     app.add_flag("--diagnostic-frames", args.diagnostics.frames,
                  "Show per-frame audio buffer timing line (req=/got=/took=/room=)");
     app.add_flag("--diagnostic-freq", args.diagnostics.freq,
                  "Show per-frame update-call frequency line (calls=/need/kfps)");
-
-    app.add_option("--csv-out", args.presentation.csvOut,
-                   "Write machine-parseable per-frame CSV (all fields: timecode, rpm, gas, gear, "
-                   "clutch%, roadImplied, relief, torques, state) to <file> alongside the console line.\n"
-                   "                       Without a value, a UTC timestamped roadtest_<timestamp>.csv is generated "
-                   "(reruns never overwrite). With a value, the value is used verbatim.")->expected(0, 1);
-
-    app.add_option("--steering-style", args.presentation.steeringStyle,
-                   "Steering gauge glyph style for the console readout:\n"
-                   "                       arrows  - 8-way directional arrows, 45 deg sectors (DEFAULT)\n"
-                   "                       braille - 12-position two-cell braille clock face")
-                   ->capture_default_str()
-                   ->check(CLI::IsMember({"braille", "arrows"}));
 
     try {
         app.parse(argc, argv);
@@ -276,94 +132,20 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         return false;
     }
 
-    return processArgs(args, scriptPath, positionalEngineConfig, loadArg, threadedFlag, silentFlag, interactiveExplicit);
+    return processArgs(args, scriptPath, positionalEngineConfig, loadArg, threadedFlag, silentFlag);
 }
 
-namespace {
-
-// Generate a timestamped filename so reruns never overwrite prior logs:
-//   <prefix><YYYYmmdd_HHMMSS><extension>
-// e.g. generateTimestampedFilename("gearbox_", ".csv", false) ->
-//   "gearbox_20260831_031500.csv".
-//
-// The timestamp is the current wall-clock time broken down by localtime_r
-// (local, useUtc=false) or gmtime_r (UTC, useUtc=true). The road-test CSV logs
-// use UTC (captures travel across timezones); gearbox logs use local. Thread-
-// safe (no static buffers, no ::localtime). The format is fixed so all
-// generated logs sort chronologically by name.
-std::string generateTimestampedFilename(const std::string& prefix,
-                                         const std::string& extension,
-                                         bool useUtc) {
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-    if (useUtc) {
-        gmtime_r(&time, &tm);
-    } else {
-        localtime_r(&time, &tm);
-    }
-    // std::string buffer (not a C-style array) — matches the original gearbox
-    // log idiom and keeps the generated-logs path free of S5945.
-    std::string buf(32, '\0');
-    const auto n = std::strftime(buf.data(), buf.size(), "%Y%m%d_%H%M%S", &tm);
-    buf.resize(n);
-    return prefix + buf + extension;
-}
-
-// Replay telemetry defaults the gearbox to AUTO unless the user explicitly
-// opted into manual with --manual (owner ruling 2026-09-03: replay must
-// self-drive by default — including interactive replay; the live path is not
-// auto-defaulted). The predicate itself is bridge-side
-// (input::resolveReplayGearboxDefault, ReplayTelemetryProvider.h,
-// consolidation wave B) — it resolves the provider's autoGearbox ctor
-// argument; this is the thin CLI shell over the parsed CommandLineArgs.
-void resolveReplayGearboxDefault(CommandLineArgs& args) {
-    args.gearbox.automatic = input::resolveReplayGearboxDefault(
-        !args.replay.telemetryPath.empty(), args.gearbox.automatic, args.gearbox.manual);
-}
-
-}  // namespace
-
-bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag, bool interactiveExplicit) {
-    args.syncPull = !threadedFlag && !args.deterministic;
+bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std::string& positionalEngineConfig, double loadArg, bool threadedFlag, bool silentFlag) {
+    args.syncPull = !threadedFlag;
     if (loadArg >= 0.0) args.targetLoad = loadArg / 100.0;
     if (silentFlag) {
         args.playAudio = true;
-        args.output.silent = true;
-    }
-    if (args.deterministic) {
-        // Headless: zero volume by construction (no audio output exists), and
-        // the deterministic strategy replaces the sync-pull/threaded choice.
-        args.output.silent = true;
+        args.silent = true;
     }
 
-    // Default to interactive mode unless --duration is given. This is the
-    // "open-ended run" default (no duration = run until quit). It is NOT the
-    // same as an explicit --interactive (keyboard overlay): the overlay path in
-    // CLIMain only activates when the user passed --interactive on the command
-    // line (interactiveExplicit), not when we defaulted here. Without that
-    // distinction, every live/replay run without --duration would try to build
-    // an overlay provider and fail (double-init on stdin).
-    //
-    // Telemetry-driven runs (--live-telemetry, --replay-telemetry) are NOT
-    // interactive even without --duration: the CSV input / --end-at bounds the
-    // run, the keyboard overlay is excluded (mutual exclusion in parseArguments),
-    // and the stop-reporter must not claim "user quit" for a trace-driven end.
-    // Only a bare (keyboard-driven, non-telemetry, non-deterministic,
-    // non-connect-demo) run without --duration defaults to interactive.
-    const bool telemetryDriven = args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
-    if (args.duration <= 0.0 && !telemetryDriven && !args.deterministic && !args.connectDemo) {
+    // Default to interactive mode unless --duration is given.
+    if (args.duration <= 0.0) {
         args.interactive = true;
-    }
-    args.interactiveExplicit = interactiveExplicit;
-
-    resolveReplayGearboxDefault(args);
-
-    // --pin-tau-ms outside the stable window: warn-only (owner directive: a
-    // tuning toggle must never be restricted). tau <= 0 is the documented
-    // rigid passthrough = OFF, no warning.
-    if (const char* tauWarning = telemetry_detail::pinTauWarningText(args.twin.pinTauMs)) {
-        std::cerr << ANSIColors::warningMessage(std::string("WARNING: ") + tauWarning) << "\n";
     }
 
     // Implicit settings when connectDemo is true
@@ -372,18 +154,15 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         args.interactive = true;
     }
 
-    // Auto-generate gearbox log filename if flag given without value.
-    // Local time (the gearbox log is a local diagnostic, not a traveling capture).
+    // Auto-generate gearbox log filename if flag given without value
     if (args.gearbox.logPath == "true") {
-        args.gearbox.logPath = generateTimestampedFilename("gearbox_", ".csv", /*useUtc=*/false);
-    }
-
-    // Auto-generate road-test CSV filename if flag given without value.
-    // UTC so a log's name is timezone-independent (captures travel across zones
-    // and the owner compares logs from different locations). Reruns never
-    // overwrite: every invocation gets a fresh timestamp.
-    if (args.presentation.csvOut == "true") {
-        args.presentation.csvOut = generateTimestampedFilename("roadtest_", ".csv", /*useUtc=*/true);
+        auto now = std::chrono::system_clock::now();
+        auto time = std::chrono::system_clock::to_time_t(now);
+        struct tm tm_local;
+        localtime_r(&time, &tm_local);
+        std::string buf(64, '\0');
+        std::strftime(buf.data(), buf.size(), "gearbox_%Y%m%d_%H%M%S.csv", &tm_local);
+        args.gearbox.logPath = buf.c_str();
     }
 
     args.engineConfig = scriptPath.empty() ? positionalEngineConfig : scriptPath;
@@ -411,35 +190,53 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         }
     }
 
-    // --duration + a telemetry-driven mode is a WINDOW: N seconds from the
-    // start point — replay measures from --start-from's arrival on the
-    // recording clock, live from attach (both providers run the same
-    // elapsed-seconds clock, so one formula covers both). Resolved onto the
-    // --end-at path so the provider's single time-slicing mechanism bounds
-    // the run; the raw --duration is consumed (reset to 0) so no downstream
-    // duration logic double-bounds it. Passing --duration AND --end-at gives
-    // two stop conditions — refuse rather than guess precedence.
-    // (Supersedes the parse-time fail-fast that rejected every
-    // --duration + telemetry combination.)
-    if (args.duration > 0.0 && telemetryDriven) {
-        if (!args.replay.endAt.empty()) {
-            std::cerr << "ERROR: --duration and --end-at are mutually exclusive "
-                      << "(both bound the end of the run) — pass one or the other.\n";
-            return false;
-        }
-        const double windowStartS = std::max(0.0, args.replay.startFromS);
-        args.replay.endAtS = windowStartS + args.duration;
-        args.duration = 0.0;
+    return true;
+}
+
+// ============================================================================
+// Time string parsing
+// ============================================================================
+double parseReplayTimeToSeconds(const std::string& s) {
+    if (s.empty()) return -1.0;
+
+    // Reject trailing/leading colons (std::getline silently drops empty tokens
+    // at the ends, so "01:" would parse as ["01"] — treat as invalid).
+    if (s.front() == ':' || s.back() == ':') return -1.0;
+
+    std::vector<std::string> parts;
+    std::stringstream ss(s);
+    std::string part;
+    while (std::getline(ss, part, ':')) {
+        parts.push_back(part);
     }
 
-    return true;
+    try {
+        if (parts.size() == 1) {
+            return std::stod(parts[0]);
+        }
+        if (parts.size() == 2) {
+            return std::stod(parts[0]) * 60.0 + std::stod(parts[1]);
+        }
+        if (parts.size() == 3) {
+            return std::stod(parts[0]) * 3600.0
+                 + std::stod(parts[1]) * 60.0
+                 + std::stod(parts[2]);
+        }
+    } catch (const std::invalid_argument&) {
+        // std::stod: token isn't a number.
+        return -1.0;
+    } catch (const std::out_of_range&) {
+        // std::stod: token parses but the value is out of double range.
+        return -1.0;
+    }
+
+    return -1.0;
 }
 
 // ============================================================================
 // Shows the configuration on startup in a banner format
 // ============================================================================
-void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion /*= "unknown"*/,
-                      bool interactiveOverlay /*= false, see CLIconfig.h*/) {
+void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersion = "unknown") {
     // Verify build ID
     if (engineAPIVersion != nullptr) {
         std::cout << "[Bridge: " << engineAPIVersion << "]\n";
@@ -457,23 +254,9 @@ void ShowConfigHeader(const SimulationConfig& config, const char* engineAPIVersi
         std::cout << "  Dyno Load: " << static_cast<int>(config.targetLoad * 100)
                   << "% (" << static_cast<int>(config.targetLoad * EngineSimDefaults::DYNO_MAX_TORQUE_FT_LBS) << " ft*lbs)\n";
     }
-    // Print the ACTUAL wiring: config.interactive alone lies on the
-    // replay+--interactive combo (the session is CSV-bounded, so
-    // config.interactive is false, yet the keyboard overlay IS wired —
-    // CLIMain keys the overlay off args.interactiveExplicit).
-    std::cout << "  Interactive: "
-              << ((config.interactive || interactiveOverlay) ? "Yes" : "No")
-              << (interactiveOverlay ? " (keyboard overlay)" : "") << "\n";
+    std::cout << "  Interactive: " << (config.interactive ? "Yes" : "No") << "\n";
     std::cout << "  Audio Playback: " << (config.playAudio ? "Yes" : "No") << "\n";
-    const char* audioModeLabel;
-    if (config.deterministic) {
-        audioModeLabel = "Deterministic (headless fixed-timestep)";
-    } else if (config.syncPull) {
-        audioModeLabel = "Sync-Pull (default)";
-    } else {
-        audioModeLabel = "Threaded (cursor-chasing)";
-    }
-    std::cout << "  Audio Mode: " << audioModeLabel << "\n";
+    std::cout << "  Audio Mode: " << (config.syncPull ? "Sync-Pull (default)" : "Threaded (cursor-chasing)") << "\n";
     std::cout << "  Volume: " << config.volume << "\n";
     if (config.volume == 0.0f) {
         std::cout << "  Silent: Yes (zero volume, full audio pipeline)\n";

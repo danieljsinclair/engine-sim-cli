@@ -207,13 +207,10 @@ TEST(CLIWiring, NoStartFrom_DefaultDisabled) {
 }
 
 // --start-from without --replay-telemetry should fail (needs() constraint)
-TEST(CLIWiring, StartFrom_NoLongerRequiresReplayTelemetry) {
-    // --start-from now also applies to --live-telemetry, so the parse-time
-    // ->needs("--replay-telemetry") constraint was removed: --start-from no
-    // longer hard-fails without --replay-telemetry.
+TEST(CLIWiring, StartFrom_WithoutReplayTelemetry_Fails) {
     const char* argv[] = {"engine-sim-cli", "--start-from", "99"};
     CommandLineArgs args;
-    EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
+    EXPECT_FALSE(parseArguments(3, const_cast<char**>(argv), args));
 }
 
 // --start-from with invalid time should fail
