@@ -26,6 +26,7 @@ add_executable(unit_tests
     StopReasonReporterTest.cpp
     CsvOutFilenameTest.cpp
     SteeringGaugeTest.cpp
+    VerificationMacroTest.cpp
     # Required support code
     ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
