@@ -7,6 +7,7 @@ add_executable(unit_tests
     CircularBufferTest.cpp
     CommandLineParserTest.cpp
     ConsolePresentationTest.cpp
+    CsvPresentationTest.cpp
     CLITimeParsingTest.cpp
     GearboxLogFilenameTest.cpp
     InteractiveModeStateTest.cpp
@@ -34,6 +35,7 @@ add_executable(unit_tests
     ../../src/config/ANSIColors.cpp
     ../../src/config/ExecutablePath.cpp
     ../../src/presentation/ConsolePresentation.cpp
+    ../../src/presentation/CsvPresentation.cpp
     ../../src/input/KeyboardInput.cpp
     ../../test/mocks/MockDataSimulator.cpp
     ../../test/mocks/MockAudioUnit.cpp

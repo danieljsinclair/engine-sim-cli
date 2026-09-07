@@ -29,12 +29,14 @@ On any violation: prints the offending rows and exits non-zero. Exits 0 if all
 invariants hold, and prints a one-line summary.
 
 The CSV is PARSED BY HEADER NAME (not column index), so it is robust to column
-additions/reorderings. The expected --csv-out header (as built by the CLI) is:
+additions/reorderings. The --csv-out header (locked by
+test/unit/CsvPresentationTest.cpp) is:
 
-    time_s,rpm,engine_state,throttle_gas_pct,brake,ignition,gear_selector,
-    gear_auto,gear_physical,clutch_pressure,road_implied_rpm,creep_relief_fired,
-    vehicle_speed_kmh,target_speed_kmh,sim_speed_mph,engine_torque_nm,
-    drivetrain_torque_nm,dyno_torque_nm,starter_engaged,exhaust_flow_cm3s
+    wall_clock_ms,sim_time_s,rel_time_s,latency_ms,rpm,rpm_raw,engine_state,
+    throttle_gas_pct,brake,ignition,gear_selector,gear_auto,gear_physical,
+    clutch_pressure,road_implied_rpm,creep_relief_fired,vehicle_speed_kmh,
+    target_speed_kmh,sim_speed_mph,engine_torque_nm,drivetrain_torque_nm,
+    dyno_torque_nm,starter_engaged,exhaust_flow_cm3s,synth_out_rms
 
 For mph, the script looks for sim_mph then sim_speed_mph, and for the target it
 prefers tgt_mph, then target_speed_mph, then target_speed_kmh (converted /1.60934).
