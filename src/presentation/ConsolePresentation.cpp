@@ -16,66 +16,24 @@
 namespace presentation {
 
 // Gear selector character lookup. Exposed via the header so tests verify the
-// real production mapping rather than a duplicated copy.
+// real production mapping rather than a duplicated copy. The mapping lives in
+// the bridge's GearConventions (F4 consolidation); these presentation-seam
+// free functions remain the CLI's public surface and delegate 1:1.
 char gearSelectorChar(int selector) {
-    using GS = bridge::GearSelector;
-    switch (static_cast<GS>(selector)) {
-        case GS::PARK:    return 'P';
-        case GS::REVERSE: return 'R';
-        case GS::NEUTRAL: return 'N';
-        case GS::DRIVE:   return 'D';
-        default:
-            // Manual gear-selection positions share the BridgeGear numbering
-            // (FIRST=1 .. EIGHTH=8). DRIVE is 99, so these never collide.
-            // All of 1-8 render as their digit; previously '1' fell through to '?'.
-            if (selector >= 1 && selector <= 8) {
-                return static_cast<char>('0' + selector);
-            }
-            return '?';
-    }
+    return bridge::gearSelectorChar(selector);
 }
 
-// Third field: what the transmission is actually doing (P/R/N/1-8).
-// PARK/REVERSE come from the selector (the physics has no reverse/park gear);
-// NEUTRAL/DRIVE/forward reflect the physical gear number.
+// Third field: what the transmission is actually doing (P/R/N/1-8). See
+// bridge::gearChar (GearConventions.h) for the mapping.
 char gearChar(int selector, int physicalGear) {
-    using GS = bridge::GearSelector;
-    switch (static_cast<GS>(selector)) {
-        case GS::PARK:    return 'P';   // transmission parked/locked
-        case GS::REVERSE: return 'R';
-        default: break;                 // NEUTRAL/DRIVE/manual -> physical gear
-    }
-    if (physicalGear == 0) return 'N';
-    if (physicalGear >= 1 && physicalGear <= 8) return static_cast<char>('0' + physicalGear);
-    return '?';
-}
-
-// Manual mode's third field: a selected gear (1-8) mirrors its digit; P/R/N
-// are engaged transmission states (not gears) and mirror too; DRIVE in manual
-// means NO gear is selected yet — '-' rather than an echoed 'D' that read
-// like a gear ("DMD" was widely misread as gear "D").
-static char manualGearChar(int selector) {
-    using GS = bridge::GearSelector;
-    switch (static_cast<GS>(selector)) {
-        case GS::PARK:    return 'P';
-        case GS::REVERSE: return 'R';
-        case GS::NEUTRAL: return 'N';
-        case GS::DRIVE:   return '-';  // no gear selected in manual
-        default: break;               // FIRST=1 .. EIGHTH=8 render as digits
-    }
-    if (selector >= 1 && selector <= 8) {
-        return static_cast<char>('0' + selector);
-    }
-    return '?';
+    return bridge::gearChar(selector, physicalGear);
 }
 
 // "[selector][mode][gear]". Manual shows what the driver has engaged
-// (manualGearChar); auto derives it from the physical gear via gearChar.
+// (bridge::manualGearChar); auto derives it from the physical gear via
+// bridge::gearChar. Composition lives in bridge::gearTriple.
 std::string gearTriple(int selector, bool autoMode, int physicalGear) {
-    const char field1 = gearSelectorChar(selector);
-    const char field2 = autoMode ? 'A' : 'M';
-    const char field3 = autoMode ? gearChar(selector, physicalGear) : manualGearChar(selector);
-    return std::string(1, field1) + field2 + field3;
+    return bridge::gearTriple(selector, autoMode, physicalGear);
 }
 
 ConsolePresentation::ConsolePresentation(SteeringStyle style)
