@@ -206,20 +206,23 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
         if (!replay->Initialize()) {
             throw CliException("Failed to initialize replay telemetry: " + replay->GetLastError());
         }
-        // Wire Q/P keyboard for replay mode (same pattern as the keyboard path).
-        auto kb = std::make_unique<::KeyboardInput>();
-        replay->setKeyboardInput(kb.get());
-        // Validate time slicing against the parsed trace duration.
-        validateReplayTimeSlicing(args, replay.get());
         // Capture the core's primer BEFORE the overlay wrap takes ownership
         // (#66): SessionDependencies gets the explicit pointer so the loop's
         // --start-from settle works even through the wrapper.
         ctx.arrivalPrimer = replay.get();
+        // Validate time slicing against the parsed trace duration.
+        validateReplayTimeSlicing(args, replay.get());
+
+        // Create keyboard input handler (shared between replay-only and overlay paths)
+        auto kb = std::make_unique<::KeyboardInput>();
 
         // For replay + manual mode, build an overlay even without --interactive
         // so that [ / ] gear-shift keys work. The overlay requires a target.
         // (telemetryPath is non-empty on this branch by construction.)
         if (bool useOverlay = args.interactiveExplicit || args.gearbox.manual; useOverlay) {
+            // When overlay is used, it owns keyboard handling. Do NOT wire keyboard to replay
+            // to avoid SRP violation and keyboard event consumption conflicts (replay's
+            // processKeyboardInput would consume events before overlay can see them).
             auto target_ov = std::make_unique<input::EngineInputTarget>();
             target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
             if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
@@ -233,8 +236,8 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             ctx.provider = std::move(overlay);
             return ctx;
         }
-        // Attach the gearbox decision logger when requested, so the oracle
-        // (section D: parse per-frame gear/rpm/mph) can validate replay runs.
+        // No overlay: wire Q/P keyboard for replay-only mode and attach decision logger
+        replay->setKeyboardInput(kb.get());
         attachGearboxLogger(*replay, args.gearbox.logPath);
         ctx.keyboard = std::move(kb);
         ctx.provider = std::move(replay);
