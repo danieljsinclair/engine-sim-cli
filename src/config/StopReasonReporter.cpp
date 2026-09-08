@@ -10,7 +10,7 @@
 
 std::string playbackStopMessage(bool interactive, double durationS,
                                 bool endAtReached, double endAtS,
-                                bool inputExhausted) {
+                                bool inputExhausted, bool endAtClamped) {
     // Precedence follows what ACTUALLY ended the run:
     //   1. interactive  - the user quit.
     //   2. endAtReached - the provider's --end-at bound fired (only the code
@@ -18,19 +18,29 @@ std::string playbackStopMessage(bool interactive, double durationS,
     //                     so this never claims a bound that did not stop the
     //                     run, even when --duration is also set: whichever is
     //                     smaller fires first and only it leaves its mark).
-    //   3. duration     - the wall-clock/sim duration timer, but ONLY when the
+    //   3. endAtClamped - the requested --end-at/--duration window exceeded
+    //                     the trace length, so the bound was discarded and the
+    //                     run played to the trace end. Reporting the trace
+    //                     length as a "duration reached" stop would be the lie
+    //                     this module exists to avoid (owner-reported
+    //                     2026-09-08: --duration 200 on a 158.982s capture
+    //                     claimed "158.982s duration reached").
+    //   4. duration     - the wall-clock/sim duration timer, but ONLY when the
     //                     provider is still connected. A disconnected provider
     //                     means the data ran out first (live stream EOF at
     //                     capture end) — reporting the duration would be the
     //                     owner-reported lie ("536.726s duration reached" on a
     //                     run that stopped much earlier).
-    //   4. fallback     - trace end (unbounded streaming run).
+    //   5. fallback     - trace end (unbounded streaming run).
     std::ostringstream out;
     if (interactive) {
         out << "\nPlayback stopped: user quit (Q or Ctrl-C).";
     } else if (endAtReached) {
         out << "\nPlayback stopped: --end-at " << endAtS << "s reached."
             << "\n  (the run stopped at the requested timecode)";
+    } else if (endAtClamped) {
+        out << "\nPlayback stopped: end of replay trace "
+            << "(requested window exceeded trace length; clamped to trace end).";
     } else if (durationS > 0.0 && !inputExhausted) {
         out << "\nPlayback stopped: " << durationS << "s duration reached."
             << "\n  (use --interactive for open-ended, --duration <N> for longer)";
@@ -41,10 +51,12 @@ std::string playbackStopMessage(bool interactive, double durationS,
 }
 
 void reportStopReason(const SimulationConfig& config,
-                      const input::IInputProvider* provider, double endAtS) {
+                      const input::IInputProvider* provider, double endAtS,
+                      bool endAtClamped) {
     const bool endAtReached = provider && provider->endAtReached();
     const bool inputExhausted = provider && !provider->IsConnected();
     std::cout << playbackStopMessage(config.interactive, config.duration,
-                                     endAtReached, endAtS, inputExhausted)
+                                     endAtReached, endAtS, inputExhausted,
+                                     endAtClamped)
               << std::endl;
 }

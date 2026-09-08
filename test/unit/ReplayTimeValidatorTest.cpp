@@ -46,6 +46,17 @@ static CommandLineArgs makeArgs(double startFromS, double endAtS) {
     return args;
 }
 
+// A clamped --end-at must leave a flag so the stop reporter can tell the user
+// the run played to the trace end rather than claiming the trace length as a
+// "duration reached" stop (owner-reported 2026-09-08: --duration 200 on a
+// 158.982s capture).
+TEST(ReplayTimeValidatorTest, EndAtPastTraceEnd_SetsEndAtClampedFlag) {
+    StubTimeline timeline(/*durationS=*/10.0);
+    CommandLineArgs args = makeArgs(/*startFromS=*/-1.0, /*endAtS=*/100.0);
+    EXPECT_NO_THROW(validateReplayTimeSlicing(args, &timeline));
+    EXPECT_TRUE(args.replay.endAtClamped);
+}
+
 // ============================================================================
 // Spec: replay == nullptr -> return immediately, no throw.
 // ============================================================================

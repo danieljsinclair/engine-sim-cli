@@ -33,9 +33,9 @@ void printUsage(const char* progName) {
                  "                       window from the start point (same as --end-at start+N)\n";
     std::cout << "  --output <path>      Output WAV file path\n";
     std::cout << "  --connect-demo       Run VirtualICE twin demo (gearbox mode per --auto/--manual)\n";
-    std::cout << "  --auto               Use automatic gearbox (default for --replay-telemetry: a\n"
+    std::cout << "  --auto               Use automatic gearbox (default in all modes: a\n"
                  "                       PRND-only CSV cannot shift a manual box)\n";
-    std::cout << "  --manual             Use manual gearbox (default except --replay-telemetry)\n";
+    std::cout << "  --manual             Use manual gearbox (explicit opt-out; auto is default)\n";
     std::cout << "  --sine               Generate 440Hz sine wave test tone (no engine sim)\n";
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
@@ -97,7 +97,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
 
     app.add_option("--load", loadArg, "Dyno load torque percentage (engine works against this)") ->check(CLI::Range(0.0, 100.0));
     app.add_option("--output", args.outputWav, "Output WAV file path");
-    app.add_option("--duration", args.duration,
+    app.add_option("--duration", args.replay.durationRaw,
                    "Run for N seconds; with --replay-telemetry/--live-telemetry: window from the "
                    "start point (same as --end-at start+N); mutually exclusive with --end-at");
     app.add_option("--sim-freq", args.audio.simulationFrequency, "Physics Hz (default: " + std::to_string(EngineSimDefaults::SIMULATION_FREQUENCY) + ")") ->check(CLI::Range(EngineSimDefaults::SIMULATION_FREQUENCY / 10, EngineSimDefaults::SIMULATION_FREQUENCY * 10));
@@ -310,16 +310,16 @@ std::string generateTimestampedFilename(const std::string& prefix,
     return prefix + buf + extension;
 }
 
-// Replay telemetry defaults the gearbox to AUTO unless the user explicitly
-// opted into manual with --manual (owner ruling 2026-09-03: replay must
-// self-drive by default — including interactive replay; the live path is not
-// auto-defaulted). The predicate itself is bridge-side
-// (input::resolveReplayGearboxDefault, ReplayTelemetryProvider.h,
-// consolidation wave B) — it resolves the provider's autoGearbox ctor
-// argument; this is the thin CLI shell over the parsed CommandLineArgs.
+// Gearbox default is AUTO in ALL modes (interactive, replay, live) unless the
+// user explicitly opts out with --manual (owner ruling 2026-09-08: --auto is
+// the default everywhere; --manual is the explicit opt-out). The predicate
+// itself is bridge-side (input::resolveReplayGearboxDefault,
+// ReplayTelemetryProvider.h, consolidation wave B) — it resolves the
+// provider's autoGearbox ctor argument; this is the thin CLI shell over the
+// parsed CommandLineArgs.
 void resolveReplayGearboxDefault(CommandLineArgs& args) {
     args.gearbox.automatic = input::resolveReplayGearboxDefault(
-        !args.replay.telemetryPath.empty(), args.gearbox.automatic, args.gearbox.manual);
+        args.gearbox.automatic, args.gearbox.manual);
 }
 
 }  // namespace
@@ -352,6 +352,22 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
     // Only a bare (keyboard-driven, non-telemetry, non-deterministic,
     // non-connect-demo) run without --duration defaults to interactive.
     const bool telemetryDriven = args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
+    // --duration is a raw string at CLI time (CLI11 cannot parse "1:30" into a
+    // double), so it is not yet in args.duration here. For a PLAIN run the
+    // value is plain seconds — convert it now so the interactive-default check
+    // below (and the rest of processArgs) see the real number. The
+    // telemetry-driven window is parsed later (it resolves onto --end-at).
+    if (!args.replay.durationRaw.empty() && !telemetryDriven) {
+        try {
+            std::size_t pos = 0;
+            args.duration = std::stod(args.replay.durationRaw, &pos);
+            if (pos != args.replay.durationRaw.size()) throw std::invalid_argument("trailing chars");
+        } catch (...) {
+            std::cerr << "Could not convert: --duration = " << args.replay.durationRaw << "\n"
+                      << "Run with --help for more information.\n";
+            return false;
+        }
+    }
     if (args.duration <= 0.0 && !telemetryDriven && !args.deterministic && !args.connectDemo) {
         args.interactive = true;
     }
@@ -411,24 +427,35 @@ bool processArgs(CommandLineArgs& args, const std::string& scriptPath, const std
         }
     }
 
-    // --duration + a telemetry-driven mode is a WINDOW: N seconds from the
-    // start point — replay measures from --start-from's arrival on the
-    // recording clock, live from attach (both providers run the same
-    // elapsed-seconds clock, so one formula covers both). Resolved onto the
-    // --end-at path so the provider's single time-slicing mechanism bounds
-    // the run; the raw --duration is consumed (reset to 0) so no downstream
-    // duration logic double-bounds it. Passing --duration AND --end-at gives
-    // two stop conditions — refuse rather than guess precedence.
-    // (Supersedes the parse-time fail-fast that rejected every
-    // --duration + telemetry combination.)
-    if (args.duration > 0.0 && telemetryDriven) {
+    // --duration is a raw string at CLI time: CLI11 cannot parse "1:30" into
+    // a double, so --duration 1:30 used to die with "Could not convert". For
+    // telemetry-driven runs route it through the same parser as
+    // --start-from/--end-at (mm:ss and hh:mm:ss now work) and resolve it onto
+    // the --end-at path; for plain runs the value is plain seconds and was
+    // already converted to args.duration above (so the interactive-default
+    // check and downstream logic see the real number).
+    if (!args.replay.durationRaw.empty() && telemetryDriven) {
+        const double durationS = parseReplayTimeToSeconds(args.replay.durationRaw);
+        if (durationS < 0.0) {
+            std::cerr << "ERROR: Invalid --duration time: " << args.replay.durationRaw << "\n";
+            return false;
+        }
         if (!args.replay.endAt.empty()) {
             std::cerr << "ERROR: --duration and --end-at are mutually exclusive "
                       << "(both bound the end of the run) — pass one or the other.\n";
             return false;
         }
+        // --duration + a telemetry-driven mode is a WINDOW: N seconds from
+        // the start point — replay measures from --start-from's arrival on
+        // the recording clock, live from attach (both providers run the
+        // same elapsed-seconds clock, so one formula covers both). Resolved
+        // onto the --end-at path so the provider's single time-slicing
+        // mechanism bounds the run; the raw --duration is consumed (reset
+        // to 0) so no downstream duration logic double-bounds it.
+        // (Supersedes the parse-time fail-fast that rejected every
+        // --duration + telemetry combination.)
         const double windowStartS = std::max(0.0, args.replay.startFromS);
-        args.replay.endAtS = windowStartS + args.duration;
+        args.replay.endAtS = windowStartS + durationS;
         args.duration = 0.0;
     }
 

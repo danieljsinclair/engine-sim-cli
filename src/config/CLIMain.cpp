@@ -126,8 +126,21 @@ void attachGearboxLogger(Provider& provider, const std::string& logPath) {
 // Extracted from main() (S3776 cognitive-complexity relief).
 void applyProviderDefaultDuration(SimulationConfig& config, const CommandLineArgs& args,
                                   const input::IInputProvider* provider) {
-    if (config.interactive || args.duration > 0.0) {
-        return;  // user-terminated run, or an explicit --duration wins
+    // --duration + telemetry is resolved onto --end-at (a provider-side bound),
+    // and args.duration is reset to 0 so no downstream duration logic
+    // double-bounds it. The guard above therefore no longer sees an explicit
+    // --duration, so without this check the default would overwrite
+    // config.duration with the trace length and the stop reporter would claim
+    // "158.982s duration reached" for a run that actually stopped at the
+    // --end-at bound (owner-reported 2026-09-08). When an end-at bound is set
+    // the provider owns termination — leave config.duration alone.
+    // Only the USER-REQUESTED --end-at/--duration window (the raw string, which
+    // is empty when replay is just playing to its natural trace end) makes the
+    // provider own termination. A defaulted endAtS of -1 must NOT — that is the
+    // unbounded replay case, which still needs config.duration = trace length so
+    // the loop has a tick budget and stops at the trace end.
+    if (config.interactive || args.duration > 0.0 || !args.replay.endAt.empty()) {
+        return;  // user-terminated, explicit --duration, or an --end-at/--duration bound
     }
     if (const auto* replay = dynamic_cast<const input::ReplayTelemetryProvider*>(provider)) {
         // --replay-telemetry: default to the trace's full length so each
@@ -147,7 +160,7 @@ void applyProviderDefaultDuration(SimulationConfig& config, const CommandLineArg
     }
 }
 
-InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, const CommandLineArgs& args) {
+InputContext createInputProvider(const SimulationConfig& config, ILogging* /*logger*/, CommandLineArgs& args) {
     InputContext ctx;
 
     // Live telemetry mode: read decoded CSV from stdin (vehicle-sim --stdout-csv
@@ -627,7 +640,8 @@ int main(int argc, char* argv[]) {
 
         // Tell the user why playback stopped — reading the provider's
         // post-run state (end-at flag / connection) makes the message honest.
-        reportStopReason(config, inputProvider, args.replay.endAtS);
+        reportStopReason(config, inputProvider, args.replay.endAtS,
+                         args.replay.endAtClamped);
 
         // No session remains; detach so any stray signal is inert.
         stopController->detach();

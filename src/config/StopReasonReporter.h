@@ -28,13 +28,22 @@ namespace input { class IInputProvider; }
 //   endAtS         - the requested --end-at bound (-1 = none requested).
 //   inputExhausted - the provider is disconnected post-run (the live stream
 //                    ended; data exhausted).
+//   endAtClamped   - the requested --end-at/--duration window exceeded the
+//                    trace length, so the bound was discarded and the run
+//                    played to the trace end instead. Without this flag a
+//                    clamped run would report the trace length as a "duration
+//                    reached" stop (owner-reported 2026-09-08: --duration 200
+//                    on a 158.982s capture claimed "158.982s duration reached").
 std::string playbackStopMessage(bool interactive, double durationS,
                                 bool endAtReached, double endAtS,
-                                bool inputExhausted);
+                                bool inputExhausted, bool endAtClamped);
 
 // Print the stop reason for a finished run, reading the provider's post-run
 // state (endAtReached / disconnected). provider may be null (interactive).
+// endAtClamped: the requested --end-at/--duration window exceeded the trace
+// length, so the run played to the trace end (see playbackStopMessage).
 void reportStopReason(const SimulationConfig& config,
-                      const input::IInputProvider* provider, double endAtS);
+                      const input::IInputProvider* provider, double endAtS,
+                      bool endAtClamped);
 
 #endif // STOP_REASON_REPORTER_H

@@ -9,7 +9,7 @@
 
 // Validate replay time-slicing args against the actual trace duration.
 // Throws CliException with a descriptive message if validation fails.
-void validateReplayTimeSlicing(const CommandLineArgs& args,
+void validateReplayTimeSlicing(CommandLineArgs& args,
                                input::IReplayTimeline* replay) {
     if (!replay) return;
     const double traceDur = replay->durationS();
@@ -24,6 +24,7 @@ void validateReplayTimeSlicing(const CommandLineArgs& args,
                   << "s is past end of trace (" << traceDur
                   << "s); will play to end\n";
         replay->setEndAtS(-1.0);
+        args.replay.endAtClamped = true;
     }
     if (args.replay.startFromS >= 0.0 && args.replay.endAtS >= 0.0
         && args.replay.startFromS >= args.replay.endAtS) {

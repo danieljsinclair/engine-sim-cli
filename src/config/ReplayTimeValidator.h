@@ -16,8 +16,11 @@ namespace input { class IReplayTimeline; }
 // Validate replay time-slicing args (--start-from / --end-at) against the
 // actual trace duration. Emits ERROR/WARNING diagnostics to stderr and throws
 // CliException when the slice is unsatisfiable (start past end of trace, or
-// start >= end). A start/end past the end of trace clamps to play-to-end.
+// start >= end). A start/end past the end of trace clamps to play-to-end and
+// sets args.replay.endAtClamped so the stop reporter can tell the user the run
+// played to the trace end rather than claiming the trace length as a
+// "duration reached" stop. Non-const: the clamp flag is a side-effect.
 // No-op when replay is nullptr.
-void validateReplayTimeSlicing(const CommandLineArgs& args, input::IReplayTimeline* replay);
+void validateReplayTimeSlicing(CommandLineArgs& args, input::IReplayTimeline* replay);
 
 #endif  // CLI_REPLAY_TIME_VALIDATOR_H

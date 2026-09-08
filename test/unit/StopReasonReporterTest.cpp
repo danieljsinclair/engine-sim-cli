@@ -31,7 +31,8 @@ bool mentionsUserQuit(const std::string& msg) { return msg.find("user quit") != 
 TEST(StopReasonReporterTest, EndAtReached_ReportsBoundNotFullTraceDuration) {
     const std::string msg = playbackStopMessage(
         /*interactive=*/false, /*durationS=*/10.0,
-        /*endAtReached=*/true, /*endAtS=*/5.0, /*inputExhausted=*/false);
+        /*endAtReached=*/true, /*endAtS=*/5.0, /*inputExhausted=*/false,
+        /*endAtClamped=*/false);
     EXPECT_TRUE(mentionsEndAtBound(msg)) << msg;
     EXPECT_TRUE(msg.find("--end-at 5") != std::string::npos) << msg;
     EXPECT_FALSE(mentionsDuration(msg)) << msg;
@@ -40,7 +41,7 @@ TEST(StopReasonReporterTest, EndAtReached_ReportsBoundNotFullTraceDuration) {
 // Live + --end-at with no --duration (duration 0): the bound ends the run.
 TEST(StopReasonReporterTest, EndAtReached_LiveNoDuration_ReportsBound) {
     const std::string msg = playbackStopMessage(
-        false, 0.0, true, 5.0, true);
+        false, 0.0, true, 5.0, true, false);
     EXPECT_TRUE(mentionsEndAtBound(msg)) << msg;
     EXPECT_FALSE(mentionsTraceEnd(msg)) << msg;
 }
@@ -50,7 +51,8 @@ TEST(StopReasonReporterTest, EndAtReached_LiveNoDuration_ReportsBound) {
 // end, NOT claim the 6s duration was reached.
 TEST(StopReasonReporterTest, StreamEofBeforeDuration_ReportsTraceEndNotDuration) {
     const std::string msg = playbackStopMessage(
-        false, 6.0, /*endAtReached=*/false, -1.0, /*inputExhausted=*/true);
+        false, 6.0, /*endAtReached=*/false, -1.0, /*inputExhausted=*/true,
+        /*endAtClamped=*/false);
     EXPECT_TRUE(mentionsTraceEnd(msg)) << msg;
     EXPECT_FALSE(mentionsDuration(msg)) << msg;
 }
@@ -59,7 +61,8 @@ TEST(StopReasonReporterTest, StreamEofBeforeDuration_ReportsTraceEndNotDuration)
 // capture): the stream ended, the bound did not. Trace end, not the bound.
 TEST(StopReasonReporterTest, StreamEofBeforeEndAt_ReportsTraceEndNotBound) {
     const std::string msg = playbackStopMessage(
-        false, 0.0, /*endAtReached=*/false, 8.0, /*inputExhausted=*/true);
+        false, 0.0, /*endAtReached=*/false, 8.0, /*inputExhausted=*/true,
+        /*endAtClamped=*/false);
     EXPECT_TRUE(mentionsTraceEnd(msg)) << msg;
     EXPECT_FALSE(mentionsEndAtBound(msg)) << msg;
 }
@@ -68,7 +71,7 @@ TEST(StopReasonReporterTest, StreamEofBeforeEndAt_ReportsTraceEndNotBound) {
 // the duration timer genuinely ended the run. Duration message stays.
 TEST(StopReasonReporterTest, DurationStop_ReportsDuration) {
     const std::string msg = playbackStopMessage(
-        false, 10.0, false, -1.0, false);
+        false, 10.0, false, -1.0, false, false);
     EXPECT_TRUE(mentionsDuration(msg)) << msg;
     EXPECT_TRUE(msg.find("10") != std::string::npos) << msg;
     EXPECT_FALSE(mentionsTraceEnd(msg)) << msg;
@@ -77,14 +80,28 @@ TEST(StopReasonReporterTest, DurationStop_ReportsDuration) {
 // Unbounded run, provider still connected, no bound: trace-end fallback.
 TEST(StopReasonReporterTest, NoDurationNoExhaustion_ReportsTraceEnd) {
     const std::string msg = playbackStopMessage(
-        false, 0.0, false, -1.0, false);
+        false, 0.0, false, -1.0, false, false);
     EXPECT_TRUE(mentionsTraceEnd(msg)) << msg;
 }
 
 // Interactive mode: user quit wins.
 TEST(StopReasonReporterTest, Interactive_ReportsUserQuit) {
     const std::string msg = playbackStopMessage(
-        true, 10.0, false, -1.0, false);
+        true, 10.0, false, -1.0, false, false);
     EXPECT_TRUE(mentionsUserQuit(msg)) << msg;
     EXPECT_FALSE(mentionsDuration(msg)) << msg;
+}
+
+// --duration 200 on a 158.982s capture: the window exceeded the trace length,
+// so the bound was discarded and the run played to the trace end. Must NOT
+// claim the trace length as a "duration reached" stop (owner-reported
+// 2026-09-08).
+TEST(StopReasonReporterTest, EndAtClamped_ReportsTraceEndNotDuration) {
+    const std::string msg = playbackStopMessage(
+        /*interactive=*/false, /*durationS=*/158.982,
+        /*endAtReached=*/false, /*endAtS=*/200.0, /*inputExhausted=*/false,
+        /*endAtClamped=*/true);
+    EXPECT_TRUE(mentionsTraceEnd(msg)) << msg;
+    EXPECT_FALSE(mentionsDuration(msg)) << msg;
+    EXPECT_FALSE(mentionsEndAtBound(msg)) << msg;
 }

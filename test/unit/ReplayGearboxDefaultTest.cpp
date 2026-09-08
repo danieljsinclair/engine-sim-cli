@@ -1,11 +1,11 @@
-// ReplayGearboxDefaultTest.cpp - Behavior tests for the replay-mode gearbox
-// default resolved in processArgs() (CLIconfig.cpp).
+// ReplayGearboxDefaultTest.cpp - Behavior tests for the gearbox default
+// resolved in processArgs() (CLIconfig.cpp).
 //
-// OWNER RULING (D2, 2026-09-03): the auto-shift default for --replay-telemetry
-// INCLUDES --interactive runs. The owner expected "auto is the default for
-// telemetry driving sims" to hold when replaying a capture interactively;
-// gear keys still win over the auto box once running. --manual remains the
-// explicit opt-out.
+// OWNER RULING (2026-09-08): --auto is the DEFAULT in ALL modes (interactive,
+// replay, live); --manual is the explicit opt-out. The earlier replay-scoped
+// default (D2, 2026-09-03: replay auto-shift including interactive replay) is
+// subsumed — the default is now mode-agnostic. Gear keys still win over the
+// auto box once running.
 //
 // DESIGN:
 //   - resolveReplayGearboxDefault lives in an anonymous namespace in
@@ -85,25 +85,28 @@ TEST(ReplayGearboxDefault, ExplicitAuto_IsRedundantButHarmless) {
 }
 
 // ============================================================================
-// Non-replay runs keep the manual default (the D2 change is replay-scoped)
+// Non-replay runs keep the AUTO default (the default is mode-agnostic)
 // ============================================================================
 
-TEST(ReplayGearboxDefault, InteractiveWithoutReplay_KeepsManualDefault) {
+TEST(ReplayGearboxDefault, InteractiveWithoutReplay_StillDefaultsToAutomatic) {
+    // Owner ruling 2026-09-08: --auto is the default in ALL modes, so a bare
+    // --interactive run (no --auto/--manual) resolves to AUTO.
     auto args = parseArgv({"--interactive"});
-    EXPECT_FALSE(args.gearbox.automatic)
-        << "The auto default is tied to replay; a bare interactive run must stay manual";
+    EXPECT_TRUE(args.gearbox.automatic)
+        << "the auto default is mode-agnostic; a bare interactive run must be auto";
     EXPECT_FALSE(args.gearbox.manual)
-        << "No flag was passed; neither mode should be explicitly set";
+        << "No flag was passed; manual must not be implied";
 }
 
 // ============================================================================
-// F6 characterization net (consolidation wave B, 2026-09-07).
-// resolveReplayGearboxDefault (CLIconfig.cpp, anonymous namespace) moves
-// CLI-side -> bridge. The D2 companion suite above already pins: replay
-// default->auto (interactive and plain), --manual opt-out (interactive),
-// explicit --auto, and the replay-scoped non-replay default. Missing branches
-// pinned here: the non-interactive --manual opt-out, and the LIVE path
-// (stdin CSV, telemetryPath empty) which the resolution must NOT touch.
+// F6 characterization net (consolidation wave B, 2026-09-07; default widened
+// 2026-09-08). resolveReplayGearboxDefault (CLIconfig.cpp, anonymous
+// namespace) moves CLI-side -> bridge. The companion suite above already
+// pins: default->auto (interactive and plain replay), --manual opt-out
+// (interactive), explicit --auto, and the non-replay interactive default.
+// Missing branches pinned here: the non-interactive --manual opt-out, and
+// the LIVE path (stdin CSV, telemetryPath empty) which is now auto-defaulted
+// too (the predicate is mode-agnostic).
 // ============================================================================
 
 TEST(ReplayGearboxDefault, PlainReplay_ManualOptsOutWithoutInteractive) {
@@ -115,14 +118,14 @@ TEST(ReplayGearboxDefault, PlainReplay_ManualOptsOutWithoutInteractive) {
         << "--manual is the explicit opt-out with or without --interactive";
 }
 
-TEST(ReplayGearboxDefault, LiveTelemetry_IsNotAutoDefaulted) {
-    // --live-telemetry reads stdin, so replay.telemetryPath stays empty: the
-    // auto default is REPLAY-scoped (LiveTelemetryProvider has no manual
-    // gearbox mode to flip). The move must keep the replay-path predicate.
+TEST(ReplayGearboxDefault, LiveTelemetry_IsAutoDefaulted) {
+    // Owner ruling 2026-09-08: --auto is the default in ALL modes, including
+    // --live-telemetry. The live path drives the twin, which auto-shifts, so
+    // the mode-agnostic default applies here too.
     auto args = parseArgv({"--live-telemetry"});
     EXPECT_TRUE(args.twin.liveTelemetry);
     EXPECT_TRUE(args.replay.telemetryPath.empty());
-    EXPECT_FALSE(args.gearbox.automatic)
-        << "the auto default must not leak onto the live-telemetry path";
+    EXPECT_TRUE(args.gearbox.automatic)
+        << "the auto default now covers the live-telemetry path";
     EXPECT_FALSE(args.gearbox.manual);
 }

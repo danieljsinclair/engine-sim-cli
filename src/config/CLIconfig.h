@@ -21,9 +21,11 @@ struct ReplayArgs {
     std::string telemetryPath;       // --replay-telemetry <csv>: scripted driving from a telemetry CSV
     std::string startFrom;           // --start-from <time>: raw string, parsed after CLI
     std::string endAt;               // --end-at <time>: raw string, parsed after CLI
+    std::string durationRaw;         // --duration <time>: raw string, parsed after CLI (telemetry window)
     double startFromS = -1.0;        // parsed seconds
     double endAtS = -1.0;            // parsed seconds
     bool noBlankSkip = false;        // --no-blank-skip: anchor the arrival row exactly at the offset (default: skip blank USB-settle rows)
+    bool endAtClamped = false;      // --end-at/--duration window was clamped to the trace length (honest stop message)
 };
 
 // Gearbox mode and logging (--auto / --manual / --gearbox-log).

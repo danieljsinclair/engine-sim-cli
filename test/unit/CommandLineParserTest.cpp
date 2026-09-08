@@ -81,12 +81,14 @@ TEST(CommandLineParserTest, ManualFlagExplicit) {
     EXPECT_TRUE(args.gearbox.manual);
 }
 
-TEST(CommandLineParserTest, DefaultGearboxIsManual) {
+TEST(CommandLineParserTest, DefaultGearboxIsAutomatic) {
+    // Owner ruling 2026-09-08: --auto is the default in ALL modes; --manual is
+    // the explicit opt-out. A bare run (no --auto/--manual) resolves to AUTO.
     const char* argv[] = {"engine-sim-cli", "--silent"};
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(3, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_TRUE(args.gearbox.automatic);
     EXPECT_FALSE(args.gearbox.manual);
 }
 
@@ -127,9 +129,10 @@ TEST(CommandLineParserTest, ReplayTelemetryManualOptOut) {
     EXPECT_TRUE(args.gearbox.manual);
 }
 
-TEST(CommandLineParserTest, ReplayTelemetryInteractiveKeepsManualDefault) {
-    // Owner ruling (D2): replay auto-shift is the default INCLUDING with --interactive;
-    // --manual still opts out; gear keys still win when pressed (consistent with D1's keys-win).
+TEST(CommandLineParserTest, ReplayTelemetryInteractiveKeepsAutoDefault) {
+    // Owner ruling 2026-09-08: --auto is the default in ALL modes, so replay
+    // + --interactive resolves to AUTO; --manual still opts out; gear keys
+    // still win when pressed (consistent with D1's keys-win).
     const char* argv[] = {"engine-sim-cli", "--replay-telemetry", "trace.csv", "--interactive"};
     CommandLineArgs args;
 
@@ -146,14 +149,15 @@ TEST(CommandLineParserTest, ReplayTelemetryExplicitAutoIsIdempotent) {
     EXPECT_TRUE(args.gearbox.automatic);
 }
 
-TEST(CommandLineParserTest, LiveTelemetryGearboxModeUnchangedByReplayDefault) {
-    // Live has no manual gearbox mode at all (the twin is always telemetry-
-    // driven), so the replay-defaults-to-auto flip must not touch live runs.
+TEST(CommandLineParserTest, LiveTelemetryDefaultsToAutoGearbox) {
+    // Owner ruling 2026-09-08: --auto is the default in ALL modes, including
+    // --live-telemetry. The live path drives the twin, which auto-shifts; the
+    // replay-defaults-to-auto flip is now mode-agnostic and applies here too.
     const char* argv[] = {"engine-sim-cli", "--live-telemetry"};
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.gearbox.automatic);
+    EXPECT_TRUE(args.gearbox.automatic);
     EXPECT_FALSE(args.gearbox.manual);
 }
 
