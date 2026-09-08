@@ -5,7 +5,9 @@
 
 #include "io/IPresentation.h"
 #include "config/ANSIColors.h"
+#include "SteeringGauge.h"
 #include <chrono>
+#include <memory>
 
 namespace presentation {
 
@@ -23,14 +25,20 @@ char gearChar(int selector, int physicalGear);
 
 // Composes the 3-character gear readout "[selector][mode][gear]" (no framing).
 // field1 = selectorChar(selector); field2 = autoMode ? 'A' : 'M';
-// field3 = autoMode ? gearChar(selector, physical) : selectorChar(selector)
-//   (manual: selector == gear, so field-3 mirrors field-1).
+// field3 = autoMode ? gearChar(selector, physical)
+//                   : manualGearChar(selector)  [bridge::GearConventions]:
+//   manual field-3 is P/R/N for engaged transmission states, the digit for
+//   manual gears 1-8, and '-' when DRIVE is selected in manual — no gear is
+//   engaged yet ("DM-" is the pinned render; there is no "DMD").
 // Pure and public so the composite is testable without friend hacks.
 std::string gearTriple(int selector, bool autoMode, int physicalGear);
 
 class ConsolePresentation final : public IPresentation {
 public:
-    ConsolePresentation();
+    // style selects the steering gauge glyph set (arrows is the default per
+    // the owner's verdict; the braille clock face is selected by
+    // --steering-style braille).
+    explicit ConsolePresentation(SteeringStyle style = SteeringStyle::Arrows);
     ~ConsolePresentation() override;
 
     // Manages console/output state. Copying has no meaningful semantics here and
@@ -40,7 +48,7 @@ public:
     ConsolePresentation& operator=(const ConsolePresentation&) = delete;
 
     bool Initialize(const PresentationConfig& config) override;
-    void Shutdown() override;
+    void Shutdown() noexcept override;
     
     void ShowSimulatorStates(const EngineState& state) override;
     void ShowMessage(const std::string& message) override;
@@ -60,6 +68,7 @@ private:
     std::string formatPedalState(const EngineState& state, std::ostringstream& out) const;
     std::string formatGearState(const EngineState& state, std::ostringstream& out) const;
     std::string formatSpeedState(const EngineState& state, std::ostringstream& out) const;
+    std::string formatSteeringState(const EngineState& state, std::ostringstream& out) const;
     std::string formatTargetSpeedState(const EngineState& state, std::ostringstream& out) const;
     std::string formatTorqueState(const EngineState& state, std::ostringstream& out) const;
     std::string formatDynoState(const EngineState& state, std::ostringstream& out) const;
@@ -67,6 +76,7 @@ private:
     std::string formatAudioState(const EngineState& state, std::ostringstream& out) const;
 
     PresentationConfig config_;
+    std::unique_ptr<ISteeringGauge> steeringGauge_;
     std::chrono::steady_clock::time_point lastDiagTime_;
     bool initialized_{false};
 };

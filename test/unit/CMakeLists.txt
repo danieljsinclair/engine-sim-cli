@@ -7,8 +7,10 @@ add_executable(unit_tests
     CircularBufferTest.cpp
     CommandLineParserTest.cpp
     ConsolePresentationTest.cpp
+    CsvPresentationTest.cpp
     CLITimeParsingTest.cpp
     GearboxLogFilenameTest.cpp
+    ReplayGearboxDefaultTest.cpp
     InteractiveModeStateTest.cpp
     SignalStopControllerTest.cpp
     AudioTestConstants.cpp
@@ -16,13 +18,33 @@ add_executable(unit_tests
     ISimulatorTest.cpp
     ANSIColorsTest.cpp
     CLIMainTest.cpp
+    CLIMainS3776S1820Test.cpp
     ReplayTimeValidatorTest.cpp
+    ExecutablePathTest.cpp
+    CommandLineTorqueFlagsTest.cpp
+    PinTauGuardTest.cpp
+    StopReasonReporterTest.cpp
+    CsvOutFilenameTest.cpp
+    SteeringGaugeTest.cpp
+    VerificationMacroTest.cpp
+    # Consolidation wave B characterization nets (F2/F5) — see each file's
+    # header for the pinned seam and the .cpp-include technique.
+    TelemetryProviderFactoryCharacterizationTest.cpp
+    GearboxReconfigureCharacterizationTest.cpp
     # Required support code
+    ../../src/config/StopReasonReporter.cpp
     ../../src/config/CLIconfig.cpp
     ../../src/config/ReplayTimeValidator.cpp
+    ../../src/config/TelemetryProviderFactory.cpp
+    ../../src/config/AudioModeResolver.cpp
     ../../src/config/KqueueSignalStopController.cpp
     ../../src/config/ANSIColors.cpp
+    ../../src/config/ExecutablePath.cpp
     ../../src/presentation/ConsolePresentation.cpp
+    ../../src/presentation/CsvPresentation.cpp
+    # Link closure for GearboxReconfigureCharacterizationTest, which compiles
+    # CLIMain.cpp into its TU (CLIMain constructs a PresentationCollection).
+    ../../src/presentation/PresentationCollection.cpp
     ../../src/input/KeyboardInput.cpp
     ../../test/mocks/MockDataSimulator.cpp
     ../../test/mocks/MockAudioUnit.cpp

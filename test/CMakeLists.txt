@@ -28,6 +28,7 @@ add_executable(smoke_tests
     smoke/test_audio_modes.cpp
     smoke/test_silent_flag.cpp
     smoke/test_bridge_smoke.cpp
+    smoke/test_capture_eof_exit.cpp
     smoke/test_path_resolution.cpp
     smoke/test_runloop_lifecycle.cpp
 )

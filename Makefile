@@ -34,14 +34,24 @@ COVERAGE_REPORT := $(BUILD_COV_DIR)/coverage.txt
 # scripts/lcov_to_xml.py). Read by the scanner via sonar.coverageReportPaths.
 COVERAGE_XML := $(BUILD_COV_DIR)/coverage-sonar.xml
 SONAR_REPORT := $(BUILD_COV_DIR)/sonar-report.json
+# sonar-summary's LIVE curl output. Deliberately a DIFFERENT file from
+# SONAR_REPORT: the report is the sonar-scan stamp (its presence means
+# "scanned"); writing the summary GET into it made every later sonar-scan
+# a permanent no-op ("Nothing to be done"). Same fix as bridge 6a5482d.
+SONAR_LIVE := $(BUILD_COV_DIR)/sonar-live.json
 # Cached SonarCloud measures (coverage headline) + REMOVED-facet (issues whose
 # source was deleted). Both curled by sonar-summary so build_summary.py reads
 # the SAME numbers sonar_summary.py shows -- total = open + removed (OPEN union
 # REMOVED, matching the dashboard severity widget). Mirrors the bridge.
 SONAR_MEASURES := $(BUILD_COV_DIR)/sonar-measures.json
 SONAR_REMOVED_FACET := $(BUILD_COV_DIR)/sonar-removed-facet.json
-BUILD_STAMP := $(BUILD_DIR)/.build-ready.stamp
-BUILD_COV_STAMP := $(BUILD_COV_DIR)/.build-cov-ready.stamp
+# Real artefact dependencies replace .stamp files (KISS — Make's natural
+# mtime check is sufficient; no .stamp bookkeeping required). The CLI
+# binary is the real artefact produced by `cmake --build`. (The previous
+# BUILD_STAMP := $(BUILD_DIR)/.build-ready.stamp was an unused ghost
+# declaration; the `build:` target depends on the test + bridge deps,
+# not a stamp file.)
+BUILD_COV_STAMP := $(BUILD_COV_DIR)/engine-sim-cli
 
 # Bridge's instrumented coverage archive. The CLI build-cov configures with
 # -DBRIDGE_BUILD_DIR pointing here, so the CLI links the bridge's INSTRUMENTED
@@ -93,7 +103,8 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 .PHONY: all build clean clean-cli scrub-cli test test-fast test-quick testquick submodules check-cmake check-platform check-submodule remove-orphans \
         force-rebuild sync-es copy-es-mr copy-es-json presets bridge-presets bridge-build \
         run run-json help build-cross clean-cross sonar-clean sonar-summary \
-        coverage-run coverage-clean coverage-summary summary gate
+        coverage-run coverage-clean coverage-summary summary gate \
+        smoke-gearbox bench-gearbox sine-knock-smoke engine-knock-smoke
 .PHONY: esp32 deploy_esp32 run_esp32 clean_esp32
 .PHONY: build-cross-gate
 # gate MUST run its steps strictly in order: build -> test -> iOS cross ->
@@ -307,6 +318,9 @@ define run_bridge_stage
 		bridge_end=$$(date +%s); \
 		bridge_elapsed=$$((bridge_end - bridge_start)); \
 		echo "=== [engine-sim-cli] $(2) FAILED ($${bridge_elapsed}s) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] FAILURES:\033[0m\n'; \
+		-grep -E "(FAILED|Failed [0-9]+ tests)" engine-sim-bridge/$(BUILD_DIR)/test-summary.log 2>/dev/null | head -30; \
+		-grep -E "^\[[ ]*FAILED" engine-sim-bridge/$(BUILD_DIR)/Testing/Temporary/LastTest.log 2>/dev/null | head -30; \
 		total_end=$$(date +%s); \
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: $(3)=$${bridge_elapsed}s cli=SKIPPED total=$${total_elapsed}s ==="; \
@@ -332,6 +346,9 @@ define run_cli_stage
 		total_elapsed=$$((total_end - total_start)); \
 		echo "=== [engine-sim-cli] TIME: $(1)=$${bridge_elapsed}s cli=$${cli_elapsed}s total=$${total_elapsed}s ==="; \
 		echo "=== [engine-sim-cli] SUMMARY: FAIL ($(2)) ==="; \
+		printf '\033[0;31m=== [engine-sim-cli] FAILURES:\033[0m\n'; \
+		-grep -E "(FAILED|Failed [0-9]+ tests)" ../test.log 2>/dev/null | head -30; \
+		-grep -E "^\[[ ]*FAILED" ../test.log 2>/dev/null | head -30; \
 		printf '\033[0;31m=== [engine-sim-cli] RESULT: TESTS FAILED ===\033[0m\n'; \
 		exit 1; \
 	fi
@@ -399,6 +416,104 @@ run: build
 run-json: build
 	./build/engine-sim-cli --interactive --play --script es/v8_gm_ls.json
 
+# --- Road-test kit ------------------------------------------------------------
+# Headless, short, deterministic road-test runs. Each run auto-generates a
+# UTC-timestamped roadtest_<timestamp>.csv (--csv-out true) so reruns NEVER
+# overwrite a prior log. NO build step inside these targets — run `make build`
+# first, then `make roadtest_*`. --silent (mandatory on the laptop) and
+# --pin-tau-ms 150 (tuned road value) are on EVERY run. The full command line
+# is echoed (so it is visible / copyable) before execution.
+#
+# PRESETS (verified present in es/):
+#   Ferrari F136  -> es/ferrari_f136.mr (canonical, also the existing `run` target)
+#   C63           -> es_new/C63_M156_V4.mr (span-tamed V4: clean body + tamed
+#                    audio span, audio_volume 40x->4x; supersedes the V3 in es/).
+ROADTEST_SCRIPT_FERRARI ?= es/ferrari_f136.mr
+ROADTEST_SCRIPT_C63     ?= es_new/C63_M156_V4.mr
+ROADTEST_DURATION       ?= 5
+
+roadtest_ferrari:
+	@echo "=== [engine-sim-cli] roadtest_ferrari: short deterministic run ==="
+	@echo "./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_FERRARI)"
+	./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_FERRARI)
+
+roadtest_c63:
+	@echo "=== [engine-sim-cli] roadtest_c63: short deterministic run ==="
+	@echo "./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_C63)"
+	./build/engine-sim-cli --silent --pin-tau-ms 150 --csv-out true --deterministic --duration $(ROADTEST_DURATION) --script $(ROADTEST_SCRIPT_C63)
+
+# --- Gearbox regression smoke + bench -----------------------------------------
+# Canonical recording + window for the "6 mph stall" regression that MUST stay
+# green. VEHICLE_SIM_CAP / RECORDING / WINDOW overrides via the env.
+VEHICLE_SIM_CAP ?= $(HOME)/vscode/escli.vehicle-sim/captures
+SMOKE_RECORDING ?= $(VEHICLE_SIM_CAP)/UpLeckHillWithKickdown_2026-08-12-133448.csv
+SMOKE_WINDOW_START ?= 00:20
+SMOKE_WINDOW_END ?= 00:25
+BENCH_RECORDING ?= $(VEHICLE_SIM_CAP)/em-dinner.csv
+
+# Gateable regression smoke: rpm>=950, no mid-drive stall, mph-tracking on the
+# 00:20-00:25 window of UpLeckHillWithKickdown (the 6 mph stall window).
+# Exits non-zero on any invariant violation. See scripts/smoke_gearbox.py.
+smoke-gearbox: build
+	@echo "=== [engine-sim-cli] smoke-gearbox: 6 mph stall regression ($(SMOKE_WINDOW_START)-$(SMOKE_WINDOW_END) on $(notdir $(SMOKE_RECORDING))) ==="
+	@echo "    invariants: rpm>=950 (mid-drive), no stall, |sim-tgt|mph<=2 for >=90%"
+	@scripts/smoke_gearbox.py "$(SMOKE_RECORDING)" \
+		--start-from $(SMOKE_WINDOW_START) --end-at $(SMOKE_WINDOW_END)
+
+# ---------------------------------------------------------------------------
+# sine-knock-smoke — sync-pull audio knock regression test.
+#
+# Renders a 30s --sine run to a WAV (the true rendered output, captured
+# pre-silent-mute by the --output seam) and measures buffer-boundary
+# discontinuities. The knock is a mid-waveform restart from the audio ring's
+# write index lapping its read index; it shows up as hundreds of large int16
+# jumps between adjacent samples. A clean sine has at most a handful of
+# startup-transient jumps.
+#
+# Headless: uses --silent (no audio hardware) and --output (WAV file).
+# Fails if discontinuities > 10 OR zero-sample rate > 1% OR RMS < 1000.
+# ---------------------------------------------------------------------------
+SINE_KNOCK_DUR ?= 30
+SINE_KNOCK_WAV := $(BUILD_DIR)/sine-knock-smoke.wav
+
+sine-knock-smoke: build
+	@echo "=== [engine-sim-cli] sine-knock-smoke: 30s --sine knock regression ==="
+	@rm -f $(SINE_KNOCK_WAV)
+	@$(BUILD_DIR)/engine-sim-cli --sine --duration $(SINE_KNOCK_DUR) \
+		--output $(SINE_KNOCK_WAV) --silent
+	@echo "--- analyzing $(SINE_KNOCK_WAV) ---"
+	@python3 scripts/sine_knock_smoke.py $(SINE_KNOCK_WAV)
+
+# ---------------------------------------------------------------------------
+# engine-knock-smoke — sync-pull knock regression test on a real engine replay.
+#
+# Same detector as sine-knock-smoke but exercises the full engine path (2
+# input channels + impulse-response convolution) that the owner hears the knock
+# on. Renders a C63 AMG replay clip to WAV and runs the discontinuity detector.
+# Fails if discontinuities > 10 OR zero-sample rate > 1% OR RMS < 1000.
+# ---------------------------------------------------------------------------
+ENGINE_KNOCK_DUR ?= 15
+ENGINE_KNOCK_WAV := $(BUILD_DIR)/engine-knock-smoke.wav
+ENGINE_KNOCK_SCRIPT ?= $(HOME)/vscode/engine-sim-cli/es_new/C63_M156_V4.mr
+ENGINE_KNOCK_CAP ?= $(HOME)/vscode/escli.vehicle-sim/captures/PinFixDrive_2026-08-29-1640.csv
+
+engine-knock-smoke: build
+	@echo "=== [engine-sim-cli] engine-knock-smoke: C63 replay knock regression ==="
+	@rm -f $(ENGINE_KNOCK_WAV)
+	@$(BUILD_DIR)/engine-sim-cli --replay-telemetry $(ENGINE_KNOCK_CAP) \
+		--start-from 00:30 --end-at 00:45 --pin-tau-ms 150 \
+		--script $(ENGINE_KNOCK_SCRIPT) --auto --silent \
+		--output $(ENGINE_KNOCK_WAV)
+	@echo "--- analyzing $(ENGINE_KNOCK_WAV) ---"
+	@python3 scripts/sine_knock_smoke.py $(ENGINE_KNOCK_WAV)
+
+# Diagnostic bench harness on em-dinner (mph MAE/worst/%>2, gear-per-speed vs
+# oracle, rpm-coupling self-calibrated K, stall). Richer detail than the smoke
+# test; same metric logic as the acceptance brief.
+bench-gearbox: build
+	@echo "=== [engine-sim-cli] bench-gearbox: diagnostic metrics on $(notdir $(BENCH_RECORDING)) ==="
+	@scripts/bench_gearbox.py replay "$(BENCH_RECORDING)"
+
 help:
 	@echo "engine-sim-cli Makefile"
 	@echo ""
@@ -420,6 +535,10 @@ help:
 	@echo "  make scrub    - Remove entire build directory (full clean)"
 	@echo "  make run      - Build and run CLI with .mr script"
 	@echo "  make run-json - Build and run CLI with JSON preset"
+	@echo "  make sine-knock-smoke - Sync-pull audio knock regression (30s --sine, fails on knock)"
+	@echo "  make engine-knock-smoke - Sync-pull knock regression on C63 engine replay (fails on knock)"
+	@echo "  make smoke-gearbox - Gearbox regression smoke (6 mph stall window, must stay green)"
+	@echo "  make bench-gearbox - Gearbox diagnostic bench (mph/gear/coupling/stall metrics)"
 	@echo "  make esp32    - Build ESP32 firmware"
 	@echo "  make deploy_esp32 - Flash ESP32 firmware"
 	@echo "  make run_esp32    - Build, flash, and monitor ESP32"
@@ -475,7 +594,8 @@ $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 $(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt
 	@echo "=== [engine-sim-cli] Building coverage (build-cov, RelWithDebInfo+instr) ==="
 	@cmake --build $(BUILD_COV_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
-	@touch $@
+	# `cmake --build` updates the engine-sim-cli binary mtime above; that IS
+	# the artefact Make tracks (no separate .stamp file needed).
 
 # coverage-run: run CLI tests on the coverage-instrumented build, merge profdata,
 # export coverage.txt (llvm-cov text) + lcov.info. File-artefact target: re-runs
@@ -498,18 +618,60 @@ sonar-scan: $(SONAR_REPORT)
 # Re-scans only when coverage/compile-db/properties/sources change. The curl
 # writes SONAR_REPORT itself. NOTE: this sonar-scanner rejects -q, so log output
 # is redirected to a file and tailed on failure (the bridge's pattern).
+# Derive -Dsonar.branch.name from the current git branch (worktree-aware).
+# In a worktree, git rev-parse --abbrev-ref HEAD returns the worktree's branch.
+# If derivation fails, FAIL FAST — never publish a branchless scan that
+# overwrites SonarCloud master. Master scans remain possible (master -> "master").
+BRANCH := $(shell git -C $$(dirname $(abspath $(firstword $(MAKEFILE_LIST)))) rev-parse --abbrev-ref HEAD 2>/dev/null)
+ifeq ($(BRANCH),)
+  $(error SONAR GUARD: cannot derive sonar.branch.name from git (no branch / no git). Refusing to publish a branchless scan.)
+endif
+ifeq ($(BRANCH),HEAD)
+  $(error SONAR GUARD: HEAD is detached — cannot derive a branch name. Check out a named branch before scanning.)
+endif
+SONAR_BRANCH_FLAG := -Dsonar.branch.name=$(BRANCH)
+
 $(SONAR_REPORT): $(COVERAGE_REPORT) $(COMPILE_DB) $(SONAR_PROJECT_PROPERTIES) $(BUILD_INPUTS)
 	@if [ -z "$${SONAR_TOKEN_ES}" ] && [ -z "$${SONAR_TOKEN}" ]; then \
 		echo "ERROR: Neither SONAR_TOKEN_ES nor SONAR_TOKEN is set. Run: source ~/.zshrc"; \
 		exit 1; \
 	fi
-	@echo "=== [engine-sim-cli] Running Sonar scan ==="
-	@SONAR_TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}" sonar-scanner > $(BUILD_COV_DIR)/sonar-scanner.log 2>&1; \
+	@echo "=== [engine-sim-cli] Running Sonar scan (branch: $(BRANCH)) ==="
+	@SONAR_TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}" sonar-scanner \
+		$(SONAR_BRANCH_FLAG) \
+		> $(BUILD_COV_DIR)/sonar-scanner.log 2>&1; \
 		rc=$$?; \
 		if [ $$rc -ne 0 ]; then \
 			echo "=== [engine-sim-cli] sonar-scanner failed (rc=$$rc); see $(BUILD_COV_DIR)/sonar-scanner.log ==="; \
 			tail -n 20 $(BUILD_COV_DIR)/sonar-scanner.log; \
 			exit $$rc; \
+		fi
+	@echo "=== [engine-sim-cli] Waiting for SonarCloud Compute Engine to finish ==="
+	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
+		CETASKID=$$(grep -E '^ceTaskId=' $(BUILD_COV_DIR)/.scannerwork/report-task.txt 2>/dev/null | cut -d= -f2); \
+		if [ -z "$$CETASKID" ]; then \
+			echo "ERROR: no ceTaskId in $(BUILD_COV_DIR)/.scannerwork/report-task.txt; cannot confirm analysis settled"; \
+			exit 1; \
+		fi; \
+		echo "  CE task: $$CETASKID"; \
+		dead=0; \
+		while [ $$dead -lt 60 ]; do \
+			status=$$(curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/ce/task?id=$$CETASKID" \
+				| python3 -c "import json,sys; print(json.load(sys.stdin).get('task',{}).get('status',''))" 2>/dev/null); \
+			if [ "$$status" = "SUCCESS" ]; then \
+				echo "  CE task SUCCESS after $$(($$dead * 2))s"; \
+				break; \
+			fi; \
+			if [ "$$status" = "FAILED" ] || [ "$$status" = "CANCELED" ]; then \
+				echo "ERROR: SonarCloud CE task $$status (id=$$CETASKID); report did not settle"; \
+				exit 1; \
+			fi; \
+			sleep 2; \
+			dead=$$((dead + 1)); \
+		done; \
+		if [ "$$status" != "SUCCESS" ]; then \
+			echo "ERROR: CE task did not settle within 120s (id=$$CETASKID)"; \
+			exit 1; \
 		fi
 	@echo "=== [engine-sim-cli] Caching SonarCloud issue report ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
@@ -527,7 +689,7 @@ coverage-clean:
 	@rm -rf $(BUILD_COV_DIR)/profraw
 
 sonar-clean:
-	@rm -f $(SONAR_REPORT)
+	@rm -f $(SONAR_REPORT) $(SONAR_LIVE)
 	@rm -rf $(BUILD_COV_DIR)/.scannerwork
 
 # Sonar summary -- display issues from a LIVE SonarCloud report (DRY: bridge script).
@@ -541,10 +703,10 @@ sonar-summary:
 	@echo "=== [engine-sim-cli] BEGIN: SonarCloud issues summary ==="
 	@TOKEN="$${SONAR_TOKEN_ES:-$${SONAR_TOKEN}}"; \
 	if [ -z "$$TOKEN" ]; then echo "  No token"; exit 0; fi; \
-	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN&facets=impactSeverities" > $(SONAR_REPORT) 2>/dev/null || true; \
+	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=500&statuses=OPEN&facets=impactSeverities" > $(SONAR_LIVE) 2>/dev/null || true; \
 	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/issues/search?componentKeys=danieljsinclair_engine-sim-cli&ps=1&resolutions=REMOVED&facets=impactSeverities" > $(SONAR_REMOVED_FACET) 2>/dev/null || true; \
 	curl -s -u "$$TOKEN:" "https://sonarcloud.io/api/measures/component?component=danieljsinclair_engine-sim-cli&metricKeys=coverage,lines_to_cover,uncovered_lines" > $(SONAR_MEASURES) 2>/dev/null || true; \
-	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_REPORT) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli --removed-facet $(SONAR_REMOVED_FACET)
+	python3 engine-sim-bridge/scripts/sonar_summary.py $(SONAR_LIVE) $(if $(filter 1,$(SHOW_TYPE_SEVERITY)),--type-severity,) --label engine-sim-cli --removed-facet $(SONAR_REMOVED_FACET)
 	@echo "=== [engine-sim-cli] END: SonarCloud issues summary ==="
 
 # Coverage summary -- emit the shared multi-line coverage block (SonarCloud-live
@@ -579,7 +741,7 @@ summary:
 		--test-log test.log \
 		--cov-measures $(SONAR_MEASURES) \
 		--local-cov $(BUILD_COV_DIR)/lcov.info --local-type lcov \
-		--sonar-report $(SONAR_REPORT) \
+		--sonar-report $(SONAR_LIVE) \
 		--removed-facet $(SONAR_REMOVED_FACET)
 	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary SUMMARY_QUIET=1
 

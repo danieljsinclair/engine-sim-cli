@@ -50,8 +50,7 @@ TEST(CLIConfigPrintUsageTest, PrintUsage_OutputsOptions) {
     EXPECT_NE(capture.str().find("--script"), std::string::npos);
     EXPECT_NE(capture.str().find("--load"), std::string::npos);
     EXPECT_NE(capture.str().find("--interactive"), std::string::npos);
-    EXPECT_NE(capture.str().find("--play"), std::string::npos);
-    EXPECT_NE(capture.str().find("--duration"), std::string::npos);
+        EXPECT_NE(capture.str().find("--duration"), std::string::npos);
     EXPECT_NE(capture.str().find("--output"), std::string::npos);
     EXPECT_NE(capture.str().find("--connect-demo"), std::string::npos);
     EXPECT_NE(capture.str().find("--auto"), std::string::npos);
@@ -102,10 +101,10 @@ TEST(CLIConfigPrintUsageTest, PrintUsage_OutputsExamples) {
     printUsage("engine-sim-cli");
 
     EXPECT_NE(capture.str().find("Examples:"), std::string::npos);
-    EXPECT_NE(capture.str().find("--interactive --play"), std::string::npos);
+    EXPECT_NE(capture.str().find("--interactive"), std::string::npos);
     EXPECT_NE(capture.str().find("--script v8_engine.mr --load 50"), std::string::npos);
-    EXPECT_NE(capture.str().find("--sine --interactive --play"), std::string::npos);
-    EXPECT_NE(capture.str().find("--load 75 --play"), std::string::npos);
+    EXPECT_NE(capture.str().find("--sine --interactive"), std::string::npos);
+    EXPECT_NE(capture.str().find("--load 75"), std::string::npos);
 }
 
 TEST(CLIConfigPrintUsageTest, PrintUsage_IncludesProgramNameInExamples) {
@@ -113,7 +112,7 @@ TEST(CLIConfigPrintUsageTest, PrintUsage_IncludesProgramNameInExamples) {
     const char* progName = "custom-cli";
     printUsage(progName);
 
-    EXPECT_NE(capture.str().find("custom-cli --interactive --play"), std::string::npos);
+    EXPECT_NE(capture.str().find("custom-cli --interactive"), std::string::npos);
     EXPECT_NE(capture.str().find("custom-cli --script v8_engine.mr"), std::string::npos);
     EXPECT_NE(capture.str().find("custom-cli --sine"), std::string::npos);
     EXPECT_NE(capture.str().find("custom-cli --load 75"), std::string::npos);
