@@ -15,6 +15,16 @@
 
 #ifndef _WIN32
 bool KeyboardInput::setupTerminal() {
+    // Guard against non-foreground process groups (owner-repro 2026-09-08).
+    // When stdin is a tty but this process is NOT the terminal's foreground
+    // process group (e.g. wrapped by GNU timeout, which setpgid's the child),
+    // tcsetattr/tcgetpgrp issue SIGTTOU / block inside ioctl and the process
+    // hangs at startup (process state T). tcgetpgrp returns -1 on ENOTTY or
+    // the foreground pgrp; if it differs from ours we are backgrounded, so
+    // bail out early following the existing failure path (initialized=false).
+    pid_t fg = tcgetpgrp(STDIN_FILENO);
+    if (fg == -1 || fg != getpgrp()) return false;
+
     if (tcgetattr(STDIN_FILENO, &oldSettings) != 0) return false;
     termios newSettings = oldSettings;
     newSettings.c_lflag &= ~(ICANON | ECHO);
