@@ -471,6 +471,11 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     config.engineConfig.pacedReplay =
         args.deterministic || args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
 
+    // Brake-torque drive-cap toggle: forwarded unconditionally so 0 (the
+    // CommandLineArgs default) is the explicit OFF value — the constraint uses
+    // the pre-cap symmetric limits and CSV-replay behaviour is unchanged.
+    config.engineConfig.brakeTorqueCap = args.brakeTorqueCap;
+
     // Gearbox mode: --auto enables automatic gearbox, default is manual
     config.autoGearbox = args.gearbox.automatic;
 

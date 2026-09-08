@@ -40,6 +40,10 @@ void printUsage(const char* progName) {
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --deterministic      Headless fixed-timestep replay: reproducible per-frame output (gate/diagnosis mode)\n";
+    std::cout << "  --pin-drive-cap       Cap the vehicle-speed pin's DRIVE authority (0.4*maxTorque ~10kN)\n"
+                 "                       so braking/engine drag wins against the replay tow; the pin's\n"
+                 "                       deceleration side keeps full authority. Off by default so\n"
+                 "                       CSV-replay behaviour is unchanged.\n";
     std::cout << "  --verbose            Show DEBUG-level console logging (startup discards, sync-pull buffer fills)\n";
     std::cout << "  --cranking-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000; --starter-delay accepted as alias)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
@@ -241,6 +245,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "mode for gate runs and diagnosis. Implies --silent audio behavior.");
     // Headless mode has no audio strategy choice and no speakers.
     deterministicOpt->excludes(threadedOpt);
+    app.add_flag("--pin-drive-cap", args.brakeTorqueCap,
+        "Cap the vehicle-speed pin's drive authority: while the pin tows the "
+        "car to a recorded road speed its forward push is limited to "
+        "0.4*maxTorque (10kN), so user braking and engine drag can overcome "
+        "it; the pin's deceleration side keeps full authority. No effect on "
+        "the brake pedal/key path, and none when no road-speed target is "
+        "active. Off by default so CSV-replay behaviour is unchanged.");
     app.add_flag("--verbose", args.output.verbose,
         "Enable DEBUG-level console logging (startup zero-drain discards, "
         "sync-pull buffer fills). Default output is INFO+ only.");

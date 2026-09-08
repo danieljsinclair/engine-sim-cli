@@ -517,3 +517,25 @@ TEST(CommandLineParserTest, VerboseDefaultsToFalse) {
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
     EXPECT_FALSE(args.output.verbose);
 }
+
+// --pin-drive-cap: drive-authority cap on the vehicle-speed pin.
+// Default OFF preserves CSV-replay semantics (the constraint uses the
+// pre-cap symmetric limits); ON caps the pin's drive side at
+// 0.4*maxTorque while its deceleration side keeps full -maxTorque.
+// Forwards to the bridge's ISimulatorConfig.brakeTorqueCap.
+
+TEST(CommandLineParserTest, PinDriveCapFlagParsesTrue) {
+    const char* argv[] = {"engine-sim-cli", "--pin-drive-cap"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_TRUE(args.brakeTorqueCap);
+}
+
+TEST(CommandLineParserTest, PinDriveCapDefaultsToFalse) {
+    const char* argv[] = {"engine-sim-cli", "--silent"};
+    CommandLineArgs args;
+
+    EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
+    EXPECT_FALSE(args.brakeTorqueCap);
+}
