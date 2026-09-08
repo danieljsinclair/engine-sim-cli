@@ -118,9 +118,10 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 
 # ============================================================================
 # all: Full pipeline -- build + test (default target). `summary` is the LAST
-# step so the end-of-make output is EXACTLY the two headline rows (cli line,
-# then bridge line -- the recursion calls the bridge's summary-headline, so
-# no summary BLOCKS can land between or after them).
+# step so the end-of-make output is the four summary BLOCKS (cli coverage,
+# cli sonar, bridge coverage, bridge sonar) followed by EXACTLY the two
+# headline rows (cli line, then bridge line -- the recursion calls the
+# bridge's summary-headline LAST, so no rows land after them).
 # ============================================================================
 all: build test summary
 
@@ -396,7 +397,7 @@ test: build
 		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
 		$(call run_cli_stage,bridge,full,ALL TESTS PASSED,--output-junit $(abspath $(CLI_TEST_RESULTS))); \
 		touch $(CLI_TEST_RESULTS); \
-		$(MAKE) $(SONAR_REPORT) coverage-summary sonar-summary || \
+		$(MAKE) $(SONAR_REPORT) || \
 			echo "=== [engine-sim-cli] sonar/coverage summary skipped (non-fatal) ==="; \
 	fi
 
@@ -760,20 +761,23 @@ coverage-summary:
 		--label "[engine-sim-cli]"
 	@echo "=== [engine-sim-cli] END: coverage summary ==="
 
-# summary: the end-of-make HEADLINE (russian doll). Prints the CLI's OWN line
-# first (tests from the teed test.log, coverage from the cached sonar-measures
-# JSON -- the same headline coverage_block.py shows, sonar from the cached
-# sonar-report.json), then recurses into the bridge's summary-headline so its
-# line follows. summary-headline (bridge-side) emits ONLY the one coloured
-# headline row -- NOT its coverage/sonar BLOCKS -- so the run ends on exactly
-# the two headline rows (found 2026-09-08: recursing into the bridge's full
-# `summary` printed its blocks AFTER the cli line, leaving block rows as the
-# final output). Order is SELF-then-submodule so the nesting reads top-down
-# (cli, then bridge). Greps plain numbers + re-emits coloured -- no live
-# re-query, never triggers a scan/test, never crashes; missing fields are
-# omitted gracefully.
+# summary: the end-of-make report (russian doll). Re-prints the four summary
+# BLOCKS on EVERY make -- cli coverage-summary + sonar-summary, then the
+# bridge's summary-blocks (display-only; cached path included -- found
+# 2026-09-08: blocks only printed when the test stage ran, so a cached
+# "TESTS UP TO DATE" make showed headlines with no report blocks) -- then the
+# CLI's OWN headline line (tests from the teed test.log, coverage from the
+# cached sonar-measures JSON -- the same headline coverage_block.py shows,
+# sonar from the cached sonar-report.json), and finally recurses into the
+# bridge's summary-headline so its line is the LAST row. The block targets
+# are cheap display-only (cached JSON / live curl) and NEVER trigger a scan
+# or test. Order is SELF-then-submodule so the nesting reads top-down
+# (cli, then bridge). Headline greps plain numbers + re-emits coloured -- no
+# live re-query, never crashes; missing fields are omitted gracefully.
 BUILD_SUMMARY_SCRIPT := engine-sim-bridge/scripts/build_summary.py
 summary:
+	+@$(MAKE) --no-print-directory coverage-summary sonar-summary SUMMARY_QUIET=1
+	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary-blocks SUMMARY_QUIET=1
 	@python3 $(BUILD_SUMMARY_SCRIPT) \
 		--label "[engine-sim-cli]" \
 		--test-log test.log \
