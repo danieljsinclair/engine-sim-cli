@@ -308,6 +308,12 @@ scrub-cli: clean-cli
 # build/build/cli-test-results.xml while `touch` left THIS path as a 0-byte
 # ghost — the guard then failed on every run and the full suite re-ran each
 # time (found 2026-09-08; the stray build/build/ dir was the giveaway).
+# The bridge artefact is guarded by `-e` BEFORE the -nt: `test a -nt b` is
+# TRUE when b does not exist, so after `check-submodule` scrubs the bridge
+# (any submodule-pointer move) the guard read "up to date" while the bridge's
+# test/coverage/sonar data was gone and the bridge headline went
+# "(no summary data)" (found 2026-09-08). A MISSING artefact is stale, same
+# philosophy as the -s check above.
 # Folds caching into the existing two-stage flow; does NOT rewrite it.
 CLI_TEST_RESULTS := $(BUILD_DIR)/cli-test-results.xml
 BRIDGE_TEST_ARTEFACT := $(BRIDGE_DIR)/build/test-summary.log
@@ -377,6 +383,7 @@ endef
 
 test: build
 	+@if [ -s $(CLI_TEST_RESULTS) ] && \
+	   [ -e $(BRIDGE_TEST_ARTEFACT) ] && \
 	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ] && \
 	   [ $(CLI_TEST_RESULTS) -nt $(BRIDGE_TEST_ARTEFACT) ]; then \
 		echo "=== [engine-sim-cli] TESTS UP TO DATE — bridge + ctest skipped (artefacts current) ==="; \
