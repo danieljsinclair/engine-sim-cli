@@ -298,6 +298,10 @@ scrub-cli: clean-cli
 # when nothing changed: the CLI artefact exists, no source input is newer than
 # it, AND the CLI artefact is newer than the bridge artefact. Touching src/
 # include/ test/ (or a bridge source, via the -nt check) invalidates and re-runs.
+# The guard is -s, not -f: an EMPTY junit file (0-byte stamp from an interrupted
+# run, which `make clean` does not delete) counts as ABSENT — it must never skip
+# the gate's test stage (blind spot found 2026-09-08: a gate ran "green" with no
+# ctest stage at all behind a 0-byte stamp).
 # Folds caching into the existing two-stage flow; does NOT rewrite it.
 CLI_TEST_RESULTS := $(BUILD_DIR)/cli-test-results.xml
 BRIDGE_TEST_ARTEFACT := $(BRIDGE_DIR)/build/test-summary.log
@@ -366,7 +370,7 @@ define run_bridge_only_stage
 endef
 
 test: build
-	+@if [ -f $(CLI_TEST_RESULTS) ] && \
+	+@if [ -s $(CLI_TEST_RESULTS) ] && \
 	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ] && \
 	   [ $(CLI_TEST_RESULTS) -nt $(BRIDGE_TEST_ARTEFACT) ]; then \
 		echo "=== [engine-sim-cli] TESTS UP TO DATE — bridge + ctest skipped (artefacts current) ==="; \
