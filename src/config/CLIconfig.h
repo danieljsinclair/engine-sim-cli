@@ -143,14 +143,21 @@ struct CommandLineArgs {
     bool sineMode = false;       // Generate sine wave test tone instead of engine audio
     bool syncPull = true;        // Use sync pull model by default
     bool deterministic = false;  // --deterministic: headless fixed-timestep replay (gate/diagnosis)
-    // Pin drive-cap toggle (--pin-drive-cap). Default OFF preserves
-    // CSV-replay semantics: the VehicleSpeed constraint uses the pre-cap
-    // symmetric limits (-maxTorque .. +maxTorque). ON caps the pin's drive
-    // side at 0.4*maxTorque (its deceleration side keeps full authority),
-    // so braking/engine drag can win against the replay tow. Forwards to
-    // the bridge's ISimulatorConfig.brakeTorqueCap.
-    bool brakeTorqueCap = false;
-    float holdThrottle = -1.0f;  // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
+    // Drive-control knobs (--pin-drive-cap, --hold-throttle). Grouped so
+    // CommandLineArgs stays under the struct-field threshold (S1820),
+    // mirroring OutputArgs / StartArgs / PresentationArgs above.
+    struct DriveArgs {
+        // Pin drive-cap toggle (--pin-drive-cap). Default OFF preserves
+        // CSV-replay semantics: the VehicleSpeed constraint uses the pre-cap
+        // symmetric limits (-maxTorque .. +maxTorque). ON caps the pin's drive
+        // side at 0.4*maxTorque (its deceleration side keeps full authority),
+        // so braking/engine drag can win against the replay tow. Forwards to
+        // the bridge's ISimulatorConfig.brakeTorqueCap.
+        bool brakeTorqueCap = false;
+        // -1 sentinel; 0..1 holds throttle for non-interactive driving/diagnostics
+        float holdThrottle = -1.0f;
+    };
+    DriveArgs drive;
 
     ReplayArgs replay;
     GearboxArgs gearbox;

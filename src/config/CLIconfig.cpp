@@ -108,7 +108,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--synth-latency", args.audio.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
-    app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--throttle", args.drive.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
     auto crankingDelayOpt = app.add_option("--cranking-delay,--starter-delay", args.start.crankingDelayMs,
         "Starter-then-ignition delay in MILLISECONDS (true ms scale, linear: "
@@ -245,7 +245,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "mode for gate runs and diagnosis. Implies --silent audio behavior.");
     // Headless mode has no audio strategy choice and no speakers.
     deterministicOpt->excludes(threadedOpt);
-    app.add_flag("--pin-drive-cap", args.brakeTorqueCap,
+    app.add_flag("--pin-drive-cap", args.drive.brakeTorqueCap,
         "Cap the vehicle-speed pin's drive authority: while the pin tows the "
         "car to a recorded road speed its forward push is limited to "
         "0.4*maxTorque (10kN), so user braking and engine drag can overcome "

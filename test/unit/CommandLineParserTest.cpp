@@ -529,7 +529,7 @@ TEST(CommandLineParserTest, PinDriveCapFlagParsesTrue) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_TRUE(args.brakeTorqueCap);
+    EXPECT_TRUE(args.drive.brakeTorqueCap);
 }
 
 TEST(CommandLineParserTest, PinDriveCapDefaultsToFalse) {
@@ -537,5 +537,5 @@ TEST(CommandLineParserTest, PinDriveCapDefaultsToFalse) {
     CommandLineArgs args;
 
     EXPECT_TRUE(parseArguments(2, const_cast<char**>(argv), args));
-    EXPECT_FALSE(args.brakeTorqueCap);
+    EXPECT_FALSE(args.drive.brakeTorqueCap);
 }
