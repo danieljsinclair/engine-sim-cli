@@ -118,8 +118,9 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 
 # ============================================================================
 # all: Full pipeline -- build + test (default target). `summary` is the LAST
-# step so the end-of-make headline (russian doll: cli line, then bridge line)
-# is the final build output.
+# step so the end-of-make output is EXACTLY the two headline rows (cli line,
+# then bridge line -- the recursion calls the bridge's summary-headline, so
+# no summary BLOCKS can land between or after them).
 # ============================================================================
 all: build test summary
 
@@ -302,6 +303,11 @@ scrub-cli: clean-cli
 # run, which `make clean` does not delete) counts as ABSENT — it must never skip
 # the gate's test stage (blind spot found 2026-09-08: a gate ran "green" with no
 # ctest stage at all behind a 0-byte stamp).
+# The stage-2 ctest below passes the junit path ABSOLUTE ($(abspath)): ctest
+# runs with cwd=$(BUILD_DIR), so a relative --output-junit landed in
+# build/build/cli-test-results.xml while `touch` left THIS path as a 0-byte
+# ghost — the guard then failed on every run and the full suite re-ran each
+# time (found 2026-09-08; the stray build/build/ dir was the giveaway).
 # Folds caching into the existing two-stage flow; does NOT rewrite it.
 CLI_TEST_RESULTS := $(BUILD_DIR)/cli-test-results.xml
 BRIDGE_TEST_ARTEFACT := $(BRIDGE_DIR)/build/test-summary.log
@@ -381,7 +387,7 @@ test: build
 		echo "=== [engine-sim-cli] Stage 1/2: bridge tests ==="; \
 		$(call run_bridge_stage,test,Stage 1/2: bridge tests,bridge); \
 		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
-		$(call run_cli_stage,bridge,full,ALL TESTS PASSED,--output-junit $(CLI_TEST_RESULTS)); \
+		$(call run_cli_stage,bridge,full,ALL TESTS PASSED,--output-junit $(abspath $(CLI_TEST_RESULTS))); \
 		touch $(CLI_TEST_RESULTS); \
 		$(MAKE) $(SONAR_REPORT) coverage-summary sonar-summary || \
 			echo "=== [engine-sim-cli] sonar/coverage summary skipped (non-fatal) ==="; \
@@ -583,6 +589,14 @@ $(BRIDGE_BUILD_COV_LIB):
 # RelWithDebInfo (NOT Debug) + -fprofile-instr-generate/-fcoverage-mapping/-g.
 # Points at the bridge's instrumented build-cov/ so coverage attributes bridge
 # source. Depends on the bridge instrumented lib existing first (ordering).
+# NOTE: `touch CMakeCache.txt` after configure is REQUIRED, not cosmetic (the
+# bridge's fix, same war): cmake does not rewrite an unchanged cache file, so
+# without the touch the cache mtime never advances past $(BRIDGE_BUILD_COV_LIB)
+# (which the bridge's own coverage-run rebuilds independently). Make then
+# reconfigures on EVERY invocation, each configure rewrites compile_commands.json,
+# and that keeps sonar-report.json permanently stale — the CLI sonar scan
+# re-ran on every `make` in this tree until 2026-09-08. The build/ dir escapes
+# this only because its check-submodule recipe rewrites state each run.
 $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 	@mkdir -p $(BUILD_COV_DIR)
 	@cd $(BUILD_COV_DIR) && cmake \
@@ -593,13 +607,21 @@ $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
 		-DBRIDGE_BUILD_DIR=$(CURDIR)/$(BRIDGE_COV_DIR) \
-		..
+		.. && touch CMakeCache.txt
 
-$(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt
+$(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt $(BRIDGE_BUILD_COV_LIB)
 	@echo "=== [engine-sim-cli] Building coverage (build-cov, RelWithDebInfo+instr) ==="
 	@cmake --build $(BUILD_COV_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
-	# `cmake --build` updates the engine-sim-cli binary mtime above; that IS
-	# the artefact Make tracks (no separate .stamp file needed).
+	@touch $@
+	@# `touch $@` mirrors the bridge's $(BUILD_COV_STAMP): `cmake --build` only
+	@# advances the binary mtime when something relinks — on a no-op build the
+	@# mtime stays put while deps (a freshly-touched CMakeCache, a rebuilt
+	@# bridge lib) stay newer, and Make would re-run this recipe — and the
+	@# coverage + sonar chain behind it — forever. Touching the real artefact
+	@# records "checked with these inputs — no change", settling the chain
+	@# (same idiom, no .stamp file). The $(BRIDGE_BUILD_COV_LIB) prereq relinks
+	@# the binary when the bridge's instrumented lib is rebuilt; without it the
+	@# binary silently stayed stale while the cache rule still reconfigured.
 
 # coverage-run: run CLI tests on the coverage-instrumented build, merge profdata,
 # export coverage.txt (llvm-cov text) + lcov.info. File-artefact target: re-runs
@@ -734,10 +756,15 @@ coverage-summary:
 # summary: the end-of-make HEADLINE (russian doll). Prints the CLI's OWN line
 # first (tests from the teed test.log, coverage from the cached sonar-measures
 # JSON -- the same headline coverage_block.py shows, sonar from the cached
-# sonar-report.json), then recurses into the bridge so its line follows. Order
-# is SELF-then-submodule so the nesting reads top-down (cli, then bridge).
-# Greps plain numbers + re-emits coloured -- no live re-query, never triggers a
-# scan/test, never crashes; missing fields are omitted gracefully.
+# sonar-report.json), then recurses into the bridge's summary-headline so its
+# line follows. summary-headline (bridge-side) emits ONLY the one coloured
+# headline row -- NOT its coverage/sonar BLOCKS -- so the run ends on exactly
+# the two headline rows (found 2026-09-08: recursing into the bridge's full
+# `summary` printed its blocks AFTER the cli line, leaving block rows as the
+# final output). Order is SELF-then-submodule so the nesting reads top-down
+# (cli, then bridge). Greps plain numbers + re-emits coloured -- no live
+# re-query, never triggers a scan/test, never crashes; missing fields are
+# omitted gracefully.
 BUILD_SUMMARY_SCRIPT := engine-sim-bridge/scripts/build_summary.py
 summary:
 	@python3 $(BUILD_SUMMARY_SCRIPT) \
@@ -747,7 +774,7 @@ summary:
 		--local-cov $(BUILD_COV_DIR)/lcov.info --local-type lcov \
 		--sonar-report $(SONAR_LIVE) \
 		--removed-facet $(SONAR_REMOVED_FACET)
-	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary SUMMARY_QUIET=1
+	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary-headline SUMMARY_QUIET=1
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
