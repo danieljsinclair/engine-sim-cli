@@ -243,13 +243,21 @@ submodules:
 		git submodule update --init --recursive; \
 	fi
 
-$(BUILD_DIR)/CMakeCache.txt: check-submodule
+# check-submodule is an ORDER-ONLY prereq on purpose (found 2026-09-09): as a
+# normal prereq of this phony target the configure recipe re-ran on EVERY
+# root make. It still runs every make (also via bridge-build), so the
+# scrub-on-pointer-change behaviour is intact -- and when it deletes this
+# cache the rule reconfigures because the target is missing. The trailing
+# `touch CMakeCache.txt` is the same fix as the build-cov rule below: cmake
+# does not rewrite an unchanged cache, so without the touch the cache mtime
+# stays older than an edited CMakeLists.txt and Make reconfigures forever.
+$(BUILD_DIR)/CMakeCache.txt: CMakeLists.txt | check-submodule
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 		-DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) \
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
-		..
+		.. && touch CMakeCache.txt
 
 # ---------------------------------------------------------------------------
 # Clean targets -- cascade to bridge
@@ -294,12 +302,18 @@ scrub-cli: clean-cli
 # ---------------------------------------------------------------------------
 # --- Test caching artefacts (real files, NOT .stamp hacks) -------------------
 # CLI ctest emits JUnit XML to build/cli-test-results.xml (ctest --output-junit).
-# The bridge writes engine-sim-bridge/build/test-summary.log as part of its own
-# `test` (run_bridge_ctest_suite tees ctest output there); we treat that as the
-# bridge cache artefact (read-only on the bridge). `make test` SKIPS both runs
-# when nothing changed: the CLI artefact exists, no source input is newer than
-# it, AND the CLI artefact is newer than the bridge artefact. Touching src/
-# include/ test/ (or a bridge source, via the -nt check) invalidates and re-runs.
+# The bridge side of the guard is keyed on what the CLI actually CONSUMES from
+# the bridge: the static archive it links (engine-sim-bridge/build/libenginesim.a
+# -- BRIDGE_STATIC_LIB in CMakeLists.txt) and the bridge preset JSONs that
+# sync-es copies into es/. `make test` SKIPS both runs when nothing changed:
+# the CLI artefact exists and is non-empty, no source input is newer than it,
+# AND the CLI artefact is newer than EVERY bridge artefact. Touching src/
+# include/ test/ (or rebuilding the bridge archive / a preset) invalidates and
+# re-runs. Re-keyed 2026-09-09 from the bridge's build/test-summary.log: the
+# bridge's own test tiers legitimately refresh that log, and a log refresh
+# says nothing about the bridge code the CLI links -- the log-keyed guard made
+# every no-change bridge make spuriously re-run the CLI's full ctest + sonar
+# scan.
 # The guard is -s, not -f: an EMPTY junit file (0-byte stamp from an interrupted
 # run, which `make clean` does not delete) counts as ABSENT — it must never skip
 # the gate's test stage (blind spot found 2026-09-08: a gate ran "green" with no
@@ -309,15 +323,16 @@ scrub-cli: clean-cli
 # build/build/cli-test-results.xml while `touch` left THIS path as a 0-byte
 # ghost — the guard then failed on every run and the full suite re-ran each
 # time (found 2026-09-08; the stray build/build/ dir was the giveaway).
-# The bridge artefact is guarded by `-e` BEFORE the -nt: `test a -nt b` is
+# EVERY bridge artefact is guarded by `! -e` BEFORE its -nt: `test a -nt b` is
 # TRUE when b does not exist, so after `check-submodule` scrubs the bridge
-# (any submodule-pointer move) the guard read "up to date" while the bridge's
-# test/coverage/sonar data was gone and the bridge headline went
-# "(no summary data)" (found 2026-09-08). A MISSING artefact is stale, same
-# philosophy as the -s check above.
+# (any submodule-pointer move) the guard must read STALE, not "up to date",
+# while the bridge archive the CLI links is gone (found 2026-09-08, when the
+# bridge's test/coverage/sonar data was gone and the bridge headline went
+# "(no summary data)"). A MISSING artefact is stale, same philosophy as the
+# -s check above.
 # Folds caching into the existing two-stage flow; does NOT rewrite it.
 CLI_TEST_RESULTS := $(BUILD_DIR)/cli-test-results.xml
-BRIDGE_TEST_ARTEFACT := $(BRIDGE_DIR)/build/test-summary.log
+BRIDGE_TEST_ARTEFACTS := $(BRIDGE_DIR)/build/libenginesim.a $(wildcard $(BRIDGE_DIR)/preset/*.json)
 
 # --- DRY test-stage macros --------------------------------------------------
 # Mirror the file's existing `define ... endef` shell style (cf. ESP32_ACTIVATE).
@@ -383,10 +398,16 @@ define run_bridge_only_stage
 endef
 
 test: build
-	+@if [ -s $(CLI_TEST_RESULTS) ] && \
-	   [ -e $(BRIDGE_TEST_ARTEFACT) ] && \
-	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ] && \
-	   [ $(CLI_TEST_RESULTS) -nt $(BRIDGE_TEST_ARTEFACT) ]; then \
+	+@bridge_artefact_stale=0; \
+	for artefact in $(BRIDGE_TEST_ARTEFACTS); do \
+		if [ ! -e "$$artefact" ] || ! [ $(CLI_TEST_RESULTS) -nt "$$artefact" ]; then \
+			bridge_artefact_stale=1; \
+			break; \
+		fi; \
+	done; \
+	if [ -s $(CLI_TEST_RESULTS) ] && \
+	   [ "$$bridge_artefact_stale" = "0" ] && \
+	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ]; then \
 		echo "=== [engine-sim-cli] TESTS UP TO DATE — bridge + ctest skipped (artefacts current) ==="; \
 	else \
 		total_start=$$(date +%s); \
