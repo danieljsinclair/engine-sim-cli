@@ -40,6 +40,10 @@ void printUsage(const char* progName) {
     std::cout << "  --threaded           Use threaded circular buffer (cursor-chasing) (sync-pull is default)\n";
     std::cout << "  --silent             Run full audio pipeline at zero volume (for testing)\n";
     std::cout << "  --deterministic      Headless fixed-timestep replay: reproducible per-frame output (gate/diagnosis mode)\n";
+    std::cout << "  --pin-drive-cap       Cap the vehicle-speed pin's DRIVE authority (0.4*maxTorque ~10kN)\n"
+                 "                       so braking/engine drag wins against the replay tow; the pin's\n"
+                 "                       deceleration side keeps full authority. Off by default so\n"
+                 "                       CSV-replay behaviour is unchanged.\n";
     std::cout << "  --verbose            Show DEBUG-level console logging (startup discards, sync-pull buffer fills)\n";
     std::cout << "  --cranking-delay <ms> Starter-then-ignition delay in ms (0=instant combined start, absent=500ms default, max 10000; --starter-delay accepted as alias)\n";
     std::cout << "  --cranking-volume    Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)\n";
@@ -104,7 +108,7 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
     app.add_option("--synth-latency", args.audio.synthLatency, "Synthesizer latency in seconds (default: " + std::to_string(EngineSimDefaults::TARGET_SYNTH_LATENCY) + ")") ->check(CLI::Range(0.001, 0.5));
     app.add_option("--pre-fill-ms", args.audio.preFillMs, "Pre-fill buffer ms for sync-pull mode") ->check(CLI::Range(10, 500));
     app.add_option("--cranking-volume", args.audio.crankingVolume, "Volume boost during cranking (when ignition ON, RPM < 600, no exhaust flow)") ->default_val(1.0f);
-    app.add_option("--throttle", args.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
+    app.add_option("--throttle", args.drive.holdThrottle, "Hold throttle at 0..1 (non-interactive driving / autobox diagnostics)")->check(CLI::Range(0.0, 1.0));
     app.add_flag("--start", args.start.autoStart, "Auto-crank the engine at startup (implicit with --replay-telemetry)");
     auto crankingDelayOpt = app.add_option("--cranking-delay,--starter-delay", args.start.crankingDelayMs,
         "Starter-then-ignition delay in MILLISECONDS (true ms scale, linear: "
@@ -241,6 +245,13 @@ bool parseArguments(int argc, char* argv[], CommandLineArgs& args) {
         "mode for gate runs and diagnosis. Implies --silent audio behavior.");
     // Headless mode has no audio strategy choice and no speakers.
     deterministicOpt->excludes(threadedOpt);
+    app.add_flag("--pin-drive-cap", args.drive.brakeTorqueCap,
+        "Cap the vehicle-speed pin's drive authority: while the pin tows the "
+        "car to a recorded road speed its forward push is limited to "
+        "0.4*maxTorque (10kN), so user braking and engine drag can overcome "
+        "it; the pin's deceleration side keeps full authority. No effect on "
+        "the brake pedal/key path, and none when no road-speed target is "
+        "active. Off by default so CSV-replay behaviour is unchanged.");
     app.add_flag("--verbose", args.output.verbose,
         "Enable DEBUG-level console logging (startup zero-drain discards, "
         "sync-pull buffer fills). Default output is INFO+ only.");

@@ -239,7 +239,7 @@ InputContext createInputProvider(const SimulationConfig& config, ILogging* /*log
             // processKeyboardInput would consume events before overlay can see them).
             auto target_ov = std::make_unique<input::EngineInputTarget>();
             target_ov->setGearAutoMode(config.autoGearbox || args.connectDemo);
-            if (args.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.holdThrottle));
+            if (args.drive.holdThrottle >= 0.0f) target_ov->setThrottle(static_cast<double>(args.drive.holdThrottle));
             if (args.start.autoStart) target_ov->setStarter();
             auto overlay = std::make_unique<input::OverlayInputProvider>(
                 std::move(replay), std::move(kb), target_ov.get());
@@ -278,8 +278,8 @@ InputContext buildKeyboardInput(const SimulationConfig& config, const CommandLin
     target->setGearAutoMode(config.autoGearbox || args.connectDemo);
     // --throttle <0..1>: latch a held throttle so non-interactive runs (--duration)
     // actually drive the engine. Persists via EngineInputTarget's latch.
-    if (args.holdThrottle >= 0.0f) {
-        target->setThrottle(static_cast<double>(args.holdThrottle));
+    if (args.drive.holdThrottle >= 0.0f) {
+        target->setThrottle(static_cast<double>(args.drive.holdThrottle));
     }
     // --start is NOT applied here as a one-shot EngineInputTarget::setStarter
     // pulse anymore. It is carried on config.startRequested and routed through
@@ -483,6 +483,11 @@ SimulationConfig CreateSimulationConfig(const CommandLineArgs& args) {
     // (interactive/threaded) keeps the governor for latency tracking.
     config.engineConfig.pacedReplay =
         args.deterministic || args.twin.liveTelemetry || !args.replay.telemetryPath.empty();
+
+    // Brake-torque drive-cap toggle: forwarded unconditionally so 0 (the
+    // CommandLineArgs default) is the explicit OFF value — the constraint uses
+    // the pre-cap symmetric limits and CSV-replay behaviour is unchanged.
+    config.engineConfig.brakeTorqueCap = args.drive.brakeTorqueCap;
 
     // Gearbox mode: --auto enables automatic gearbox, default is manual
     config.autoGearbox = args.gearbox.automatic;

@@ -118,8 +118,10 @@ IDF_ACTIVATE ?= $(firstword $(wildcard $(HOME)/.espressif/tools/activate_idf_*.s
 
 # ============================================================================
 # all: Full pipeline -- build + test (default target). `summary` is the LAST
-# step so the end-of-make headline (russian doll: cli line, then bridge line)
-# is the final build output.
+# step so the end-of-make output is the four summary BLOCKS (cli coverage,
+# cli sonar, bridge coverage, bridge sonar) followed by EXACTLY the two
+# headline rows (cli line, then bridge line -- the recursion calls the
+# bridge's summary-headline LAST, so no rows land after them).
 # ============================================================================
 all: build test summary
 
@@ -241,13 +243,21 @@ submodules:
 		git submodule update --init --recursive; \
 	fi
 
-$(BUILD_DIR)/CMakeCache.txt: check-submodule
+# check-submodule is an ORDER-ONLY prereq on purpose (found 2026-09-09): as a
+# normal prereq of this phony target the configure recipe re-ran on EVERY
+# root make. It still runs every make (also via bridge-build), so the
+# scrub-on-pointer-change behaviour is intact -- and when it deletes this
+# cache the rule reconfigures because the target is missing. The trailing
+# `touch CMakeCache.txt` is the same fix as the build-cov rule below: cmake
+# does not rewrite an unchanged cache, so without the touch the cache mtime
+# stays older than an edited CMakeLists.txt and Make reconfigures forever.
+$(BUILD_DIR)/CMakeCache.txt: CMakeLists.txt | check-submodule
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 		-DBUILD_PHASE0_SPIKES=$(BUILD_PHASE0_SPIKES) \
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
-		..
+		.. && touch CMakeCache.txt
 
 # ---------------------------------------------------------------------------
 # Clean targets -- cascade to bridge
@@ -292,15 +302,37 @@ scrub-cli: clean-cli
 # ---------------------------------------------------------------------------
 # --- Test caching artefacts (real files, NOT .stamp hacks) -------------------
 # CLI ctest emits JUnit XML to build/cli-test-results.xml (ctest --output-junit).
-# The bridge writes engine-sim-bridge/build/test-summary.log as part of its own
-# `test` (run_bridge_ctest_suite tees ctest output there); we treat that as the
-# bridge cache artefact (read-only on the bridge). `make test` SKIPS both runs
-# when nothing changed: the CLI artefact exists, no source input is newer than
-# it, AND the CLI artefact is newer than the bridge artefact. Touching src/
-# include/ test/ (or a bridge source, via the -nt check) invalidates and re-runs.
+# The bridge side of the guard is keyed on what the CLI actually CONSUMES from
+# the bridge: the static archive it links (engine-sim-bridge/build/libenginesim.a
+# -- BRIDGE_STATIC_LIB in CMakeLists.txt) and the bridge preset JSONs that
+# sync-es copies into es/. `make test` SKIPS both runs when nothing changed:
+# the CLI artefact exists and is non-empty, no source input is newer than it,
+# AND the CLI artefact is newer than EVERY bridge artefact. Touching src/
+# include/ test/ (or rebuilding the bridge archive / a preset) invalidates and
+# re-runs. Re-keyed 2026-09-09 from the bridge's build/test-summary.log: the
+# bridge's own test tiers legitimately refresh that log, and a log refresh
+# says nothing about the bridge code the CLI links -- the log-keyed guard made
+# every no-change bridge make spuriously re-run the CLI's full ctest + sonar
+# scan.
+# The guard is -s, not -f: an EMPTY junit file (0-byte stamp from an interrupted
+# run, which `make clean` does not delete) counts as ABSENT — it must never skip
+# the gate's test stage (blind spot found 2026-09-08: a gate ran "green" with no
+# ctest stage at all behind a 0-byte stamp).
+# The stage-2 ctest below passes the junit path ABSOLUTE ($(abspath)): ctest
+# runs with cwd=$(BUILD_DIR), so a relative --output-junit landed in
+# build/build/cli-test-results.xml while `touch` left THIS path as a 0-byte
+# ghost — the guard then failed on every run and the full suite re-ran each
+# time (found 2026-09-08; the stray build/build/ dir was the giveaway).
+# EVERY bridge artefact is guarded by `! -e` BEFORE its -nt: `test a -nt b` is
+# TRUE when b does not exist, so after `check-submodule` scrubs the bridge
+# (any submodule-pointer move) the guard must read STALE, not "up to date",
+# while the bridge archive the CLI links is gone (found 2026-09-08, when the
+# bridge's test/coverage/sonar data was gone and the bridge headline went
+# "(no summary data)"). A MISSING artefact is stale, same philosophy as the
+# -s check above.
 # Folds caching into the existing two-stage flow; does NOT rewrite it.
 CLI_TEST_RESULTS := $(BUILD_DIR)/cli-test-results.xml
-BRIDGE_TEST_ARTEFACT := $(BRIDGE_DIR)/build/test-summary.log
+BRIDGE_TEST_ARTEFACTS := $(BRIDGE_DIR)/build/libenginesim.a $(wildcard $(BRIDGE_DIR)/preset/*.json)
 
 # --- DRY test-stage macros --------------------------------------------------
 # Mirror the file's existing `define ... endef` shell style (cf. ESP32_ACTIVATE).
@@ -366,9 +398,16 @@ define run_bridge_only_stage
 endef
 
 test: build
-	+@if [ -f $(CLI_TEST_RESULTS) ] && \
-	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ] && \
-	   [ $(CLI_TEST_RESULTS) -nt $(BRIDGE_TEST_ARTEFACT) ]; then \
+	+@bridge_artefact_stale=0; \
+	for artefact in $(BRIDGE_TEST_ARTEFACTS); do \
+		if [ ! -e "$$artefact" ] || ! [ $(CLI_TEST_RESULTS) -nt "$$artefact" ]; then \
+			bridge_artefact_stale=1; \
+			break; \
+		fi; \
+	done; \
+	if [ -s $(CLI_TEST_RESULTS) ] && \
+	   [ "$$bridge_artefact_stale" = "0" ] && \
+	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ]; then \
 		echo "=== [engine-sim-cli] TESTS UP TO DATE — bridge + ctest skipped (artefacts current) ==="; \
 	else \
 		total_start=$$(date +%s); \
@@ -377,9 +416,9 @@ test: build
 		echo "=== [engine-sim-cli] Stage 1/2: bridge tests ==="; \
 		$(call run_bridge_stage,test,Stage 1/2: bridge tests,bridge); \
 		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
-		$(call run_cli_stage,bridge,full,ALL TESTS PASSED,--output-junit $(CLI_TEST_RESULTS)); \
+		$(call run_cli_stage,bridge,full,ALL TESTS PASSED,--output-junit $(abspath $(CLI_TEST_RESULTS))); \
 		touch $(CLI_TEST_RESULTS); \
-		$(MAKE) $(SONAR_REPORT) coverage-summary sonar-summary || \
+		$(MAKE) $(SONAR_REPORT) || \
 			echo "=== [engine-sim-cli] sonar/coverage summary skipped (non-fatal) ==="; \
 	fi
 
@@ -579,6 +618,14 @@ $(BRIDGE_BUILD_COV_LIB):
 # RelWithDebInfo (NOT Debug) + -fprofile-instr-generate/-fcoverage-mapping/-g.
 # Points at the bridge's instrumented build-cov/ so coverage attributes bridge
 # source. Depends on the bridge instrumented lib existing first (ordering).
+# NOTE: `touch CMakeCache.txt` after configure is REQUIRED, not cosmetic (the
+# bridge's fix, same war): cmake does not rewrite an unchanged cache file, so
+# without the touch the cache mtime never advances past $(BRIDGE_BUILD_COV_LIB)
+# (which the bridge's own coverage-run rebuilds independently). Make then
+# reconfigures on EVERY invocation, each configure rewrites compile_commands.json,
+# and that keeps sonar-report.json permanently stale — the CLI sonar scan
+# re-ran on every `make` in this tree until 2026-09-08. The build/ dir escapes
+# this only because its check-submodule recipe rewrites state each run.
 $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 	@mkdir -p $(BUILD_COV_DIR)
 	@cd $(BUILD_COV_DIR) && cmake \
@@ -589,13 +636,21 @@ $(BUILD_COV_DIR)/CMakeCache.txt: CMakeLists.txt $(BRIDGE_BUILD_COV_LIB)
 		-DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON \
 		-DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
 		-DBRIDGE_BUILD_DIR=$(CURDIR)/$(BRIDGE_COV_DIR) \
-		..
+		.. && touch CMakeCache.txt
 
-$(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt
+$(BUILD_COV_STAMP): $(BUILD_INPUTS) $(BUILD_COV_DIR)/CMakeCache.txt $(BRIDGE_BUILD_COV_LIB)
 	@echo "=== [engine-sim-cli] Building coverage (build-cov, RelWithDebInfo+instr) ==="
 	@cmake --build $(BUILD_COV_DIR) $(CMAKE_BUILD_PARALLEL_FLAG)
-	# `cmake --build` updates the engine-sim-cli binary mtime above; that IS
-	# the artefact Make tracks (no separate .stamp file needed).
+	@touch $@
+	@# `touch $@` mirrors the bridge's $(BUILD_COV_STAMP): `cmake --build` only
+	@# advances the binary mtime when something relinks — on a no-op build the
+	@# mtime stays put while deps (a freshly-touched CMakeCache, a rebuilt
+	@# bridge lib) stay newer, and Make would re-run this recipe — and the
+	@# coverage + sonar chain behind it — forever. Touching the real artefact
+	@# records "checked with these inputs — no change", settling the chain
+	@# (same idiom, no .stamp file). The $(BRIDGE_BUILD_COV_LIB) prereq relinks
+	@# the binary when the bridge's instrumented lib is rebuilt; without it the
+	@# binary silently stayed stale while the cache rule still reconfigured.
 
 # coverage-run: run CLI tests on the coverage-instrumented build, merge profdata,
 # export coverage.txt (llvm-cov text) + lcov.info. File-artefact target: re-runs
@@ -727,15 +782,23 @@ coverage-summary:
 		--label "[engine-sim-cli]"
 	@echo "=== [engine-sim-cli] END: coverage summary ==="
 
-# summary: the end-of-make HEADLINE (russian doll). Prints the CLI's OWN line
-# first (tests from the teed test.log, coverage from the cached sonar-measures
-# JSON -- the same headline coverage_block.py shows, sonar from the cached
-# sonar-report.json), then recurses into the bridge so its line follows. Order
-# is SELF-then-submodule so the nesting reads top-down (cli, then bridge).
-# Greps plain numbers + re-emits coloured -- no live re-query, never triggers a
-# scan/test, never crashes; missing fields are omitted gracefully.
+# summary: the end-of-make report (russian doll). Re-prints the four summary
+# BLOCKS on EVERY make -- cli coverage-summary + sonar-summary, then the
+# bridge's summary-blocks (display-only; cached path included -- found
+# 2026-09-08: blocks only printed when the test stage ran, so a cached
+# "TESTS UP TO DATE" make showed headlines with no report blocks) -- then the
+# CLI's OWN headline line (tests from the teed test.log, coverage from the
+# cached sonar-measures JSON -- the same headline coverage_block.py shows,
+# sonar from the cached sonar-report.json), and finally recurses into the
+# bridge's summary-headline so its line is the LAST row. The block targets
+# are cheap display-only (cached JSON / live curl) and NEVER trigger a scan
+# or test. Order is SELF-then-submodule so the nesting reads top-down
+# (cli, then bridge). Headline greps plain numbers + re-emits coloured -- no
+# live re-query, never crashes; missing fields are omitted gracefully.
 BUILD_SUMMARY_SCRIPT := engine-sim-bridge/scripts/build_summary.py
 summary:
+	+@$(MAKE) --no-print-directory coverage-summary sonar-summary SUMMARY_QUIET=1
+	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary-blocks SUMMARY_QUIET=1
 	@python3 $(BUILD_SUMMARY_SCRIPT) \
 		--label "[engine-sim-cli]" \
 		--test-log test.log \
@@ -743,7 +806,7 @@ summary:
 		--local-cov $(BUILD_COV_DIR)/lcov.info --local-type lcov \
 		--sonar-report $(SONAR_LIVE) \
 		--removed-facet $(SONAR_REMOVED_FACET)
-	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary SUMMARY_QUIET=1
+	+@$(MAKE) --no-print-directory -C engine-sim-bridge summary-headline SUMMARY_QUIET=1
 
 # ---------------------------------------------------------------------------
 # Cross-compilation (caller sets PLATFORM, e.g. OS64, SIMULATOR64)
