@@ -71,6 +71,15 @@ LLVM_PROFDATA := $(shell xcrun --find llvm-profdata 2>/dev/null || which llvm-pr
 # rebuild on every bridge file touch and bloated lcov scope.
 BUILD_INPUTS := $(shell find Makefile CMakeLists.txt src include test tools engine-sim -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.cmake' \) 2>/dev/null | sort)
 
+# Bridge changes must invalidate the test cache WITHOUT listing bridge files in
+# BUILD_INPUTS (that caused full rebuilds + lcov bloat on every bridge touch —
+# see the find roots above). Key on the bridge submodule's HEAD plus a dirty
+# marker instead: a new bridge commit changes HEAD; uncommitted bridge work
+# makes `status --porcelain` non-empty. Both invalidate; untouched bridge is a
+# cheap no-op.
+BRIDGE_STATE := $(shell git -C $(BRIDGE_DIR) rev-parse HEAD 2>/dev/null)-$(shell [ -n "$$(git -C $(BRIDGE_DIR) status --porcelain 2>/dev/null)" ] && echo dirty)
+BRIDGE_STATE_FILE := $(BUILD_DIR)/cli-test-bridge-state.txt
+
 # Build system: Ninja (recommended) or Make (fallback)
 # Ninja handles parallel dependency ordering correctly; Make has a known race
 # condition where .o recompilation doesn't always trigger re-link with --parallel.
@@ -385,7 +394,8 @@ test: build
 	+@if [ -s $(CLI_TEST_RESULTS) ] && \
 	   [ -e $(BRIDGE_TEST_ARTEFACT) ] && \
 	   [ -z "$$(find $(BUILD_INPUTS) -newer $(CLI_TEST_RESULTS) -print -quit 2>/dev/null)" ] && \
-	   [ $(CLI_TEST_RESULTS) -nt $(BRIDGE_TEST_ARTEFACT) ]; then \
+	   [ $(CLI_TEST_RESULTS) -nt $(BRIDGE_TEST_ARTEFACT) ] && \
+	   [ "$$(cat $(BRIDGE_STATE_FILE) 2>/dev/null)" = "$(BRIDGE_STATE)" ]; then \
 		echo "=== [engine-sim-cli] TESTS UP TO DATE — bridge + ctest skipped (artefacts current) ==="; \
 	else \
 		total_start=$$(date +%s); \
@@ -396,6 +406,7 @@ test: build
 		echo "=== [engine-sim-cli] Stage 2/2: cli/unit/integration tests ==="; \
 		$(call run_cli_stage,bridge,full,ALL TESTS PASSED,--output-junit $(abspath $(CLI_TEST_RESULTS))); \
 		touch $(CLI_TEST_RESULTS); \
+		printf '%s' "$(BRIDGE_STATE)" > $(BRIDGE_STATE_FILE); \
 		$(MAKE) $(SONAR_REPORT) coverage-summary sonar-summary || \
 			echo "=== [engine-sim-cli] sonar/coverage summary skipped (non-fatal) ==="; \
 	fi
