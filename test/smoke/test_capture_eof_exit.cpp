@@ -53,6 +53,14 @@ std::string logDelta(long long from) {
     return ss.str();
 }
 
+// Unique per process: two concurrent `make` runs share build/, and a fixed
+// fixture path lets one run's writeCapture truncate the other's capture after
+// it was written but before its CLI read it (the CLI then hits EOF early).
+std::string capturePath(const std::string& base) {
+    return SmokeTestHelper::getProjectRoot() + "/build/" + base + "_" +
+           std::to_string(getpid()) + ".csv";
+}
+
 void writeCapture(const std::string& path, double endS, double stepS) {
     std::ofstream f(path);
     f << "time_s,throttle_pct,road_speed_kmh\n";
@@ -68,8 +76,7 @@ int exitCodeOf(int raw) {
 } // namespace
 
 TEST(CaptureEofExitTest, LiveStdinEof_ExitsWholeCliAtCaptureEnd) {
-    const std::string csv =
-        SmokeTestHelper::getProjectRoot() + "/build/cli_eof_1s.csv";
+    const std::string csv = capturePath("cli_eof_1s");
     writeCapture(csv, 1.0, 0.05);
 
     const long long before = logSize();
@@ -83,6 +90,7 @@ TEST(CaptureEofExitTest, LiveStdinEof_ExitsWholeCliAtCaptureEnd) {
         std::chrono::duration<double>(std::chrono::steady_clock::now() - t0)
             .count();
     const std::string out = logDelta(before);
+    std::remove(csv.c_str());
 
     EXPECT_EQ(exitCodeOf(rc), 0) << "clean exit at capture end, out:\n" << out;
     EXPECT_LT(wall, 4.5)
@@ -93,14 +101,14 @@ TEST(CaptureEofExitTest, LiveStdinEof_ExitsWholeCliAtCaptureEnd) {
 }
 
 TEST(CaptureEofExitTest, ReplayEndAt_ReportsEndAtNotFullTraceDuration) {
-    const std::string csv =
-        SmokeTestHelper::getProjectRoot() + "/build/cli_eof_10s.csv";
+    const std::string csv = capturePath("cli_eof_10s");
     writeCapture(csv, 10.0, 0.1);
 
     const long long before = logSize();
     const int rc = SmokeTestHelper::runCLI(
         "--replay-telemetry " + csv + " --end-at 5 --silent");
     const std::string out = logDelta(before);
+    std::remove(csv.c_str());
 
     EXPECT_EQ(exitCodeOf(rc), 0) << out;
     EXPECT_TRUE(out.find("--end-at 5") != std::string::npos)
