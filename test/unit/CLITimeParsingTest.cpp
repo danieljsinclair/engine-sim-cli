@@ -171,6 +171,25 @@ TEST(CLIWiring, Duration_TrailingGarbage_FailsRun) {
         << "a --duration with trailing characters must fail the run, not parse partially";
 }
 
+// Plain --duration success path: for a bare (non-telemetry) run the raw value
+// is plain seconds and must land in args.duration UNCHANGED by the telemetry
+// window resolver — the window consumption (--end-at = start + N, duration
+// reset to 0) is reserved for telemetry-driven runs, where the CSV bounds the
+// trace. A plain run with its duration zeroed would silently become an
+// unbounded run.
+TEST(CLIWiring, Duration_PlainSeconds_ConvertedWithoutWindow) {
+    CommandLineArgs parsed;
+    std::vector<std::string> args = {"--duration", "12"};
+    args.insert(args.begin(), "engine-sim-cli");
+    std::vector<char*> argv;
+    for (auto& s : args) argv.push_back(s.data());
+    ASSERT_TRUE(parseArguments(static_cast<int>(argv.size()), argv.data(), parsed));
+    EXPECT_DOUBLE_EQ(parsed.duration, 12.0)
+        << "a plain --duration must survive as args.duration";
+    EXPECT_DOUBLE_EQ(parsed.replay.endAtS, -1.0)
+        << "a plain --duration must not resolve onto the --end-at path";
+}
+
 // --start-from with plain seconds
 TEST(CLIWiring, StartFrom_PlainSeconds_99) {
     auto args = parseArgv({"--start-from", "99"});
