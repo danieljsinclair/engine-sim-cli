@@ -144,6 +144,33 @@ static CommandLineArgs parseArgv(std::vector<std::string> args) {
     return parsed;
 }
 
+// ============================================================================
+// Plain --duration conversion failures. The plain-run parse happens inside
+// processArgs (parseArguments tails into it): a value that is not plain
+// seconds must fail the run cleanly rather than mis-bound it. Pins the
+// failure path ahead of the S3776 extraction of processArgs.
+// ============================================================================
+
+TEST(CLIWiring, Duration_NonNumeric_FailsRun) {
+    CommandLineArgs parsed;
+    std::vector<std::string> args = {"--duration", "abc"};
+    args.insert(args.begin(), "engine-sim-cli");
+    std::vector<char*> argv;
+    for (auto& s : args) argv.push_back(s.data());
+    EXPECT_FALSE(parseArguments(static_cast<int>(argv.size()), argv.data(), parsed))
+        << "a --duration that cannot be parsed as plain seconds must fail the run";
+}
+
+TEST(CLIWiring, Duration_TrailingGarbage_FailsRun) {
+    CommandLineArgs parsed;
+    std::vector<std::string> args = {"--duration", "12x"};
+    args.insert(args.begin(), "engine-sim-cli");
+    std::vector<char*> argv;
+    for (auto& s : args) argv.push_back(s.data());
+    EXPECT_FALSE(parseArguments(static_cast<int>(argv.size()), argv.data(), parsed))
+        << "a --duration with trailing characters must fail the run, not parse partially";
+}
+
 // --start-from with plain seconds
 TEST(CLIWiring, StartFrom_PlainSeconds_99) {
     auto args = parseArgv({"--start-from", "99"});
