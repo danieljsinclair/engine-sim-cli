@@ -22,8 +22,7 @@ bool KeyboardInput::setupTerminal() {
     // hangs at startup (process state T). tcgetpgrp returns -1 on ENOTTY or
     // the foreground pgrp; if it differs from ours we are backgrounded, so
     // bail out early following the existing failure path (initialized=false).
-    pid_t fg = tcgetpgrp(STDIN_FILENO);
-    if (fg == -1 || fg != getpgrp()) return false;
+    if (pid_t fg = tcgetpgrp(STDIN_FILENO); fg == -1 || fg != getpgrp()) return false;
 
     if (tcgetattr(STDIN_FILENO, &oldSettings) != 0) return false;
     termios newSettings = oldSettings;
